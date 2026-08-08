@@ -349,6 +349,8 @@ impl App {
     pub fn handle_player_event(&mut self, event: PlayerEvent) {
         match event {
             PlayerEvent::TrackStarted => {
+                self.now_playing.position = 0.0;
+                self.now_playing.duration = 0.0;
                 self.now_playing.active = true;
                 self.now_playing.paused = false;
                 self.now_playing.sample_rate = None;
@@ -377,6 +379,7 @@ impl App {
                 self.now_playing.position = 0.0;
             }
             PlayerEvent::Position(p)  => {
+                if !self.now_playing.active { return; }
                 // Only accept position updates that move forward (with 10ms tolerance for jitter).
                 // This prevents the audio widget from showing position going backward.
                 if p >= self.now_playing.position - 0.01 {
@@ -385,6 +388,7 @@ impl App {
                 }
             }
             PlayerEvent::Duration(d)  => {
+                if !self.now_playing.active { return; }
                 self.now_playing.duration = d;
                 // Send track to Last.fm once when we first learn the duration
                 if !self.now_playing.lastfm_sent && d > 0.0 {
