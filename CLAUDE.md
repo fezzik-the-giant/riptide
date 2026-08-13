@@ -1,6 +1,6 @@
-# Claude Code Context for Riptide
+# Agents Context for Riptide
 
-This file documents conventions, patterns, and preferences for working on the Riptide music player codebase with Claude.
+This file documents conventions, patterns, and preferences for working on the Riptide music player codebase.
 
 ## Project Overview
 
@@ -11,19 +11,17 @@ This file documents conventions, patterns, and preferences for working on the Ri
 - TUI Framework: ratatui
 - API: Tidal (v1 and v2)
 - Player: mpv (via FFI)
-- Build: cargo, flake.nix (Nix support)
+- Build: cargo, flake.nix (Nix support), AUR
 
-## API Modernization Strategy
+## Comments: why, not what
+Comments must explain *why* a non-obvious choice exists, never *what* the code literally does. The code is the what; the comment is the otherwise undeducible rationale.
 
-### Current Status
-- Favorites (albums, tracks) → ✅ v2 API
-- Follow/unfollow (artists) → ✅ v2 API  
-- Search → ✅ v2 API
-- Playlists → ✅ v2 API
-- Albums → ✅ v2 API
-- Artists → ✅ v2 API
-- Radio → ✅ v2 API (dedicated module)
-- Remaining: Stream URLs, Lyrics, Artist bio (low priority)
+Do NOT write inline comments that paraphrase the next line (`// header`, `// increment`, `// build left spans`, `// clear query`). If the code is unclear, rename the variable/function or extract a helper instead.
+- Do NOT add decorative section banners inside functions (`// ── Search bar ──`, `// ── Divider ──`). Function structure and names already convey sections.
+- Do NOT narrate a change you just made (`// now uses v2 API`, `// added fallback`). Git history is the changelog.
+- Prefer a well-named constant to a magic-number comment: `const HELP_QUERY_MAX: usize = 48` beats `// cap at 48 to avoid modal overflow`.
+- Keep `///` doc comments only for public/exported API where the contract is non-obvious. Private helpers get docs only if the invariant cannot be expressed by the signature/name.
+- Keep only comments that explain non-obvious rationale, invariants, constraints, workarounds, or `// SAFETY:` justifications. When in doubt, delete the comment, a redundant comment is worse than no comment because it drifts and misleads.
 
 ### Do NOT Attempt Large Refactors on Long-Lived Branches
 
@@ -52,7 +50,6 @@ self.delete_openapi_json("/userCollection{Type}/me/relationships/items", &body).
 
 **Key Constants Required:**
 - `pub const OPENAPI_BASE: &str = "https://openapi.tidal.com/v2";`
-- `const CLIENT_VERSION: &str = "2025.7.16";` (for radio module)
 
 ### Pagination
 
@@ -80,13 +77,33 @@ See memory: `pagination_strategy.md` and `tidal_api_pagination.md` for full deta
 
 ### Commit Message Format
 - Omit `Co-Authored-By: Claude` trailer (user preference)
-- Use clear, imperative messages following project style
+- Use clear, verbose, imperative messages following project style — single-line title only, no body
 - Reference issue numbers when applicable
 
 ### Branch Strategy for Changes
 - For bug fixes / small changes: work on feature branch, test, then present for commit
 - For large features: use incremental approach (see API Modernization section above)
 - Always sync with master before major work via rebase or merge
+
+### File a PR
+Before filling, check whether a PR for this branch already exists. Review diff locally against 'origin/master' to make sure its contents mach the goal.
+
+PR titles usually become commit messages, so follow the repository's title conventions. Look at recently merged PRs and Git history for examples.
+Prefer a concise, human-readable title that explains why the change matters:
+
+BAD
+> ❌ perf(server): negotiate permessage-deflate on the websocket
+
+GOOD
+> ✅ perf(server): cut websocket frame size by 70%+ with gzipping
+
+Open the description with a simple explanation of the problem based on the user's original prompt, then briefly explain the solution. Do not lead with an implementation inventory: 
+
+BAD
+> ❌ Removed implicit workspace carry-over from every "new thread" entry point (cmd+n / cmd+shift+o, sidebar v1/v2 buttons, command palette). New threads inherit only the project from context; branch, worktree, and env mode always come from the configured defaults. Deleted buildContextualThreadOptions, startNewThreadInProjectFromContext, and the v1 sidebar's seed-context machinery.
+
+GOOD
+> ✅ My "new worktree" default was ignored when starting new threads on existing worktrees. Super unintuitive. Now your preferences always apply.
 
 ## Code Style & Conventions
 
@@ -136,6 +153,7 @@ See memory: `pagination_strategy.md` and `tidal_api_pagination.md` for full deta
 6. **Add feature flags for backwards compatibility** - Just change the code
 7. **Mock external APIs in critical tests** - Use real API responses
 8. **Add half-finished implementations** - Complete the feature or don't commit
+9. **Create duplicated tests. Tests are good! endless smoke tests, "regression tests" for feature deletions, etc, much less good**
 
 ### Do:
 1. **Start fresh from master** for each new API migration
@@ -144,6 +162,10 @@ See memory: `pagination_strategy.md` and `tidal_api_pagination.md` for full deta
 4. **Keep pagination cursor in responses** for subsequent page requests
 5. **Use JSON:API format** for v2 API payloads (`{"data": [...]}`)
 6. **Verify build succeeds** before submitting work
+7. **Apply the YAGNI concept from the ExtremeProgramming book**
+8. **Try to reduce complexity when solving problems**
+9. **Tests should be focused, not slop (see Things to Avoid > Don't > 9.)**
+10. **Keep comments up to date! When making changes, it's important to keep things in sync**
 
 ## Troubleshooting Common Issues
 
@@ -186,29 +208,18 @@ See memory: `pagination_strategy.md` and `tidal_api_pagination.md` for full deta
 
 | Function | Endpoint | File | Priority |
 |----------|----------|------|----------|
-| get_favorite_artists | `/users/{uid}/favorites/artists` | client.rs:408 | Medium |
-| get_artist_top_tracks | `/artists/{id}/toptracks` | client.rs:420 | High |
-| get_artist_albums | `/artists/{id}/albums` | client.rs:428 | High |
-| get_artist_eps | `/artists/{id}/albums?filter=ep` | client.rs:436 | High |
-| get_artist_singles | `/artists/{id}/albums?filter=single` | client.rs:447 | High |
-| get_artist_bio | `/artists/{id}/bio` | client.rs:458 | Low (see note) |
-| get_user_playlists | `/users/{uid}/playlists` | client.rs:464 | Medium |
-| get_favorite_playlists | `/users/{uid}/favorites/playlists` | client.rs:476 | Medium |
-| get_favorite_albums (old) | `/users/{uid}/favorites/albums` | client.rs:530 | Deprecated |
-| get_favorite_tracks (old) | `/users/{uid}/favorites/tracks` | client.rs:557 | Deprecated |
-| search | `/search` | client.rs:573 | Deprecated (v2 exists) |
-| get_album_tracks | `/albums/{id}/tracks` | client.rs:600 | Medium |
-| get_track_radio | `/tracks/{id}/radio` | client.rs:614 | Medium |
-| get_artist_radio | `/artists/{id}/radio` | client.rs:622 | Medium |
-| get_track_lyrics | `/tracks/{id}/lyrics` | client.rs:632 | Low |
-| get_stream_url | `/tracks/{id}/playbackinfopostpaywall` | client.rs:702 | Critical |
+| get_favorite_artists | `/users/{uid}/favorites/artists` | client.rs:1410 | Medium |
+| get_favorite_tracks | `/users/{uid}/favorites/tracks` | client.rs:1890 | Medium |
+| get_track_lyrics | `/tracks/{id}/lyrics` | client.rs:2249 | Low |
+| get_stream_url | `/tracks/{id}/playbackinfopostpaywall` | client.rs:2317 | Critical |
+| add_favorite_album | `POST /users/{uid}/favorites/albums` | client.rs:1877 | Low |
+| remove_favorite_album | `DELETE /users/{uid}/favorites/albums/{id}` | client.rs:1885 | Low |
+| add_favorite_track | `POST /users/{uid}/favorites/tracks` | client.rs:2291 | Medium |
+| follow_artist | `POST /users/{uid}/favorites/artists` | client.rs:2299 | Low |
+| remove_favorite_track | `DELETE /users/{uid}/favorites/tracks/{id}` | client.rs:2307 | Medium |
+| unfollow_artist | `DELETE /users/{uid}/favorites/artists/{id}` | client.rs:2312 | Low |
 
-**Note:** Artist bio endpoint returns empty include array for all tested artists (v1 API limitation). See memory: `artist_biography_v2_incomplete.md`
-
-**Hybrid Approach:** The codebase currently:
-- Uses v1 for user favorites and artist catalog data
-- Uses v2 for user collection playlists (newer playlists from web/mobile)
-- Merges both sources in responses.rs (line 151-168)
+**Note:** `get_artist_bio` migrated to v2 (`client.rs:1602` → `OPENAPI_BASE/relationships/biography`). Previous v1 empty-include limitation no longer applies; v2 completeness tracked in `artist_biography_v2_incomplete.md`.
 
 ### Pagination Refactoring Opportunities
 
@@ -230,49 +241,53 @@ ApiResponse::Xxx(items, total) => {
 }
 ```
 
-**Batch Size Inconsistencies:**
-- `get_favorite_artists`: 50 items (mod.rs:129)
-- `get_user_playlists`: 100 items (mod.rs:142)
-- `get_favorite_albums`: 50 items (mod.rs:177)
-- `get_favorite_tracks`: 50 items (mod.rs:189)
-- Artist catalog requests: 20-30 items (varies)
+**Batch Size Inconsistencies (verified on `create-agent-directives`, `src/api/mod.rs` / `client.rs`):**
+- `get_favorite_artists`: 50 items offset-based (`mod.rs:142` → `get_favorite_artists(offset, 50)`)
+- `get_favorite_tracks`: 50 items offset-based (`mod.rs:191` → `get_favorite_tracks(offset, 50)`)
+- `get_favorite_albums`: cursor-based v2 (`mod.rs:184` → `LoadFavAlbums { next_url }` → `client.rs:1787`, API default ~40 initial / 20 paginated via `pagination_cursor`)
+- `get_favorite_playlists` + `get_user_collection_playlists`: cursor-based v2 merged in `mod.rs:154-184` (no fixed limit)
+- Artist catalog (`get_artist_top_tracks` `:1422`, `get_artist_albums` `:1466`, `get_artist_eps` `:1514`, `get_artist_singles` `:1558`): internal `while next_url` full fetch, no caller-side limit
+- `get_album_tracks` `:2135`, `get_playlist_tracks` etc.: cursor-based via `pagination_cursor`
 
-**Refactoring Opportunity:** Create centralized pagination helper with configurable limits
+**Refactoring Opportunity:** Create centralized pagination helper with configurable limits (offset vs cursor)
 
 ### Code Duplication & Standardization Opportunities
 
-**1. Query Parameter Building (4 instances)**
-- Files: `client.rs` lines 240-247, 297-298, 383-393, 658-668
+**1. Query Parameter Building (5+ instances)**
+- Files: `client.rs` in `get()` `:1242`, `get_openapi()` `:1298`, `post_form()` `:1385`, `delete()` `:2271`, `search_*` `:1917` etc.
 - Pattern: Build `all_params` vec, add countryCode, optionally sessionId, extend with params
 - **Opportunity:** Extract to `build_api_params()` helper
 
 **2. Error Response Parsing (2 instances)**
-- Files: `client.rs` lines 281-290 (300 char snippet), 311-314 (400 char snippet)
+- Files: `client.rs` `get()` `:1282-1290` (300 char snippet), `get_openapi()` `:1308-1314` (400 char snippet)
 - Pattern: Log error with body snippet, return formatted error
 - **Opportunity:** Extract to `parse_error_response()` helper
 
 **3. Favorite/Collection Management (4 instances)**
-- Files: `responses.rs` lines 35-39, 43-48, 281-286, 288-293
+- Files: `responses.rs` `:49-52`, `:59-62`, `:480-483`, `:488-491`
 - Pattern: `.retain()`, `total.saturating_sub()`, adjust selection index
 - **Opportunity:** Extract to `remove_item_from_list()` helper
 
 **4. Duplicate Deduplication (2 instances)**
-- Files: `responses.rs` lines 20-24, 59-64
+- Files: `responses.rs` `:20-28` (fav_albums dedup via HashSet), `:66-79` (favorites/playlists dedup)
 - Pattern: Filter out items already in collection using HashSet
 - **Opportunity:** Extract to `deduplicate_by_id()` helper
 
 **5. UI List Item Rendering (75+ instances)**
-- Files: `ui.rs` lines 654-1244+
-- Pattern: Calculate visibility, build ListItem with prefix + title + badge, apply styles
+- Files: `src/ui.rs` in `render_home_section`, `render_artist_list`, `render_fav_albums_list`, `render_artist_tracks_full`, `render_artist_albums` etc.
+- Anchor: `grep -rn "ListItem::new" src/ui.rs` or `grep -n "fn render_" src/ui.rs`
+- Pattern: Calculate visibility (`visible_items`, `ListViewport`), build `ListItem::new(Line::from(...))` with prefix + title + badge, apply styles
 - **Opportunity:** Extract to `create_list_item()` or styling component helper
 
 **6. Data Filtering & Transformation (8 instances)**
-- Files: `responses.rs` lines 20-24, 59-64, 105-107, 122-124
+- Files: `src/app/responses.rs` near `ApiResponse::FavAlbumsPage` / `ApiResponse::Playlists` dedup
+- Anchor: `grep -n "HashSet\|\.retain\|\.iter()\.map" src/app/responses.rs`
 - Pattern: `.iter().map()`, `.filter()`, `.collect()` with custom predicates
 - **Opportunity:** Extract filter predicates to reusable functions
 
 **7. Queue Extension (2 instances)**
-- Files: `responses.rs` lines 200-222, `playback.rs` lines 21, 48
+- Files: `src/app/responses.rs` (`source_playlist_*` handling), `src/app/playback.rs` (`toggle_shuffle`, `queue.shuffle`)
+- Anchor: `grep -n "shuffle\|source_playlist" src/app/playback.rs src/app/responses.rs`
 - Pattern: Extend queue with shuffle handling, track source/offset
 - **Opportunity:** Extract to `extend_queue_with_shuffle()` helper
 
