@@ -11,9 +11,11 @@ impl App {
         match resp {
             ApiResponse::Artists(items, total) => {
                 self.artists.append(items, total);
+                self.artists.exhausted = true;
                 if self.artists_sort.is_none() {
                     self.artists.items.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
                 }
+                self.rebuild_favorite_artist_ids();
             }
 
             ApiResponse::FavAlbumsPage { albums, total, next_url } => {
@@ -70,21 +72,9 @@ impl App {
             }
 
             ApiResponse::Favorites(items, total) => {
-                let was_empty = self.favorites.items.is_empty();
-                let existing_ids: std::collections::HashSet<u64> =
-                    self.favorites.items.iter().map(|t| t.id).collect();
-                let unique: Vec<Track> = items.into_iter()
-                    .filter(|t| !existing_ids.contains(&t.id))
-                    .collect();
-                self.favorites.append(unique, total);
+                self.favorites.append(items, total);
                 if self.favorites_sort.is_none() {
                     self.favorites.items.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
-                }
-                if was_empty && self.now_playing.track.is_none() {
-                    if let Some(first) = self.favorites.items.first().cloned() {
-                        self.now_playing.track = Some(first);
-                        self.fetch_now_playing_metadata();
-                    }
                 }
                 if self.favorites.should_load_more() {
                     self.load_favorites();
@@ -248,6 +238,17 @@ impl App {
                 }
             }
 
+            ApiResponse::ArtistPicture { artist_id, picture_url } => {
+                if let Some(View::ArtistDetail(detail)) = self.view_stack.last_mut() {
+                    if detail.artist.id == artist_id {
+                        if let Some(url) = picture_url {
+                            detail.art_loading = true;
+                            let _ = self.api_tx.send(ApiRequest::FetchArtistArt { artist_id, picture_id: url });
+                        }
+                    }
+                }
+            }
+
             ApiResponse::PlaylistTracks { uuid, tracks, total, next_cursor, description, cover } => {
                 // 1. Update the detail view while it's open.
                 if let Some(View::PlaylistDetail(detail)) = self.view_stack.last_mut() {
@@ -333,82 +334,101 @@ impl App {
             }
 
             ApiResponse::SearchTracks(page) => {
-                // If this is the first page (empty results), replace; otherwise append for pagination
                 if self.search.tracks.is_empty() {
+                    // Initial search response
                     self.search.tracks = page.tracks;
-                    // Auto-load second page if available
                     if let Some(next_url) = &page.next_url {
                         self.search.tracks_awaiting_page2 = true;
                         let _ = self.api_tx.send(ApiRequest::SearchTracksNext {
                             next_url: next_url.clone()
                         });
                     } else {
-                        // No second page available, done loading
-                        self.search.loading = false;
+                        self.search.tracks_awaiting_page2 = false;
+                        if !self.search.artists_awaiting_page2 && !self.search.playlists_awaiting_page2 {
+                            self.search.loading = false;
+                        }
                     }
                 } else {
-                    // This is the second page, append and mark done
+                    // Pagination response - append
                     self.search.tracks.extend(page.tracks);
-                    self.search.tracks_awaiting_page2 = false;
-                    // Check if all categories are done loading
-                    if !self.search.artists_awaiting_page2 && !self.search.playlists_awaiting_page2 {
-                        self.search.loading = false;
+                    if let Some(next_url) = &page.next_url {
+                        let _ = self.api_tx.send(ApiRequest::SearchTracksNext {
+                            next_url: next_url.clone()
+                        });
+                    } else {
+                        self.search.tracks_awaiting_page2 = false;
+                        if !self.search.artists_awaiting_page2 && !self.search.playlists_awaiting_page2 {
+                            self.search.loading = false;
+                        }
                     }
                 }
                 self.search.tracks_next_url = page.next_url;
             }
 
             ApiResponse::SearchArtistsResults(page) => {
-                // If this is the first page (empty results), replace; otherwise append for pagination
                 if self.search.artists.is_empty() {
+                    // Initial search response
                     self.search.artists = page.artists;
-                    // Auto-load second page if available
                     if let Some(next_url) = &page.next_url {
                         self.search.artists_awaiting_page2 = true;
                         let _ = self.api_tx.send(ApiRequest::SearchArtistsNext {
                             next_url: next_url.clone()
                         });
                     } else {
-                        // No second page available, done loading
-                        self.search.loading = false;
+                        self.search.artists_awaiting_page2 = false;
+                        if !self.search.tracks_awaiting_page2 && !self.search.playlists_awaiting_page2 {
+                            self.search.loading = false;
+                        }
                     }
                 } else {
-                    // This is the second page, append and mark done
+                    // Pagination response - append
                     self.search.artists.extend(page.artists);
-                    self.search.artists_awaiting_page2 = false;
-                    // Check if all categories are done loading
-                    if !self.search.tracks_awaiting_page2 && !self.search.playlists_awaiting_page2 {
-                        self.search.loading = false;
+                    if let Some(next_url) = &page.next_url {
+                        let _ = self.api_tx.send(ApiRequest::SearchArtistsNext {
+                            next_url: next_url.clone()
+                        });
+                    } else {
+                        self.search.artists_awaiting_page2 = false;
+                        if !self.search.tracks_awaiting_page2 && !self.search.playlists_awaiting_page2 {
+                            self.search.loading = false;
+                        }
                     }
                 }
                 self.search.artists_next_url = page.next_url;
             }
 
             ApiResponse::SearchPlaylistsResults(page) => {
-                // If this is the first page (empty results), replace; otherwise append for pagination
                 if self.search.playlists.is_empty() {
+                    // Initial search response
                     self.search.playlists = page.playlists;
-                    // Auto-load second page if available
                     if let Some(next_url) = &page.next_url {
                         self.search.playlists_awaiting_page2 = true;
                         let _ = self.api_tx.send(ApiRequest::SearchPlaylistsNext {
                             next_url: next_url.clone()
                         });
                     } else {
-                        // No second page available, done loading
-                        self.search.loading = false;
+                        self.search.playlists_awaiting_page2 = false;
+                        if !self.search.tracks_awaiting_page2 && !self.search.artists_awaiting_page2 {
+                            self.search.loading = false;
+                        }
                     }
                 } else {
-                    // This is the second page, append and mark done
+                    // Pagination response - append
                     self.search.playlists.extend(page.playlists);
-                    self.search.playlists_awaiting_page2 = false;
-                    // Check if all categories are done loading
-                    if !self.search.tracks_awaiting_page2 && !self.search.artists_awaiting_page2 {
-                        self.search.loading = false;
+                    if let Some(next_url) = &page.next_url {
+                        let _ = self.api_tx.send(ApiRequest::SearchPlaylistsNext {
+                            next_url: next_url.clone()
+                        });
+                    } else {
+                        self.search.playlists_awaiting_page2 = false;
+                        if !self.search.tracks_awaiting_page2 && !self.search.artists_awaiting_page2 {
+                            self.search.loading = false;
+                        }
                     }
                 }
                 self.search.playlists_next_url = page.next_url;
             }
+
 
             ApiResponse::StreamUrl { track_id, url } => {
                 let idx = self.now_playing.queue_index;

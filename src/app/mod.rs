@@ -38,6 +38,7 @@ pub struct App {
     pub favorites: StatefulList<Track>,
     pub favorite_track_ids: HashSet<u64>,
     pub favorite_album_ids: HashSet<u64>,
+    pub favorite_artist_ids: HashSet<u64>,
     pub search:    SearchState,
     pub command:   CommandState,
     pub sort_palette:  SortPalette,
@@ -86,6 +87,7 @@ impl App {
             favorites:   StatefulList::default(),
             favorite_track_ids: HashSet::new(),
             favorite_album_ids: HashSet::new(),
+            favorite_artist_ids: HashSet::new(),
             search:      SearchState::default(),
             command:     CommandState::default(),
             sort_palette:    SortPalette::default(),
@@ -94,7 +96,14 @@ impl App {
             artists_sort:    None,
             fav_albums_sort: None,
             playlists_sort:  None,
-            now_playing:  NowPlaying::default(),
+            now_playing: {
+                let mut np = NowPlaying::default();
+                // Load logo as default art
+                if let Ok(logo_bytes) = std::fs::read("assets/wave-logo-320-transparent.png") {
+                    np.art_bytes = Some(logo_bytes);
+                }
+                np
+            },
             queue_focused: false,
             queue_cursor:  0,
             queue_viewport: ListViewport::default(),
@@ -155,6 +164,10 @@ impl App {
 
     pub(crate) fn rebuild_favorite_album_ids(&mut self) {
         self.favorite_album_ids = self.fav_albums.items.iter().map(|a| a.id).collect();
+    }
+
+    pub(crate) fn rebuild_favorite_artist_ids(&mut self) {
+        self.favorite_artist_ids = self.artists.items.iter().map(|a| a.id).collect();
     }
 
     /// Copy a share URL to the system clipboard and confirm via the status toast.

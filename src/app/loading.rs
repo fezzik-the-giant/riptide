@@ -8,7 +8,7 @@ impl App {
     pub fn load_artists(&mut self) {
         if self.artists.loading || self.artists.exhausted { return; }
         self.artists.loading = true;
-        let _ = self.api_tx.send(ApiRequest::LoadArtists { offset: self.artists.next_offset });
+        let _ = self.api_tx.send(ApiRequest::LoadArtists);
     }
 
     pub fn load_fav_albums(&mut self) {
@@ -28,7 +28,7 @@ impl App {
         if self.favorites.loading || self.favorites.exhausted { return; }
         self.favorites.loading = true;
         self.favorites.last_load_triggered_at = self.favorites.items.len();
-        let _ = self.api_tx.send(ApiRequest::LoadFavorites { offset: self.favorites.next_offset });
+        let _ = self.api_tx.send(ApiRequest::LoadFavorites);
     }
 
     pub fn load_more_playlist_tracks(&mut self) {

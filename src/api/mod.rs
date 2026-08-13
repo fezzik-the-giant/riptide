@@ -15,15 +15,16 @@ use models::*;
 
 #[derive(Debug)]
 pub enum ApiRequest {
-    LoadArtists { offset: u32 },
+    LoadArtists,
     LoadPlaylists { offset: u32 },
-    LoadFavorites { offset: u32 },
+    LoadFavorites,
     LoadFavAlbums { next_url: Option<String> },
     LoadArtistTopTracks { artist_id: u64 },
     LoadArtistAlbums { artist_id: u64 },
     LoadArtistEPs { artist_id: u64 },
     LoadArtistSingles { artist_id: u64 },
     LoadArtistBio { artist_id: u64 },
+    LoadArtistPicture { artist_id: u64 },
     LoadAlbum { album_id: u64 },
     LoadAlbumTracks { album_id: u64 },
     FetchAlbumArt { album_id: u64, cover_id: String },
@@ -72,6 +73,7 @@ pub enum ApiResponse {
     ArtistArt { artist_id: u64, image_data: Vec<u8> },
     PlaylistArt { uuid: String, image_data: Vec<u8> },
     ArtistBio { artist_id: u64, text: String },
+    ArtistPicture { artist_id: u64, picture_url: Option<String> },
     PlaylistTracks { uuid: String, tracks: Vec<Track>, total: u32, next_cursor: Option<String>, description: Option<String>, cover: Option<String> },
     SearchTracks(SearchTrackPage),
     SearchArtistsResults(SearchArtistPage),
@@ -139,14 +141,9 @@ impl ApiWorker {
 
 async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse {
     match req {
-        ApiRequest::LoadArtists { offset } => match client.get_favorite_artists(offset, 50).await {
-            Ok(page) => {
-                let artists = page.items.into_iter().map(|e| {
-                    let mut item = e.item;
-                    item.added_at = e.created;
-                    item
-                }).collect();
-                ApiResponse::Artists(artists, page.total)
+        ApiRequest::LoadArtists => match client.get_favorite_artists_v2().await {
+            Ok((artists, total)) => {
+                ApiResponse::Artists(artists, total)
             }
             Err(e) => ApiResponse::Error(e.to_string()),
         },
@@ -188,15 +185,8 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
             Err(e) => ApiResponse::Error(e.to_string()),
         },
 
-        ApiRequest::LoadFavorites { offset } => match client.get_favorite_tracks(offset, 50).await {
-            Ok(page) => {
-                let tracks = page.items.into_iter().map(|e| {
-                    let mut item = e.item;
-                    item.added_at = e.created;
-                    item
-                }).collect();
-                ApiResponse::Favorites(tracks, page.total)
-            }
+        ApiRequest::LoadFavorites => match client.get_favorite_tracks().await {
+            Ok((tracks, total)) => ApiResponse::Favorites(tracks, total),
             Err(e) => ApiResponse::Error(e.to_string()),
         },
 
@@ -236,6 +226,13 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
             };
             let text = strip_wimplinks(&raw);
             ApiResponse::ArtistBio { artist_id, text }
+        }
+
+        ApiRequest::LoadArtistPicture { artist_id } => {
+            match client.get_artist_picture(artist_id).await {
+                Ok(picture_url) => ApiResponse::ArtistPicture { artist_id, picture_url },
+                Err(e) => ApiResponse::Error(format!("artist picture: {e}")),
+            }
         }
 
         ApiRequest::LoadAlbum { album_id } => {

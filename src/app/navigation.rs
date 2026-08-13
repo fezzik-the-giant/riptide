@@ -69,9 +69,8 @@ impl App {
     }
 
     pub fn open_artist(&mut self, artist: Artist) {
+        tracing::debug!("Fetching details for artist {} [{}]", artist.name, artist.id);
         let id = artist.id;
-        let picture_id = artist.picture.clone();
-        let has_picture = picture_id.is_some();
         let mut tracks = StatefulList::default();
         tracks.loading = true;
         let detail = ArtistDetail {
@@ -82,7 +81,7 @@ impl App {
             singles: StatefulList::default(),
             focus: ArtistDetailFocus::Tracks,
             art_bytes: None,
-            art_loading: has_picture,
+            art_loading: false,
             bio: None,
             bio_loading: true,
             bio_scroll: 0,
@@ -90,9 +89,7 @@ impl App {
         self.view_stack.push(View::ArtistDetail(detail));
         let _ = self.api_tx.send(ApiRequest::LoadArtistTopTracks { artist_id: id });
         let _ = self.api_tx.send(ApiRequest::LoadArtistBio      { artist_id: id });
-        if let Some(picture_id) = picture_id {
-            let _ = self.api_tx.send(ApiRequest::FetchArtistArt { artist_id: id, picture_id });
-        }
+        let _ = self.api_tx.send(ApiRequest::LoadArtistPicture  { artist_id: id });
     }
 
     pub fn open_album(&mut self, album: Album) {

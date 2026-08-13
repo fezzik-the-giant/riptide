@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Deserialize)]
 pub struct Page<T> {
     #[serde(rename = "totalNumberOfItems")]
+    #[allow(dead_code)]
     pub total: u32,
     pub items: Vec<T>,
 }
@@ -25,7 +26,6 @@ pub struct ArtistRef {
 pub struct Artist {
     pub id: u64,
     pub name: String,
-    pub picture: Option<String>,
     #[serde(default, skip_deserializing)]
     pub added_at: Option<String>,
 }
@@ -35,12 +35,6 @@ impl Artist {
     pub fn share_url(&self) -> String {
         format!("https://tidal.com/browse/artist/{}", self.id)
     }
-}
-
-#[derive(Debug, Deserialize)]
-pub struct FavoriteArtistEntry {
-    pub created: Option<String>,
-    pub item: Artist,
 }
 
 // ── Albums ────────────────────────────────────────────────────────────────────
@@ -174,12 +168,6 @@ impl Track {
     pub fn share_url(&self) -> String {
         format!("https://tidal.com/browse/track/{}", self.id)
     }
-}
-
-#[derive(Debug, Deserialize)]
-pub struct FavoriteTrackEntry {
-    pub created: Option<String>,
-    pub item: Track,
 }
 
 // ── Playlists ─────────────────────────────────────────────────────────────────

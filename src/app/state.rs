@@ -23,7 +23,7 @@ impl Tab {
     pub fn title(self) -> &'static str {
         match self {
             Tab::Home      => "Home",
-            Tab::Favorites => "Favorites",
+            Tab::Favorites => "Tracks",
             Tab::Artists   => "Artists",
             Tab::Albums    => "Albums",
             Tab::Playlists => "Playlists",

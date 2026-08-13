@@ -953,6 +953,9 @@ fn handle_search_input(app: &mut App, key: KeyEvent) {
                 app.search.modal_open = false;
                 if !query.is_empty() {
                     app.search.loading = true;
+                    app.search.tracks_awaiting_page2 = true;
+                    app.search.artists_awaiting_page2 = true;
+                    app.search.playlists_awaiting_page2 = true;
                     app.search.track_sel = 0;
                     app.search.artist_sel = 0;
                     app.search.playlist_sel = 0;

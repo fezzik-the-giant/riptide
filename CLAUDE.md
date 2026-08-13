@@ -22,6 +22,51 @@ Do NOT write inline comments that paraphrase the next line (`// header`, `// inc
 - Prefer a well-named constant to a magic-number comment: `const HELP_QUERY_MAX: usize = 48` beats `// cap at 48 to avoid modal overflow`.
 - Keep `///` doc comments only for public/exported API where the contract is non-obvious. Private helpers get docs only if the invariant cannot be expressed by the signature/name.
 - Keep only comments that explain non-obvious rationale, invariants, constraints, workarounds, or `// SAFETY:` justifications. When in doubt, delete the comment, a redundant comment is worse than no comment because it drifts and misleads.
+### Current Status
+
+**The v1 → v2 migration is complete.** Every endpoint that can move has moved:
+
+- Favorites (albums, tracks) → ✅ v2 API
+- Follow/unfollow (artists) → ✅ v2 API
+- Search → ✅ v2 API
+- Playlists → ✅ v2 API
+- Albums → ✅ v2 API
+- Artists → ✅ v2 API (incl. top tracks, albums, EPs, singles, bio)
+- Radio (track + artist) → ✅ v2 API
+- Lyrics → ✅ v2 API
+- **Stream URLs → ⛔ stays on v1 permanently (see below)**
+
+### Stream URLs Stay on v1 — Do Not Re-Attempt
+
+`get_stream_url` is the only remaining v1 caller and it is **not** technical
+debt. v2 cannot serve playable audio to this client.
+
+Verified against track 431291038 on a live subscriber token:
+
+- **v1** `playbackinfopostpaywall` → BTS manifest with
+  `{"codecs":"flac","encryptionType":"NONE","urls":[...]}` — a plain HTTPS URL
+  to an unencrypted FLAC that mpv plays directly.
+- **v2** `GET /trackManifests/{id}` → only accepts `manifestType` of `HLS` or
+  `MPEG_DASH` (no BTS). Every combination of `formats` / `usage` / `adaptive`
+  returns CENC-`cbcs` encrypted content: FairPlay (`skd://` initData) on HLS,
+  Widevine + PlayReady PSSH boxes embedded in the `.mpd` on DASH. The
+  `"initData": null` in the DASH JSON is a red herring — the real init data is
+  inside the manifest body.
+
+Decrypting that requires a CDM, which mpv/ffmpeg do not have. TIDAL's Player
+SDK solves it by delegating to a browser's EME stack (`shaka-player`,
+`fairplay-drm.ts`), so adopting it would mean embedding a browser engine and
+dropping mpv entirely — and third-party apps on that path get 30-second
+previews unless the client ID is entitled. Ours is not: `/trackFiles/{id}`
+returns `403 CLIENT_NOT_ENTITLED`.
+
+There is also nothing to gain: v1 already returns the loudness data v2
+advertises (`albumReplayGain`, `trackReplayGain`, both peak amplitudes).
+
+**Consequence:** `const BASE`, `dash_to_hls`, `build_flac_m3u8`, and the
+localhost manifest server in `src/manifest.rs` are load-bearing. Do not remove
+them as "dead v1 code." Full write-up is in the doc comment on
+`get_stream_url` in `src/api/client.rs`.
 
 ### Do NOT Attempt Large Refactors on Long-Lived Branches
 
@@ -204,22 +249,15 @@ GOOD
 
 ### Complete V1 API Usage Inventory
 
-**Still using v1 API endpoints:**
+**Exactly one v1 caller remains, and it is intentional:**
 
-| Function | Endpoint | File | Priority |
-|----------|----------|------|----------|
-| get_favorite_artists | `/users/{uid}/favorites/artists` | client.rs:1410 | Medium |
-| get_favorite_tracks | `/users/{uid}/favorites/tracks` | client.rs:1890 | Medium |
-| get_track_lyrics | `/tracks/{id}/lyrics` | client.rs:2249 | Low |
-| get_stream_url | `/tracks/{id}/playbackinfopostpaywall` | client.rs:2317 | Critical |
-| add_favorite_album | `POST /users/{uid}/favorites/albums` | client.rs:1877 | Low |
-| remove_favorite_album | `DELETE /users/{uid}/favorites/albums/{id}` | client.rs:1885 | Low |
-| add_favorite_track | `POST /users/{uid}/favorites/tracks` | client.rs:2291 | Medium |
-| follow_artist | `POST /users/{uid}/favorites/artists` | client.rs:2299 | Low |
-| remove_favorite_track | `DELETE /users/{uid}/favorites/tracks/{id}` | client.rs:2307 | Medium |
-| unfollow_artist | `DELETE /users/{uid}/favorites/artists/{id}` | client.rs:2312 | Low |
+| Function | Endpoint | File | Status |
+|----------|----------|------|--------|
+| get_stream_url | `/tracks/{id}/playbackinfopostpaywall` | client.rs:3022 | **v1 permanently** — v2 is DRM-encrypted, see "Stream URLs Stay on v1" above |
 
-**Note:** `get_artist_bio` migrated to v2 (`client.rs:1602` → `OPENAPI_BASE/relationships/biography`). Previous v1 empty-include limitation no longer applies; v2 completeness tracked in `artist_biography_v2_incomplete.md`.
+Everything else now targets openapi.tidal.com/v2. The v1 helpers that used to
+back the migrated endpoints (`get`, `post_form`, `delete`, `uid`) have been
+deleted; `const BASE` survives solely for `get_stream_url`.
 
 ### Pagination Refactoring Opportunities
 
