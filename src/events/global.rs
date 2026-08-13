@@ -165,6 +165,22 @@ pub(super) fn handle_global_key(app: &mut App, key: KeyEvent) -> bool {
                 );
             }
         }
+        // Alias for help on top-level tabs that don't use 'h' for navigation.
+        // Guard to avoid hijacking 'h' (left) in detail views and Home/Search;
+        // text boxes and queue focus never reach here (see handle_key dispatch).
+        KeyCode::Char('h') | KeyCode::Char('H') => {
+            let can_open_help = app.view_stack.is_empty()
+                && !app.art_fullscreen
+                && app.current_tab != Tab::Home
+                && app.current_tab != Tab::Search;
+            if can_open_help {
+                app.help_active = true;
+                app.help_scroll = 0;
+                app.help_query.clear();
+            } else {
+                return false;
+            }
+        }
         _ => return false,
     }
     true

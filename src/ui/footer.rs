@@ -37,7 +37,7 @@ pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
     );
 
     let help_span = Span::styled(
-        "? show keybinds",
+        "h/? show keybinds",
         Style::default()
             .fg(Color::White)
             .add_modifier(Modifier::BOLD),
