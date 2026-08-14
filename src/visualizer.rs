@@ -8,7 +8,7 @@ use std::{
     io,
     path::{Path, PathBuf},
     process::Stdio,
-    time::Instant,
+    time::{Duration, Instant},
 };
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
@@ -38,6 +38,9 @@ ascii_max_range = 1000
 bar_delimiter = 59
 frame_delimiter = 10
 "#;
+
+const FRAME_TIMEOUT: Duration = Duration::from_secs(3);
+const MAX_CONSECUTIVE_MALFORMED_FRAMES: usize = 30;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -180,12 +183,20 @@ impl CavaWorker {
         let stderr_task = child.stderr.take().map(|stderr| {
             tokio::spawn(async move {
                 let mut lines = BufReader::new(stderr).lines();
+                let mut last_line = None;
                 while let Ok(Some(line)) = lines.next_line().await {
                     tracing::debug!(message = %line, "CAVA stderr");
+                    if !line.trim().is_empty() {
+                        last_line = Some(line);
+                    }
                 }
+                last_line
             })
         });
         let mut lines = BufReader::new(stdout).lines();
+        let frame_timeout = tokio::time::sleep(FRAME_TIMEOUT);
+        tokio::pin!(frame_timeout);
+        let mut malformed_frames = 0;
 
         let end = loop {
             tokio::select! {
@@ -205,11 +216,28 @@ impl CavaWorker {
                 line = lines.next_line() => {
                     match line {
                         Ok(Some(line)) => match parse_frame(&line) {
-                            Ok(bands) => self.publish(SpectrumState::Active(SpectrumFrame {
-                                bands,
-                                received_at: Instant::now(),
-                            })),
-                            Err(error) => tracing::debug!(%error, "skipping malformed CAVA frame"),
+                            Ok(bands) => {
+                                malformed_frames = 0;
+                                frame_timeout
+                                    .as_mut()
+                                    .reset(tokio::time::Instant::now() + FRAME_TIMEOUT);
+                                self.publish(SpectrumState::Active(SpectrumFrame {
+                                    bands,
+                                    received_at: Instant::now(),
+                                }));
+                            }
+                            Err(error) => {
+                                malformed_frames += 1;
+                                tracing::debug!(%error, "skipping malformed CAVA frame");
+                                if malformed_frames >= MAX_CONSECUTIVE_MALFORMED_FRAMES {
+                                    tracing::warn!(
+                                        malformed_frames,
+                                        "CAVA repeatedly produced malformed output"
+                                    );
+                                    terminate_child(&mut child).await;
+                                    break SessionEnd::Unavailable;
+                                }
+                            }
                         },
                         Ok(None) => {
                             match child.wait().await {
@@ -225,11 +253,25 @@ impl CavaWorker {
                         }
                     }
                 }
+                () = &mut frame_timeout => {
+                    tracing::warn!(
+                        timeout_seconds = FRAME_TIMEOUT.as_secs(),
+                        "timed out waiting for CAVA output"
+                    );
+                    terminate_child(&mut child).await;
+                    break SessionEnd::Unavailable;
+                }
             }
         };
 
         if let Some(task) = stderr_task {
-            let _ = task.await;
+            match task.await {
+                Ok(Some(message)) if matches!(&end, SessionEnd::Unavailable) => {
+                    tracing::warn!(message = %message, "CAVA error output");
+                }
+                Err(error) => tracing::debug!(%error, "failed to collect CAVA stderr"),
+                _ => {}
+            }
         }
         remove_config(&config_path).await;
         end

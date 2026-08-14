@@ -24,8 +24,8 @@ pub(super) fn render_now_playing(f: &mut Frame, app: &App, area: Rect) {
     let sections = Layout::vertical([
         Constraint::Min(0),    // art (see below — it also spans the lyrics rows)
         Constraint::Length(1), // gap
-        Constraint::Length(3), // lyrics — sits directly above the waveform row
-        Constraint::Length(4), // track info / waveform / time and volume
+        Constraint::Length(3), // lyrics — sits directly above the visualization row
+        Constraint::Length(4), // track info / visualization / time and volume
     ])
     .split(inner);
 
