@@ -12,6 +12,7 @@ pub(super) fn handle_command_input(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Esc => {
             app.command.active = false;
+            app.redraw_art_fullscreen();
         }
         KeyCode::Enter => {
             let matches = app.command.matches();
@@ -22,6 +23,7 @@ pub(super) fn handle_command_input(app: &mut App, key: KeyEvent) {
                 execute_command(app, cmd);
             } else {
                 app.command.active = false;
+                app.redraw_art_fullscreen();
             }
         }
         KeyCode::Tab => {
@@ -57,6 +59,7 @@ pub(super) fn handle_command_input(app: &mut App, key: KeyEvent) {
 pub(super) fn execute_command(app: &mut App, cmd: &str) {
     app.command.active = false;
     app.command.input.clear();
+    app.redraw_art_fullscreen();
     let cleanup = |app: &App| {
         if leaving_album(app) { kitty_delete_album_art(); }
         if leaving_artist(app) { kitty_delete_artist_art(); }
@@ -87,6 +90,9 @@ pub(super) fn execute_command(app: &mut App, cmd: &str) {
             app.set_tab(Tab::Search);
             app.search.modal_open = true;
             app.search.query.clear();
+        }
+        "art" => {
+            app.enter_art_fullscreen();
         }
         _ => {}
     }
@@ -131,6 +137,7 @@ pub(super) fn handle_help_input(app: &mut App, key: KeyEvent) {
         KeyCode::Esc => {
             app.help_active = false;
             app.help_scroll = 0;
+            app.redraw_art_fullscreen();
         }
         KeyCode::Up => {
             app.help_scroll = app.help_scroll.saturating_sub(1);
@@ -168,5 +175,43 @@ pub(super) fn handle_artist_selection_input(app: &mut App, key: KeyEvent) {
             app.open_selected_artist_from_selection();
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::KeyModifiers;
+    use tokio::sync::{mpsc, watch};
+
+    use crate::api::ApiRequest;
+    use crate::app::Preferences;
+    use crate::lastfm::LastfmCmd;
+    use crate::mpris::MprisState;
+    use crate::player::PlayerCmd;
+
+    fn app() -> App {
+        let (api_tx, _): (mpsc::UnboundedSender<ApiRequest>, _) = mpsc::unbounded_channel();
+        let (player_tx, _): (mpsc::UnboundedSender<PlayerCmd>, _) = mpsc::unbounded_channel();
+        let (mpris_tx, _) = watch::channel(MprisState::default());
+        let (lastfm_tx, _): (mpsc::UnboundedSender<LastfmCmd>, _) = mpsc::unbounded_channel();
+        App::new(api_tx, player_tx, mpris_tx, lastfm_tx, Preferences::default())
+    }
+
+    #[test]
+    fn dismissing_fullscreen_overlays_requests_a_fresh_art_protocol() {
+        let mut app = app();
+        app.art_fullscreen = true;
+        app.command.active = true;
+        let escape = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+
+        handle_command_input(&mut app, escape);
+        assert!(!app.command.active);
+        assert_eq!(app.art_render_generation, 1);
+
+        app.help_active = true;
+        handle_help_input(&mut app, escape);
+        assert!(!app.help_active);
+        assert_eq!(app.art_render_generation, 2);
     }
 }

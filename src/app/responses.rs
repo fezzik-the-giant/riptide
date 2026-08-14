@@ -165,13 +165,17 @@ impl App {
                 }
 
                 // Also handle when album is loaded for now_playing track (from fetch_now_playing_art)
-                if let Some(track) = &self.now_playing.track {
-                    if track.album.id == album_id {
-                        if let Some(cover_url) = cover {
-                            self.now_playing.art_loading = true;
-                            let _ = self.api_tx.send(ApiRequest::FetchAlbumArt { album_id, cover_id: cover_url });
-                        }
-                    }
+                let mut fetch_presentation = false;
+                let is_now_playing = self.now_playing.track.as_ref()
+                    .map(|track| track.album.id) == Some(album_id);
+                if is_now_playing && let Some(cover_url) = cover {
+                    self.now_playing.art_source = Some(cover_url.clone());
+                    self.now_playing.art_loading = true;
+                    let _ = self.api_tx.send(ApiRequest::FetchAlbumArt { album_id, cover_id: cover_url });
+                    fetch_presentation = self.art_fullscreen;
+                }
+                if fetch_presentation {
+                    self.fetch_presentation_art();
                 }
             }
 
@@ -200,6 +204,15 @@ impl App {
                         detail.art_bytes = Some(image_data);
                         detail.art_loading = false;
                     }
+                }
+            }
+
+            ApiResponse::PresentationArt { album_id, image_data } => {
+                let is_now_playing = self.now_playing.track.as_ref()
+                    .map(|track| track.album.id) == Some(album_id);
+                if is_now_playing {
+                    self.now_playing.presentation_art_bytes = image_data;
+                    self.now_playing.presentation_art_loading = false;
                 }
             }
 
@@ -474,9 +487,13 @@ impl App {
                     if let Some(url) = cover_url {
                         if url.ends_with(".jpg") || url.ends_with(".png") || url.ends_with(".jpeg") {
                             tracing::debug!("TrackDetails has valid image cover_url, fetching");
+                            self.now_playing.art_source = Some(url.clone());
                             self.now_playing.art_loading = true;
                             self.now_playing.art_bytes = None;
                             let _ = self.api_tx.send(ApiRequest::FetchTrackArt { track_id, cover_url: url });
+                            if self.art_fullscreen {
+                                self.fetch_presentation_art();
+                            }
                         } else {
                             tracing::debug!("TrackDetails has non-image cover_url ({}), skipping", url);
                         }

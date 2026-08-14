@@ -26,6 +26,9 @@ pub struct App {
     pub should_quit: bool,
     pub current_tab: Tab,
     pub view_stack: Vec<View>,
+    pub art_fullscreen: bool,
+    /// Changes when fullscreen overlays disappear so terminal image rows are resent.
+    pub art_render_generation: u64,
 
     pub home_new_releases: HomeSection<Playlist>,
     pub home_daily_mixes: HomeSection<Playlist>,
@@ -79,6 +82,8 @@ impl App {
             should_quit: false,
             current_tab: Tab::Home,
             view_stack:  Vec::new(),
+            art_fullscreen: false,
+            art_render_generation: 0,
             home_new_releases: HomeSection::default(),
             home_daily_mixes: HomeSection::default(),
             home_discovery_mixes: HomeSection::default(),
@@ -172,7 +177,16 @@ impl App {
             if set_at.elapsed() > std::time::Duration::from_secs(5) {
                 tracing::debug!("Clearing status after {:.1}s: {}", set_at.elapsed().as_secs_f64(), msg);
                 self.status = None;
+                self.redraw_art_fullscreen();
             }
+        }
+    }
+
+    /// Force a fresh terminal image protocol after an overlay has overwritten
+    /// some of the fullscreen image's virtual-placement cells.
+    pub(crate) fn redraw_art_fullscreen(&mut self) {
+        if self.art_fullscreen {
+            self.art_render_generation = self.art_render_generation.wrapping_add(1);
         }
     }
 

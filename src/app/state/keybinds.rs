@@ -44,6 +44,7 @@ impl KeybindGroup {
                 Keybind { key: "/", action: "Command palette" },
                 Keybind { key: "Tab", action: "Next tab" },
                 Keybind { key: "Shift+Tab", action: "Previous tab" },
+                Keybind { key: "Shift+A", action: "Toggle fullscreen art" },
                 Keybind { key: "Space", action: "Play/Pause" },
                 Keybind { key: "n", action: "Next track" },
                 Keybind { key: "p", action: "Previous track" },

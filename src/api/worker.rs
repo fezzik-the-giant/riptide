@@ -158,15 +158,23 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
         }
 
         ApiRequest::FetchAlbumArt { album_id, cover_id } => {
-            let url = if cover_id.starts_with("http") {
-                cover_id.clone()
-            } else {
-                format!("https://resources.tidal.com/images/{}/320x320.jpg", cover_id.replace('-', "/"))
-            };
+            let url = thumbnail_art_url(&cover_id);
             match client.fetch_bytes(&url).await {
                 Ok(data) => ApiResponse::AlbumArt { album_id, image_data: data },
                 Err(e) => ApiResponse::Error(format!("album art: {e}")),
             }
+        }
+
+        ApiRequest::FetchPresentationArt { album_id, cover_id } => {
+            let url = presentation_art_url(&cover_id);
+            let image_data = match client.fetch_bytes(&url).await {
+                Ok(data) => Some(data),
+                Err(error) => {
+                    tracing::warn!("presentation art unavailable for album {album_id}: {error}");
+                    None
+                }
+            };
+            ApiResponse::PresentationArt { album_id, image_data }
         }
 
         ApiRequest::FetchArtistArt { artist_id, picture_id } => {
@@ -383,6 +391,35 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
     }
 }
 
+fn thumbnail_art_url(cover: &str) -> String {
+    if cover.starts_with("http") {
+        cover.to_string()
+    } else {
+        format!(
+            "https://resources.tidal.com/images/{}/320x320.jpg",
+            cover.replace('-', "/")
+        )
+    }
+}
+
+fn presentation_art_url(cover: &str) -> String {
+    const SIZE: &str = "640x640.jpg";
+    const CDN_PREFIX: &str = "https://resources.tidal.com/images/";
+
+    if let Some(path) = cover.strip_prefix(CDN_PREFIX)
+        && let Some((image_id, _)) = path.rsplit_once('/')
+    {
+        return format!("{CDN_PREFIX}{image_id}/{SIZE}");
+    }
+    if cover.starts_with("http") {
+        return cover.to_string();
+    }
+    format!(
+        "{CDN_PREFIX}{}/{SIZE}",
+        cover.replace('-', "/")
+    )
+}
+
 fn parse_lrc(s: &str) -> Vec<(f64, String)> {
     let mut lines = Vec::new();
     for raw in s.lines() {
@@ -433,6 +470,39 @@ fn strip_wimplinks(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn presentation_art_uses_tidal_medium_resolution_variant() {
+        assert_eq!(
+            presentation_art_url("33fd4c9b-5673-4c1e-bbd4-5346d397b8e0"),
+            "https://resources.tidal.com/images/33fd4c9b/5673/4c1e/bbd4/5346d397b8e0/640x640.jpg"
+        );
+        assert_eq!(
+            presentation_art_url(
+                "https://resources.tidal.com/images/33fd4c9b/5673/4c1e/bbd4/5346d397b8e0/320x320.jpg"
+            ),
+            "https://resources.tidal.com/images/33fd4c9b/5673/4c1e/bbd4/5346d397b8e0/640x640.jpg"
+        );
+    }
+
+    #[test]
+    fn normal_album_art_remains_thumbnail_sized() {
+        assert_eq!(
+            thumbnail_art_url("33fd4c9b-5673-4c1e-bbd4-5346d397b8e0"),
+            "https://resources.tidal.com/images/33fd4c9b/5673/4c1e/bbd4/5346d397b8e0/320x320.jpg"
+        );
+        let existing =
+            "https://resources.tidal.com/images/33fd4c9b/5673/4c1e/bbd4/5346d397b8e0/320x320.jpg";
+        assert_eq!(thumbnail_art_url(existing), existing);
+    }
+
+    #[test]
+    fn presentation_art_preserves_non_tidal_urls() {
+        assert_eq!(
+            presentation_art_url("https://example.com/custom-cover.png"),
+            "https://example.com/custom-cover.png"
+        );
+    }
 
     // ── parse_lrc ─────────────────────────────────────────────────────────────
 

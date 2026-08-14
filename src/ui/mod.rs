@@ -23,6 +23,7 @@ mod tabs;
 mod queue;
 mod overlays;
 mod footer;
+mod art;
 mod home;
 mod now_playing;
 mod search;
@@ -37,6 +38,7 @@ use tabs::*;
 use queue::*;
 use overlays::*;
 use footer::*;
+use art::*;
 use home::*;
 use now_playing::*;
 use search::*;
@@ -47,6 +49,16 @@ use lists::*;
 
 pub fn draw(f: &mut Frame, app: &App) {
     let area = f.area();
+
+    if app.art_fullscreen {
+        render_art_view(f, app, area);
+        render_overlays(f, app, area);
+        return;
+    }
+
+    // Fullscreen protocols can retain a multi-megabyte Kitty transmission.
+    // Once the mode closes, keep only the small thumbnail protocols.
+    release_scaled_protocols();
 
     let rows = Layout::vertical([
         Constraint::Length(3),  // tab bar (boxed active tab needs 3 rows)
@@ -73,6 +85,10 @@ pub fn draw(f: &mut Frame, app: &App) {
     render_now_playing(f, app, rows[2]);
     render_footer(f, app, rows[3]);
 
+    render_overlays(f, app, area);
+}
+
+fn render_overlays(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     if app.command.active {
         render_command_overlay(f, app, area);
     }
@@ -129,4 +145,3 @@ pub fn draw(f: &mut Frame, app: &App) {
 // ── Toast ─────────────────────────────────────────────────────────────────────
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-

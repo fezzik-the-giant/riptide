@@ -32,7 +32,14 @@ pub enum Tab {
 }
 
 impl Tab {
-    pub const ALL: [Tab; 6] = [Tab::Home, Tab::Favorites, Tab::Artists, Tab::Albums, Tab::Playlists, Tab::Search];
+    pub const ALL: [Tab; 6] = [
+        Tab::Home,
+        Tab::Favorites,
+        Tab::Artists,
+        Tab::Albums,
+        Tab::Playlists,
+        Tab::Search,
+    ];
 
     pub fn title(self) -> &'static str {
         match self {

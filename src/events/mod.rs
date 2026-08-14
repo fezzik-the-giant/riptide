@@ -123,6 +123,14 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    // Fullscreen art is a presentation layer over the active view. Only global
+    // controls apply while it is open, so list navigation cannot mutate the
+    // view hidden beneath it.
+    if app.art_fullscreen {
+        handle_global_key(app, key);
+        return;
+    }
+
     // Open search modal when on Search tab
     if app.current_tab == Tab::Search {
         if key.code == KeyCode::Char('/') {
@@ -136,4 +144,3 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         handle_navigation(app, key);
     }
 }
-

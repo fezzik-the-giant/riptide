@@ -12,6 +12,7 @@ does. Stream URLs remain on v1 permanently — the v2 equivalent serves
 DRM-encrypted media that mpv cannot play. See the note on `get_stream_url`.
 
 ### Added
+- Fullscreen album-art mode with `Shift+A`, on-demand high-resolution covers, and a compact playback HUD
 - Sort order, volume, shuffle state and queue visibility now persist across restarts, in a new `prefs` block in `config.json`
   (the Tracks sort is stored as `tracks_sort`)
 - The active sort is shown in each list header, and the sort palette opens on the sort already applied

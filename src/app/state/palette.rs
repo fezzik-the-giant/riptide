@@ -34,9 +34,9 @@ impl Default for CommandState {
 }
 
 impl CommandState {
-    /// The commands offered in the palette, named to match the tab titles.
+    /// Destinations and presentation modes offered in the palette.
     pub const COMMANDS: &'static [&'static str] =
-        &["home", "tracks", "artists", "albums", "playlists", "search"];
+        &["home", "tracks", "artists", "albums", "playlists", "search", "art"];
 
     pub fn matches(&self) -> Vec<&'static str> {
         let q = self.input.to_lowercase();
@@ -60,6 +60,15 @@ mod tests {
         let matches = cmd.matches();
         assert!(matches.contains(&"tracks"));
         assert!(!matches.contains(&"artists"));
+    }
+
+    #[test]
+    fn command_state_finds_art_mode() {
+        let cmd = CommandState {
+            input: "ar".to_string(),
+            ..CommandState::default()
+        };
+        assert_eq!(cmd.matches(), vec!["artists", "art"]);
     }
 
     #[test]

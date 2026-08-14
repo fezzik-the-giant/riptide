@@ -98,6 +98,9 @@ impl App {
 
     pub(crate) fn fetch_now_playing_metadata(&mut self) {
         self.fetch_now_playing_art();
+        if self.art_fullscreen {
+            self.fetch_presentation_art();
+        }
         self.fetch_lyrics();
     }
 
@@ -107,6 +110,9 @@ impl App {
             None => return,
         };
         self.now_playing.art_bytes = None;
+        self.now_playing.art_source = cover_id.clone();
+        self.now_playing.presentation_art_bytes = None;
+        self.now_playing.presentation_art_loading = false;
         tracing::debug!("fetch_now_playing_art: album_id={}, cover={:?}", album_id, cover_id);
         if let Some(cover_id) = cover_id {
             self.now_playing.art_loading = true;
@@ -118,6 +124,30 @@ impl App {
             let _ = self.api_tx.send(ApiRequest::LoadAlbum { album_id });
         } else {
             self.now_playing.art_loading = false;
+        }
+    }
+
+    pub(crate) fn fetch_presentation_art(&mut self) {
+        if self.now_playing.presentation_art_bytes.is_some()
+            || self.now_playing.presentation_art_loading
+        {
+            return;
+        }
+
+        let Some(track) = &self.now_playing.track else { return };
+        let album_id = track.album.id;
+        let cover = self
+            .now_playing
+            .art_source
+            .clone()
+            .or_else(|| track.album.cover.clone());
+
+        if let Some(cover_id) = cover {
+            self.now_playing.art_source = Some(cover_id.clone());
+            self.now_playing.presentation_art_loading = true;
+            let _ = self.api_tx.send(ApiRequest::FetchPresentationArt { album_id, cover_id });
+        } else if album_id > 0 && !self.now_playing.art_loading {
+            let _ = self.api_tx.send(ApiRequest::LoadAlbum { album_id });
         }
     }
 

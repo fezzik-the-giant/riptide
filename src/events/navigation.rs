@@ -442,7 +442,8 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
         KeyCode::Right | KeyCode::Char('l') if app.current_tab == Tab::Search => {
             app.search.next_pane();
         }
-        KeyCode::Right | KeyCode::Char('l') if app.current_tab != Tab::Search && app.current_tab != Tab::Home => {
+        KeyCode::Right | KeyCode::Char('l')
+            if !matches!(app.current_tab, Tab::Home | Tab::Search) => {
             app.focus_queue();
         }
         KeyCode::Enter => match app.current_tab {
