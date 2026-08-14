@@ -29,6 +29,7 @@ sleep_timer = 0
 source = auto
 
 [output]
+# Keep these delimiters and range in sync with parse_frame below.
 method = raw
 channels = mono
 mono_option = average
@@ -108,6 +109,22 @@ enum SessionEnd {
     Unavailable,
 }
 
+#[derive(Default)]
+struct MalformedFrameTracker {
+    consecutive: usize,
+}
+
+impl MalformedFrameTracker {
+    fn record_valid(&mut self) {
+        self.consecutive = 0;
+    }
+
+    fn record_malformed(&mut self) -> bool {
+        self.consecutive += 1;
+        self.consecutive >= MAX_CONSECUTIVE_MALFORMED_FRAMES
+    }
+}
+
 impl CavaWorker {
     pub fn new(
         enabled_rx: watch::Receiver<bool>,
@@ -133,10 +150,12 @@ impl CavaWorker {
                 SessionEnd::SenderClosed => return,
                 SessionEnd::Unavailable => {
                     self.publish(SpectrumState::Unavailable);
-                    if !self.wait_for_enabled_state(false).await {
+                    if self.enabled_rx.changed().await.is_err() {
                         return;
                     }
-                    self.publish(SpectrumState::Disabled);
+                    if !*self.enabled_rx.borrow_and_update() {
+                        self.publish(SpectrumState::Disabled);
+                    }
                 }
             }
         }
@@ -196,7 +215,7 @@ impl CavaWorker {
         let mut lines = BufReader::new(stdout).lines();
         let frame_timeout = tokio::time::sleep(FRAME_TIMEOUT);
         tokio::pin!(frame_timeout);
-        let mut malformed_frames = 0;
+        let mut malformed_frames = MalformedFrameTracker::default();
 
         let end = loop {
             tokio::select! {
@@ -217,7 +236,7 @@ impl CavaWorker {
                     match line {
                         Ok(Some(line)) => match parse_frame(&line) {
                             Ok(bands) => {
-                                malformed_frames = 0;
+                                malformed_frames.record_valid();
                                 frame_timeout
                                     .as_mut()
                                     .reset(tokio::time::Instant::now() + FRAME_TIMEOUT);
@@ -227,11 +246,10 @@ impl CavaWorker {
                                 }));
                             }
                             Err(error) => {
-                                malformed_frames += 1;
                                 tracing::debug!(%error, "skipping malformed CAVA frame");
-                                if malformed_frames >= MAX_CONSECUTIVE_MALFORMED_FRAMES {
+                                if malformed_frames.record_malformed() {
                                     tracing::warn!(
-                                        malformed_frames,
+                                        malformed_frames = malformed_frames.consecutive,
                                         "CAVA repeatedly produced malformed output"
                                     );
                                     terminate_child(&mut child).await;
@@ -406,5 +424,18 @@ mod tests {
     fn parser_clamps_values_and_accepts_any_nonempty_band_count() {
         assert_eq!(parse_frame("-50;1500").unwrap(), vec![0.0, 1.0]);
         assert_eq!(parse_frame("250").unwrap(), vec![0.25]);
+    }
+
+    #[test]
+    fn malformed_frame_cutoff_is_consecutive_and_resets_after_valid_data() {
+        let mut tracker = MalformedFrameTracker::default();
+        for _ in 0..MAX_CONSECUTIVE_MALFORMED_FRAMES - 1 {
+            assert!(!tracker.record_malformed());
+        }
+        tracker.record_valid();
+        for _ in 0..MAX_CONSECUTIVE_MALFORMED_FRAMES - 1 {
+            assert!(!tracker.record_malformed());
+        }
+        assert!(tracker.record_malformed());
     }
 }

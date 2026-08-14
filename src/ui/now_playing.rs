@@ -200,7 +200,7 @@ fn render_center(f: &mut Frame, app: &App, area: Rect) {
 
     let ratio = (app.now_playing.active && app.now_playing.duration > 0.0)
         .then(|| app.now_playing.progress_ratio());
-    if app.visualizer_mode == crate::visualizer::VisualizerMode::Off {
+    if app.visualizer_mode() == crate::visualizer::VisualizerMode::Off {
         let rail = Rect::new(
             area.x,
             area.y + area.height.saturating_sub(1) / 2,
@@ -216,7 +216,7 @@ fn render_center(f: &mut Frame, app: &App, area: Rect) {
     let spectrum_state = app.spectrum_rx.borrow();
     f.render_widget(
         Spectrum {
-            mode: app.visualizer_mode,
+            mode: app.visualizer_mode(),
             state: &spectrum_state,
             tick: app.tick,
         },

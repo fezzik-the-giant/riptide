@@ -193,16 +193,10 @@ fn render_dots(area: Rect, input: &[f32], buffer: &mut Buffer) {
     let bands = resample_bands(input, band_count);
     let mut dots = vec![false; dot_width * dot_height];
     for (index, level) in bands.into_iter().enumerate() {
-        let start = index * dot_width / band_count;
-        let end = (index + 1) * dot_width / band_count;
-        let visible_end = if area.width >= 4 && end.saturating_sub(start) > 1 {
-            end - 1
-        } else {
-            end
-        };
+        let columns = band_span(dot_width, index, band_count, area.width >= 4);
         let filled = (level * dot_height as f32).round() as usize;
         for y in dot_height.saturating_sub(filled.min(dot_height))..dot_height {
-            for x in start..visible_end {
+            for x in columns.clone() {
                 dots[y * dot_width + x] = true;
             }
         }
@@ -296,21 +290,30 @@ fn preferred_band_count(width: u16) -> usize {
 }
 
 fn band_columns(area: Rect, index: usize, band_count: usize) -> (u16, u16) {
+    let columns = band_span(usize::from(area.width), index, band_count, true);
+    (area.x + columns.start as u16, area.x + columns.end as u16)
+}
+
+fn band_span(
+    width: usize,
+    index: usize,
+    band_count: usize,
+    leave_trailing_gap: bool,
+) -> std::ops::Range<usize> {
     if band_count == 0 {
-        return (area.x, area.x);
+        return 0..0;
     }
-    let width = usize::from(area.width);
     let start = index * width / band_count;
     let end = (index + 1) * width / band_count;
-    let visible_end = if end.saturating_sub(start) > 1 {
+    let visible_end = if leave_trailing_gap && end.saturating_sub(start) > 1 {
         end - 1
     } else {
         end
     };
-    (area.x + start as u16, area.x + visible_end as u16)
+    start..visible_end
 }
 
-pub(super) fn resample_bands(input: &[f32], output_len: usize) -> Vec<f32> {
+fn resample_bands(input: &[f32], output_len: usize) -> Vec<f32> {
     if input.is_empty() || output_len == 0 {
         return Vec::new();
     }
@@ -584,6 +587,7 @@ mod tests {
             (Some(0.0), "────"),
             (Some(0.5), "━━╸─"),
             (Some(1.0), "━━━━"),
+            (Some(f64::NAN), "────"),
             (None, "────"),
         ] {
             let mut buffer = Buffer::empty(area);
@@ -606,6 +610,15 @@ mod tests {
         }
         .render(area, &mut unavailable);
         assert!(symbols(&unavailable, area)[1].contains("cava unavailable"));
+
+        let mut starting = Buffer::empty(area);
+        Spectrum {
+            mode: VisualizerMode::Bars,
+            state: &SpectrumState::Starting,
+            tick: 0,
+        }
+        .render(area, &mut starting);
+        assert!(symbols(&starting, area)[1].contains("starting cava"));
 
         let stale_state = SpectrumState::Active(SpectrumFrame {
             bands: vec![1.0; 64],
@@ -631,5 +644,14 @@ mod tests {
         }
         .render(area, &mut off);
         assert_eq!(symbols(&off, area), ["                    "; 3]);
+    }
+
+    #[test]
+    fn band_spans_share_partitioning_and_apply_gaps_only_when_requested() {
+        assert_eq!(band_span(12, 0, 4, true), 0..2);
+        assert_eq!(band_span(12, 0, 4, false), 0..3);
+        assert_eq!(band_span(1, 0, 1, true), 0..1);
+        assert_eq!(band_span(10, 0, 0, true), 0..0);
+        assert_eq!(preferred_band_count(100), 12);
     }
 }
