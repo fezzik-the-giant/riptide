@@ -205,6 +205,36 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  copr-build:
+    name: Build RPM on COPR
+    needs: create-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Trigger COPR build (scm webhook)
+        env:
+          COPR_WEBHOOK_URL: ${{ secrets.COPR_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${COPR_WEBHOOK_URL:-}" ]; then
+            echo "::error::COPR_WEBHOOK_URL secret is not set. Add it in Settings → Secrets → Actions."
+            echo "Find the 'Webhook URL' under your COPR project's Settings → Integrations → Webhook."
+            exit 1
+          fi
+          echo "Tag: ${{ github.ref_name }}"
+          echo "Repo: ${{ github.repository }}"
+          HTTP_CODE=$(curl -sS -o /tmp/copr_resp.txt -w "%{http_code}" \
+            -X POST "$COPR_WEBHOOK_URL")
+          cat /tmp/copr_resp.txt
+          echo "HTTP $HTTP_CODE"
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "::error::COPR webhook returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+
   aur-update:
     name: Update AUR
     needs: create-release
