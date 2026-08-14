@@ -16,11 +16,9 @@ pub struct NowPlaying {
     pub duration: f64,
     pub queue: Vec<Track>,
     pub queue_index: usize,
-    art_bytes: Option<Vec<u8>>,
-    art_content_hash: Option<u64>,
+    art_image: Option<CachedImage>,
     pub art_loading: bool,
-    presentation_art_bytes: Option<Vec<u8>>,
-    presentation_art_content_hash: Option<u64>,
+    presentation_art_image: Option<CachedImage>,
     pub presentation_art_loading: bool,
     pub art_source: Option<String>,
     pub lyrics_synced: Vec<(f64, String)>,
@@ -52,11 +50,9 @@ impl Default for NowPlaying {
             duration: 0.0,
             queue: Vec::new(),
             queue_index: 0,
-            art_bytes: None,
-            art_content_hash: None,
+            art_image: None,
             art_loading: false,
-            presentation_art_bytes: None,
-            presentation_art_content_hash: None,
+            presentation_art_image: None,
             presentation_art_loading: false,
             art_source: None,
             lyrics_synced: Vec::new(),
@@ -77,30 +73,27 @@ impl Default for NowPlaying {
 
 impl NowPlaying {
     pub(crate) fn set_art_bytes(&mut self, bytes: Option<Vec<u8>>) {
-        self.art_content_hash = bytes.as_deref().map(image_content_hash);
-        self.art_bytes = bytes;
+        self.art_image = bytes.map(CachedImage::new);
     }
 
     pub(crate) fn set_presentation_art_bytes(&mut self, bytes: Option<Vec<u8>>) {
-        self.presentation_art_content_hash = bytes.as_deref().map(image_content_hash);
-        self.presentation_art_bytes = bytes;
+        self.presentation_art_image = bytes.map(CachedImage::new);
     }
 
     pub(crate) fn art_bytes(&self) -> Option<&[u8]> {
-        self.art_bytes.as_deref()
+        self.art_image.as_ref().map(CachedImage::bytes)
     }
 
     pub(crate) fn presentation_art_bytes(&self) -> Option<&[u8]> {
-        self.presentation_art_bytes.as_deref()
+        self.presentation_art_image.as_ref().map(CachedImage::bytes)
     }
 
-    pub(crate) fn art_image(&self) -> Option<(&[u8], u64)> {
-        self.art_bytes().zip(self.art_content_hash)
+    pub(crate) fn art_image(&self) -> Option<&CachedImage> {
+        self.art_image.as_ref()
     }
 
-    pub(crate) fn presentation_art_image(&self) -> Option<(&[u8], u64)> {
-        self.presentation_art_bytes()
-            .zip(self.presentation_art_content_hash)
+    pub(crate) fn presentation_art_image(&self) -> Option<&CachedImage> {
+        self.presentation_art_image.as_ref()
     }
 
     pub fn progress_ratio(&self) -> f64 {
@@ -120,7 +113,32 @@ impl NowPlaying {
     }
 }
 
-fn image_content_hash(bytes: &[u8]) -> u64 {
+pub(crate) struct CachedImage {
+    bytes: Vec<u8>,
+    content_hash: u64,
+}
+
+impl CachedImage {
+    pub(crate) fn new(bytes: Vec<u8>) -> Self {
+        let content_hash = image_content_hash(&bytes);
+        Self {
+            bytes,
+            content_hash,
+        }
+    }
+
+    pub(crate) fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    pub(crate) fn content_hash(&self) -> u64 {
+        self.content_hash
+    }
+}
+
+/// Hash image contents rather than their address because allocator reuse can
+/// give different images the same pointer over the lifetime of the process.
+pub(crate) fn image_content_hash(bytes: &[u8]) -> u64 {
     use std::hash::{Hash, Hasher};
 
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -130,4 +148,22 @@ fn image_content_hash(bytes: &[u8]) -> u64 {
 
 pub(super) fn fmt_secs(secs: u32) -> String {
     format!("{}:{:02}", secs / 60, secs % 60)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cached_image_keeps_bytes_and_hash_in_sync() {
+        let mut now_playing = NowPlaying::default();
+        now_playing.set_art_bytes(Some(vec![1, 2, 3]));
+        let first_hash = now_playing.art_image().unwrap().content_hash();
+
+        now_playing.set_art_bytes(Some(vec![3, 2, 1]));
+        let second = now_playing.art_image().unwrap();
+
+        assert_eq!(second.bytes(), [3, 2, 1]);
+        assert_ne!(second.content_hash(), first_hash);
+    }
 }

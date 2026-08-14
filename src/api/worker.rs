@@ -167,8 +167,12 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
 
         ApiRequest::FetchPresentationArt { album_id, cover_id } => {
             let url = presentation_art_url(&cover_id);
+            tracing::debug!(album_id, %url, "fetching presentation artwork");
             let image_data = match client.fetch_bytes(&url).await {
-                Ok(data) => Some(data),
+                Ok(data) => {
+                    tracing::debug!(album_id, bytes = data.len(), "fetched presentation artwork");
+                    Some(data)
+                }
                 Err(error) => {
                     tracing::warn!("presentation art unavailable for album {album_id}: {error}");
                     None
@@ -399,6 +403,8 @@ fn thumbnail_art_url(cover: &str) -> String {
 fn presentation_art_url(cover: &str) -> String {
     const SIZE: &str = "640x640.jpg";
 
+    // The API can return either a bare image id or an already-expanded Tidal
+    // CDN URL. Upgrade only Tidal URLs; custom artwork URLs stay untouched.
     if let Some(path) = cover.strip_prefix(TIDAL_IMAGE_CDN_PREFIX)
         && let Some((image_id, _)) = path.rsplit_once('/')
     {

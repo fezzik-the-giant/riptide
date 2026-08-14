@@ -13,7 +13,7 @@ use ratatui::{
 use ratatui_image::FontSize;
 
 use super::*;
-use crate::app::App;
+use crate::app::{App, CachedImage};
 
 const ART_HUD_HEIGHT: u16 = 5;
 const MAX_ART_EDGE_PIXELS: u32 = 640;
@@ -25,10 +25,11 @@ pub(super) fn render_art_view(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_art(f: &mut Frame, app: &App, area: Rect) {
-    if let Some((bytes, content_hash)) = art_image(app) {
+    if let Some(image) = art_image(app) {
         let art_area = centered_square_art_area(area, get_picker().font_size());
-        render_scaled_image(f, bytes, art_area, content_hash);
-        return;
+        if render_scaled_image(f, image, art_area) {
+            return;
+        }
     }
 
     if area.is_empty() {
@@ -47,7 +48,7 @@ fn render_art(f: &mut Frame, app: &App, area: Rect) {
     );
 }
 
-fn art_image(app: &App) -> Option<(&[u8], u64)> {
+fn art_image(app: &App) -> Option<&CachedImage> {
     app.now_playing
         .presentation_art_image()
         .or_else(|| app.now_playing.art_image())
@@ -161,7 +162,8 @@ fn art_view_layout(area: Rect) -> (Rect, Rect) {
 }
 
 /// Finds the largest cell rectangle whose pixel dimensions are square for the
-/// terminal's detected font, then centers it in the available canvas.
+/// terminal's detected font, caps it at the fetched image's 640-pixel edge,
+/// then centers it in the available canvas.
 fn centered_square_art_area(area: Rect, font_size: FontSize) -> Rect {
     if area.is_empty() || font_size.width == 0 || font_size.height == 0 {
         return Rect::new(area.x, area.y, 0, 0);
@@ -233,14 +235,14 @@ mod tests {
         let mut app = app_with_track();
         app.now_playing.set_art_bytes(Some(vec![3, 2, 0]));
         assert_eq!(
-            art_image(&app).map(|(bytes, _)| bytes),
+            art_image(&app).map(CachedImage::bytes),
             Some([3, 2, 0].as_slice())
         );
 
         app.now_playing
             .set_presentation_art_bytes(Some(vec![12, 8, 0]));
         assert_eq!(
-            art_image(&app).map(|(bytes, _)| bytes),
+            art_image(&app).map(CachedImage::bytes),
             Some([12, 8, 0].as_slice())
         );
     }

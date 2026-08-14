@@ -147,6 +147,7 @@ impl App {
             self.now_playing.presentation_art_loading = true;
             let _ = self.api_tx.send(ApiRequest::FetchPresentationArt { album_id, cover_id });
         } else if album_id > 0 && !self.now_playing.art_loading {
+            self.now_playing.presentation_art_loading = true;
             let _ = self.api_tx.send(ApiRequest::LoadAlbum { album_id });
         }
     }
@@ -158,5 +159,74 @@ impl App {
         self.now_playing.lyrics_plain = Vec::new();
         self.now_playing.lyrics_loading = true;
         let _ = self.api_tx.send(ApiRequest::FetchLyrics { track_id });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::models::{Album, ArtistRef, Track};
+    use crate::app::test_app;
+
+    fn track(cover: Option<&str>) -> Track {
+        Track {
+            id: 1,
+            title: "Track".to_string(),
+            duration: 180,
+            artist: Some(ArtistRef {
+                name: "Artist".to_string(),
+            }),
+            artists: Vec::new(),
+            album: Album {
+                id: 2,
+                title: "Album".to_string(),
+                number_of_tracks: None,
+                release_date: None,
+                cover: cover.map(str::to_string),
+                artist: None,
+                audio_quality: None,
+                media_metadata: None,
+                added_at: None,
+                album_type: None,
+            },
+            audio_quality: None,
+            media_metadata: None,
+            added_at: None,
+        }
+    }
+
+    #[test]
+    fn presentation_art_fetch_is_idempotent_while_loading() {
+        let (mut app, mut api_rx) = test_app();
+        while api_rx.try_recv().is_ok() {}
+        app.now_playing.track = Some(track(Some("cover-id")));
+
+        app.fetch_presentation_art();
+        app.fetch_presentation_art();
+
+        assert!(app.now_playing.presentation_art_loading);
+        assert!(matches!(
+            api_rx.try_recv(),
+            Ok(ApiRequest::FetchPresentationArt { album_id: 2, cover_id })
+                if cover_id == "cover-id"
+        ));
+        assert!(api_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn missing_cover_loads_album_once_and_keeps_loading_visible() {
+        let (mut app, mut api_rx) = test_app();
+        while api_rx.try_recv().is_ok() {}
+        app.now_playing.track = Some(track(None));
+
+        app.fetch_presentation_art();
+        app.fetch_presentation_art();
+
+        assert!(app.now_playing.presentation_art_loading);
+        assert!(matches!(
+            api_rx.try_recv(),
+            Ok(ApiRequest::LoadAlbum { album_id: 2 })
+        ));
+        assert!(api_rx.try_recv().is_err());
     }
 }

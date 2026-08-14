@@ -45,7 +45,6 @@ impl App {
             return;
         }
         self.art_fullscreen = true;
-        self.queue_focused = false;
         self.fetch_presentation_art();
     }
 
@@ -275,17 +274,21 @@ mod tests {
     }
 
     #[test]
-    fn tabs_wrap_between_search_and_home_in_both_directions() {
+    fn switching_tabs_exits_fullscreen_and_resets_queue_focus() {
         let (mut app, _) = test_app();
         app.current_tab = Tab::Search;
+        app.art_fullscreen = true;
         app.queue_focused = true;
 
         app.next_tab();
         assert_eq!(app.current_tab, Tab::Home);
+        assert!(!app.art_fullscreen);
         assert!(!app.queue_focused);
 
+        app.art_fullscreen = true;
         app.prev_tab();
         assert_eq!(app.current_tab, Tab::Search);
+        assert!(!app.art_fullscreen);
     }
 
     #[test]
@@ -296,6 +299,7 @@ mod tests {
         app.now_playing.art_source = Some("cover-id".to_string());
         app.current_tab = Tab::Albums;
         app.open_album(track().album);
+        app.queue_focused = true;
         while api_rx.try_recv().is_ok() {}
 
         app.enter_art_fullscreen();
@@ -303,6 +307,7 @@ mod tests {
         assert!(app.art_fullscreen);
         assert_eq!(app.current_tab, Tab::Albums);
         assert_eq!(app.view_stack.len(), 1);
+        assert!(app.queue_focused);
         assert!(app.now_playing.presentation_art_loading);
         assert!(matches!(
             api_rx.try_recv(),
@@ -314,5 +319,6 @@ mod tests {
         assert!(!app.art_fullscreen);
         assert_eq!(app.current_tab, Tab::Albums);
         assert_eq!(app.view_stack.len(), 1);
+        assert!(app.queue_focused);
     }
 }

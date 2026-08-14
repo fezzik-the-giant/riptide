@@ -3,12 +3,14 @@
 
 //! Terminal image rendering.
 //!
-//! Protocols are cached by content and size; see [`PROTOCOL_CACHE`] for why
-//! that matters for render latency.
+//! Protocols are cached by content, size, and resize behavior; see
+//! [`PROTOCOL_CACHE`] for why that matters for render latency.
 
 use ratatui::Frame;
 use ratatui::layout::{Rect, Size};
 use ratatui_image::{FilterType, Image, Resize, picker::Picker, protocol::Protocol};
+
+use crate::app::{CachedImage, image_content_hash};
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 enum ImageResize {
@@ -46,7 +48,7 @@ thread_local! {
     /// Cached protocols render byte-identical cells on repeat frames, so the
     /// diff emits nothing at all once the image has been sent.
     static PROTOCOL_CACHE: std::cell::RefCell<
-        std::collections::HashMap<ProtocolCacheKey, Protocol>,
+        std::collections::HashMap<ProtocolCacheKey, Option<Protocol>>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
 
     /// Tracks renderer-visible transitions that invalidate the scaled Kitty
@@ -104,16 +106,24 @@ pub(super) fn prepare_image_frame(fullscreen_art: bool, overlay_active: bool) {
 }
 
 fn should_release_scaled_protocol(previous: ImageFrameState, next: ImageFrameState) -> bool {
+    // Closing an overlay exposes cells that the overlay overwrote. Rebuilding
+    // the virtual placement makes the terminal paint those cells again.
     (previous.fullscreen_art && !next.fullscreen_art)
         || (next.fullscreen_art && previous.overlay_active && !next.overlay_active)
 }
 
-pub(super) fn render_image(f: &mut Frame, bytes: &[u8], area: Rect) {
-    render_image_with_resize(f, bytes, area, ImageResize::Fit, image_content_hash(bytes));
+pub(super) fn render_image(f: &mut Frame, bytes: &[u8], area: Rect) -> bool {
+    render_image_with_resize(f, bytes, area, ImageResize::Fit, image_content_hash(bytes))
 }
 
-pub(super) fn render_scaled_image(f: &mut Frame, bytes: &[u8], area: Rect, content_hash: u64) {
-    render_image_with_resize(f, bytes, area, ImageResize::Scale, content_hash);
+pub(super) fn render_scaled_image(f: &mut Frame, image: &CachedImage, area: Rect) -> bool {
+    render_image_with_resize(
+        f,
+        image.bytes(),
+        area,
+        ImageResize::Scale,
+        image.content_hash(),
+    )
 }
 
 fn render_image_with_resize(
@@ -122,9 +132,9 @@ fn render_image_with_resize(
     area: Rect,
     resize: ImageResize,
     content_hash: u64,
-) {
+) -> bool {
     if area.width == 0 || area.height == 0 {
-        return;
+        return false;
     }
 
     let key = ProtocolCacheKey {
@@ -138,10 +148,6 @@ fn render_image_with_resize(
         let mut cache = cache.borrow_mut();
 
         if !cache.contains_key(&key) {
-            let Ok(img) = image::load_from_memory(bytes) else {
-                return;
-            };
-
             // A scaled Kitty protocol can retain a multi-megabyte RGBA
             // transmission. Fullscreen redraws and track changes supersede one
             // another, so keeping more than the current one can
@@ -151,32 +157,39 @@ fn render_image_with_resize(
                 cache.clear();
             }
 
-            let resize = match resize {
+            let img = match image::load_from_memory(bytes) {
+                Ok(img) => img,
+                Err(error) => {
+                    tracing::warn!(%error, bytes = bytes.len(), "failed to decode artwork");
+                    cache.insert(key, None);
+                    return false;
+                }
+            };
+            let protocol_resize = match resize {
                 ImageResize::Fit => Resize::Fit(None),
                 ImageResize::Scale => Resize::Scale(Some(FilterType::CatmullRom)),
             };
-            let Ok(protocol) = get_picker().new_protocol(img, area.into(), resize) else {
-                return;
+            let protocol = match get_picker().new_protocol(img, area.into(), protocol_resize) {
+                Ok(protocol) => protocol,
+                Err(error) => {
+                    tracing::warn!(%error, "failed to prepare artwork for the terminal");
+                    cache.insert(key, None);
+                    return false;
+                }
             };
-            cache.insert(key, protocol);
+            cache.insert(key, Some(protocol));
         }
 
-        if let Some(protocol) = cache.get(&key) {
-            let render_area = match resize {
-                ImageResize::Fit => area,
-                ImageResize::Scale => centered_protocol_area(area, protocol.size()),
-            };
-            f.render_widget(Image::new(protocol), render_area);
-        }
-    });
-}
-
-fn image_content_hash(bytes: &[u8]) -> u64 {
-    use std::hash::{Hash, Hasher};
-
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    bytes.hash(&mut hasher);
-    hasher.finish()
+        let Some(Some(protocol)) = cache.get(&key) else {
+            return false;
+        };
+        let render_area = match resize {
+            ImageResize::Fit => area,
+            ImageResize::Scale => centered_protocol_area(area, protocol.size()),
+        };
+        f.render_widget(Image::new(protocol), render_area);
+        true
+    })
 }
 
 fn prune_superseded_scaled_protocols<T>(
@@ -202,6 +215,7 @@ pub(super) fn centered_protocol_area(area: Rect, size: Size) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ratatui::{Terminal, backend::TestBackend};
     use ratatui_image::FontSize;
 
     #[test]
@@ -275,5 +289,30 @@ mod tests {
         assert!(!should_release_scaled_protocol(art, art_with_overlay));
         assert!(should_release_scaled_protocol(art_with_overlay, art));
         assert!(should_release_scaled_protocol(art, normal));
+    }
+
+    #[test]
+    fn invalid_image_failure_is_cached_and_reported() {
+        let image = CachedImage::new(b"not an image".to_vec());
+        let area = Rect::new(0, 0, 10, 5);
+        let key = ProtocolCacheKey {
+            content_hash: image.content_hash(),
+            width: area.width,
+            height: area.height,
+            resize: ImageResize::Scale,
+        };
+        PROTOCOL_CACHE.with(|cache| cache.borrow_mut().clear());
+
+        let mut rendered = true;
+        let mut terminal = Terminal::new(TestBackend::new(area.width, area.height)).unwrap();
+        terminal
+            .draw(|f| rendered = render_scaled_image(f, &image, area))
+            .unwrap();
+
+        assert!(!rendered);
+        PROTOCOL_CACHE.with(|cache| {
+            assert!(matches!(cache.borrow().get(&key), Some(None)));
+            cache.borrow_mut().clear();
+        });
     }
 }

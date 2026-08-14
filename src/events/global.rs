@@ -112,15 +112,18 @@ mod tests {
     fn shift_a_toggles_fullscreen_without_changing_tabs() {
         let mut app = test_app().0;
         app.current_tab = Tab::Albums;
+        app.queue_focused = true;
         let key = KeyEvent::new(KeyCode::Char('A'), KeyModifiers::SHIFT);
 
         assert!(handle_global_key(&mut app, key));
         assert!(app.art_fullscreen);
         assert_eq!(app.current_tab, Tab::Albums);
+        assert!(app.queue_focused);
 
         assert!(handle_global_key(&mut app, key));
         assert!(!app.art_fullscreen);
         assert_eq!(app.current_tab, Tab::Albums);
+        assert!(app.queue_focused);
     }
 
     #[test]

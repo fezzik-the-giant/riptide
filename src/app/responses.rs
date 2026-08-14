@@ -167,12 +167,17 @@ impl App {
                 // Also handle when album is loaded for now_playing track (from fetch_now_playing_art)
                 let is_now_playing = self.now_playing.track.as_ref()
                     .map(|track| track.album.id) == Some(album_id);
-                if is_now_playing && let Some(cover_url) = cover {
-                    self.now_playing.art_source = Some(cover_url.clone());
-                    self.now_playing.art_loading = true;
-                    let _ = self.api_tx.send(ApiRequest::FetchAlbumArt { album_id, cover_id: cover_url });
-                    if self.art_fullscreen {
-                        self.fetch_presentation_art();
+                if is_now_playing {
+                    if let Some(cover_url) = cover {
+                        self.now_playing.art_source = Some(cover_url.clone());
+                        self.now_playing.art_loading = true;
+                        let _ = self.api_tx.send(ApiRequest::FetchAlbumArt { album_id, cover_id: cover_url });
+                        if self.art_fullscreen {
+                            self.fetch_presentation_art();
+                        }
+                    } else if self.now_playing.art_source.is_none() {
+                        self.now_playing.art_loading = false;
+                        self.now_playing.presentation_art_loading = false;
                     }
                 }
             }
@@ -208,6 +213,12 @@ impl App {
             ApiResponse::PresentationArt { album_id, image_data } => {
                 let is_now_playing = self.now_playing.track.as_ref()
                     .map(|track| track.album.id) == Some(album_id);
+                tracing::debug!(
+                    album_id,
+                    bytes = image_data.as_ref().map_or(0, Vec::len),
+                    is_now_playing,
+                    "received presentation artwork"
+                );
                 if is_now_playing {
                     self.now_playing.set_presentation_art_bytes(image_data);
                     self.now_playing.presentation_art_loading = false;
@@ -687,5 +698,83 @@ impl App {
             }
             PlayerEvent::CurrVolume(v) => { self.now_playing.volume = v}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::test_app;
+
+    fn track(album_id: u64) -> Track {
+        Track {
+            id: 1,
+            title: "Track".to_string(),
+            duration: 180,
+            artist: None,
+            artists: Vec::new(),
+            album: Album {
+                id: album_id,
+                title: "Album".to_string(),
+                number_of_tracks: None,
+                release_date: None,
+                cover: None,
+                artist: None,
+                audio_quality: None,
+                media_metadata: None,
+                added_at: None,
+                album_type: None,
+            },
+            audio_quality: None,
+            media_metadata: None,
+            added_at: None,
+        }
+    }
+
+    #[test]
+    fn stale_presentation_art_does_not_replace_the_current_request() {
+        let mut app = test_app().0;
+        app.now_playing.track = Some(track(2));
+        app.now_playing.presentation_art_loading = true;
+
+        app.handle_api_response(ApiResponse::PresentationArt {
+            album_id: 99,
+            image_data: Some(vec![9, 9, 9]),
+        });
+
+        assert!(app.now_playing.presentation_art_loading);
+        assert!(app.now_playing.presentation_art_bytes().is_none());
+
+        app.handle_api_response(ApiResponse::PresentationArt {
+            album_id: 2,
+            image_data: Some(vec![1, 2, 3]),
+        });
+        assert!(!app.now_playing.presentation_art_loading);
+        assert_eq!(app.now_playing.presentation_art_bytes(), Some([1, 2, 3].as_slice()));
+    }
+
+    #[test]
+    fn album_without_a_cover_finishes_art_loading() {
+        let mut app = test_app().0;
+        app.now_playing.track = Some(track(2));
+        app.now_playing.art_loading = true;
+        app.now_playing.presentation_art_loading = true;
+
+        app.handle_api_response(ApiResponse::AlbumLoaded { album: track(2).album });
+
+        assert!(!app.now_playing.art_loading);
+        assert!(!app.now_playing.presentation_art_loading);
+    }
+
+    #[test]
+    fn unrelated_album_refresh_does_not_cancel_a_known_art_request() {
+        let mut app = test_app().0;
+        app.now_playing.track = Some(track(2));
+        app.now_playing.art_source = Some("cover-id".to_string());
+        app.now_playing.presentation_art_loading = true;
+
+        app.handle_api_response(ApiResponse::AlbumLoaded { album: track(2).album });
+
+        assert!(app.now_playing.presentation_art_loading);
     }
 }
