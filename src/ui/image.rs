@@ -67,7 +67,13 @@ pub(super) fn get_picker() -> &'static Picker {
     PICKER.get_or_init(|| {
         let term = std::env::var("TERM").unwrap_or_else(|_| "unknown".to_string());
         let colorterm = std::env::var("COLORTERM").unwrap_or_else(|_| "not set".to_string());
-        let picker = Picker::from_query_stdio().unwrap_or_else(|_| Picker::halfblocks());
+        let picker = match Picker::from_query_stdio() {
+            Ok(picker) => picker,
+            Err(error) => {
+                tracing::warn!(%error, "failed to detect terminal image protocol; using halfblocks");
+                Picker::halfblocks()
+            }
+        };
         tracing::info!(
             "Terminal: TERM={}, COLORTERM={} → Image protocol: {:?}",
             term,
@@ -161,6 +167,8 @@ fn render_image_with_resize(
                 Ok(img) => img,
                 Err(error) => {
                     tracing::warn!(%error, bytes = bytes.len(), "failed to decode artwork");
+                    // Cache the failure so corrupt bytes do not get decoded and
+                    // logged again on every draw tick.
                     cache.insert(key, None);
                     return false;
                 }
@@ -193,11 +201,13 @@ fn render_image_with_resize(
 }
 
 fn prune_superseded_scaled_protocols<T>(
-    cache: &mut std::collections::HashMap<ProtocolCacheKey, T>,
+    cache: &mut std::collections::HashMap<ProtocolCacheKey, Option<T>>,
     requested: ProtocolCacheKey,
 ) {
     if requested.resize == ImageResize::Scale {
-        cache.retain(|existing, _| existing.resize != ImageResize::Scale || *existing == requested);
+        cache.retain(|existing, protocol| {
+            existing.resize != ImageResize::Scale || *existing == requested || protocol.is_none()
+        });
     }
 }
 
@@ -243,7 +253,7 @@ mod tests {
     }
 
     #[test]
-    fn scaled_protocols_use_one_replaceable_cache_slot() {
+    fn scaled_protocols_use_one_live_cache_slot_and_keep_failures() {
         fn key(content_hash: u64, resize: ImageResize) -> ProtocolCacheKey {
             ProtocolCacheKey {
                 content_hash,
@@ -256,18 +266,26 @@ mod tests {
         let fit = key(1, ImageResize::Fit);
         let old_scale = key(2, ImageResize::Scale);
         let new_scale = key(3, ImageResize::Scale);
-        let mut cache = std::collections::HashMap::from([(fit, ()), (old_scale, ())]);
+        let failed_scale = key(4, ImageResize::Scale);
+        let mut cache = std::collections::HashMap::from([
+            (fit, Some(())),
+            (old_scale, Some(())),
+            (failed_scale, None),
+        ]);
 
         prune_superseded_scaled_protocols(&mut cache, new_scale);
-        cache.insert(new_scale, ());
+        cache.insert(new_scale, Some(()));
 
         assert!(cache.contains_key(&fit));
         assert!(!cache.contains_key(&old_scale));
         assert!(cache.contains_key(&new_scale));
+        assert!(matches!(cache.get(&failed_scale), Some(None)));
         assert_eq!(
             cache
                 .keys()
-                .filter(|key| key.resize == ImageResize::Scale)
+                .filter(|key| {
+                    key.resize == ImageResize::Scale && cache.get(key).is_some_and(Option::is_some)
+                })
                 .count(),
             1,
         );

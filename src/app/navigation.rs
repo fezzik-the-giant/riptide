@@ -308,7 +308,7 @@ mod tests {
         assert_eq!(app.current_tab, Tab::Albums);
         assert_eq!(app.view_stack.len(), 1);
         assert!(app.queue_focused);
-        assert!(app.now_playing.presentation_art_loading);
+        assert!(app.now_playing.presentation_art_loading());
         assert!(matches!(
             api_rx.try_recv(),
             Ok(ApiRequest::FetchPresentationArt { album_id: 2, cover_id })

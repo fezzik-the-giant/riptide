@@ -16,6 +16,8 @@ use super::*;
 use crate::app::{App, CachedImage};
 
 const ART_HUD_HEIGHT: u16 = 5;
+// Keep the terminal protocol bounded to the presentation request's resolution;
+// this also limits memory when a lower-resolution thumbnail is scaled up.
 const MAX_ART_EDGE_PIXELS: u32 = 640;
 
 pub(super) fn render_art_view(f: &mut Frame, app: &App, area: Rect) {
@@ -25,17 +27,20 @@ pub(super) fn render_art_view(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_art(f: &mut Frame, app: &App, area: Rect) {
-    if let Some(image) = art_image(app) {
+    let images = art_images(app);
+    if images.iter().any(Option::is_some) {
         let art_area = centered_square_art_area(area, get_picker().font_size());
-        if render_scaled_image(f, image, art_area) {
-            return;
+        for image in images.into_iter().flatten() {
+            if render_scaled_image(f, image, art_area) {
+                return;
+            }
         }
     }
 
     if area.is_empty() {
         return;
     }
-    let message = if app.now_playing.art_loading || app.now_playing.presentation_art_loading {
+    let message = if app.now_playing.art_loading || app.now_playing.presentation_art_loading() {
         spinner_char(app.tick).to_string()
     } else {
         "No artwork".to_string()
@@ -48,10 +53,11 @@ fn render_art(f: &mut Frame, app: &App, area: Rect) {
     );
 }
 
-fn art_image(app: &App) -> Option<&CachedImage> {
-    app.now_playing
-        .presentation_art_image()
-        .or_else(|| app.now_playing.art_image())
+fn art_images(app: &App) -> [Option<&CachedImage>; 2] {
+    [
+        app.now_playing.presentation_art_image(),
+        app.now_playing.art_image(),
+    ]
 }
 
 fn render_art_hud(f: &mut Frame, app: &App, area: Rect) {
@@ -161,9 +167,8 @@ fn art_view_layout(area: Rect) -> (Rect, Rect) {
     )
 }
 
-/// Finds the largest cell rectangle whose pixel dimensions are square for the
-/// terminal's detected font, caps it at the fetched image's 640-pixel edge,
-/// then centers it in the available canvas.
+/// Finds the largest square pixel surface for the detected font, caps the
+/// rendered surface to bound terminal-protocol memory, and centers it.
 fn centered_square_art_area(area: Rect, font_size: FontSize) -> Rect {
     if area.is_empty() || font_size.width == 0 || font_size.height == 0 {
         return Rect::new(area.x, area.y, 0, 0);
@@ -235,15 +240,15 @@ mod tests {
         let mut app = app_with_track();
         app.now_playing.set_art_bytes(Some(vec![3, 2, 0]));
         assert_eq!(
-            art_image(&app).map(CachedImage::bytes),
-            Some([3, 2, 0].as_slice())
+            art_images(&app).map(|image| image.map(CachedImage::bytes)),
+            [None, Some([3, 2, 0].as_slice())]
         );
 
         app.now_playing
             .set_presentation_art_bytes(Some(vec![12, 8, 0]));
         assert_eq!(
-            art_image(&app).map(CachedImage::bytes),
-            Some([12, 8, 0].as_slice())
+            art_images(&app).map(|image| image.map(CachedImage::bytes)),
+            [Some([12, 8, 0].as_slice()), Some([3, 2, 0].as_slice())]
         );
     }
 

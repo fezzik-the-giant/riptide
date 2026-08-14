@@ -123,7 +123,14 @@ pub(super) fn render_now_playing_art(f: &mut Frame, app: &App, area: Rect) {
     }
 
     if let Some(bytes) = np.art_bytes() {
-        render_image(f, bytes, area);
+        if !render_image(f, bytes, area) {
+            f.render_widget(
+                Paragraph::new("No artwork")
+                    .style(Style::default().fg(DIM))
+                    .alignment(Alignment::Center),
+                area,
+            );
+        }
     } else if np.art_loading {
         f.render_widget(
             Paragraph::new(spinner_char(app.tick).to_string())

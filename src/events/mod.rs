@@ -97,11 +97,6 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
-    if app.queue_focused {
-        handle_queue_input(app, key);
-        return;
-    }
-
     if app.command.active {
         handle_command_input(app, key);
         return;
@@ -131,6 +126,11 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    if app.queue_focused {
+        handle_queue_input(app, key);
+        return;
+    }
+
     // Open search modal when on Search tab
     if app.current_tab == Tab::Search {
         if key.code == KeyCode::Char('/') {
@@ -142,5 +142,34 @@ fn handle_key(app: &mut App, key: KeyEvent) {
 
     if !handle_global_key(app, key) {
         handle_navigation(app, key);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::KeyModifiers;
+    use crate::app::test_app;
+
+    #[test]
+    fn fullscreen_art_preempts_queue_focus_for_escape_and_navigation() {
+        let mut app = test_app().0;
+        app.art_fullscreen = true;
+        app.queue_focused = true;
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE),
+        );
+        assert!(app.art_fullscreen);
+        assert!(app.status.is_none());
+        assert!(app.view_stack.is_empty());
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+        );
+        assert!(!app.art_fullscreen);
+        assert!(app.queue_focused);
     }
 }

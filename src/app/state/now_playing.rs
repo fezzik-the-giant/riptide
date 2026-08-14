@@ -19,7 +19,7 @@ pub struct NowPlaying {
     art_image: Option<CachedImage>,
     pub art_loading: bool,
     presentation_art_image: Option<CachedImage>,
-    pub presentation_art_loading: bool,
+    presentation_art_load: PresentationArtLoad,
     pub art_source: Option<String>,
     pub lyrics_synced: Vec<(f64, String)>,
     pub lyrics_plain: Vec<String>,
@@ -53,7 +53,7 @@ impl Default for NowPlaying {
             art_image: None,
             art_loading: false,
             presentation_art_image: None,
-            presentation_art_loading: false,
+            presentation_art_load: PresentationArtLoad::Idle,
             art_source: None,
             lyrics_synced: Vec::new(),
             lyrics_plain: Vec::new(),
@@ -96,6 +96,30 @@ impl NowPlaying {
         self.presentation_art_image.as_ref()
     }
 
+    pub(crate) fn presentation_art_loading(&self) -> bool {
+        self.presentation_art_load != PresentationArtLoad::Idle
+    }
+
+    pub(crate) fn presentation_art_discovering_cover(&self) -> bool {
+        self.presentation_art_load == PresentationArtLoad::DiscoveringCover
+    }
+
+    pub(crate) fn begin_presentation_art_discovery(&mut self) {
+        self.presentation_art_load = PresentationArtLoad::DiscoveringCover;
+    }
+
+    pub(crate) fn begin_presentation_art_fetch(&mut self) {
+        self.presentation_art_load = PresentationArtLoad::Fetching;
+    }
+
+    pub(crate) fn finish_presentation_art_load(&mut self) {
+        self.presentation_art_load = PresentationArtLoad::Idle;
+    }
+
+    pub(crate) fn is_current_album(&self, album_id: u64) -> bool {
+        self.track.as_ref().map(|track| track.album.id) == Some(album_id)
+    }
+
     pub fn progress_ratio(&self) -> f64 {
         if self.duration > 0.0 {
             (self.position / self.duration).clamp(0.0, 1.0)
@@ -111,6 +135,14 @@ impl NowPlaying {
     pub fn duration_display(&self) -> String {
         fmt_secs(self.duration as u32)
     }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum PresentationArtLoad {
+    #[default]
+    Idle,
+    DiscoveringCover,
+    Fetching,
 }
 
 pub(crate) struct CachedImage {

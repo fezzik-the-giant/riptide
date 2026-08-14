@@ -64,8 +64,10 @@ pub enum ApiResponse {
     ArtistEPs { artist_id: u64, albums: Vec<Album> },
     ArtistSingles { artist_id: u64, albums: Vec<Album> },
     AlbumLoaded { album: Album },
+    AlbumLoadFailed { album_id: u64, error: String },
     AlbumTracks { album_id: u64, tracks: Vec<Track> },
     AlbumArt { album_id: u64, image_data: Vec<u8> },
+    AlbumArtFailed { album_id: u64, error: String },
     PresentationArt { album_id: u64, image_data: Option<Vec<u8>> },
     ArtistArt { artist_id: u64, image_data: Vec<u8> },
     PlaylistArt { uuid: String, image_data: Vec<u8> },
@@ -99,5 +101,6 @@ pub enum ApiResponse {
     NewReleases(Vec<Playlist>),
     TrackDetails { track_id: u64, track: Track, cover_url: Option<String> },
     TrackArt { track_id: u64, image_data: Vec<u8> },
+    TrackArtFailed { track_id: u64, error: String },
     Error(String),
 }

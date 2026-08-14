@@ -112,7 +112,7 @@ impl App {
         self.now_playing.set_art_bytes(None);
         self.now_playing.art_source = cover_id.clone();
         self.now_playing.set_presentation_art_bytes(None);
-        self.now_playing.presentation_art_loading = false;
+        self.now_playing.finish_presentation_art_load();
         tracing::debug!("fetch_now_playing_art: album_id={}, cover={:?}", album_id, cover_id);
         if let Some(cover_id) = cover_id {
             self.now_playing.art_loading = true;
@@ -129,7 +129,7 @@ impl App {
 
     pub(crate) fn fetch_presentation_art(&mut self) {
         if self.now_playing.presentation_art_bytes().is_some()
-            || self.now_playing.presentation_art_loading
+            || self.now_playing.presentation_art_loading()
         {
             return;
         }
@@ -144,10 +144,10 @@ impl App {
 
         if let Some(cover_id) = cover {
             self.now_playing.art_source = Some(cover_id.clone());
-            self.now_playing.presentation_art_loading = true;
+            self.now_playing.begin_presentation_art_fetch();
             let _ = self.api_tx.send(ApiRequest::FetchPresentationArt { album_id, cover_id });
         } else if album_id > 0 && !self.now_playing.art_loading {
-            self.now_playing.presentation_art_loading = true;
+            self.now_playing.begin_presentation_art_discovery();
             let _ = self.api_tx.send(ApiRequest::LoadAlbum { album_id });
         }
     }
@@ -204,7 +204,7 @@ mod tests {
         app.fetch_presentation_art();
         app.fetch_presentation_art();
 
-        assert!(app.now_playing.presentation_art_loading);
+        assert!(app.now_playing.presentation_art_loading());
         assert!(matches!(
             api_rx.try_recv(),
             Ok(ApiRequest::FetchPresentationArt { album_id: 2, cover_id })
@@ -222,7 +222,7 @@ mod tests {
         app.fetch_presentation_art();
         app.fetch_presentation_art();
 
-        assert!(app.now_playing.presentation_art_loading);
+        assert!(app.now_playing.presentation_art_loading());
         assert!(matches!(
             api_rx.try_recv(),
             Ok(ApiRequest::LoadAlbum { album_id: 2 })

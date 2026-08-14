@@ -165,10 +165,12 @@ impl App {
                 }
 
                 // Also handle when album is loaded for now_playing track (from fetch_now_playing_art)
-                let is_now_playing = self.now_playing.track.as_ref()
-                    .map(|track| track.album.id) == Some(album_id);
+                let is_now_playing = self.now_playing.is_current_album(album_id);
                 if is_now_playing {
                     if let Some(cover_url) = cover {
+                        if self.now_playing.presentation_art_discovering_cover() {
+                            self.now_playing.finish_presentation_art_load();
+                        }
                         self.now_playing.art_source = Some(cover_url.clone());
                         self.now_playing.art_loading = true;
                         let _ = self.api_tx.send(ApiRequest::FetchAlbumArt { album_id, cover_id: cover_url });
@@ -177,9 +179,24 @@ impl App {
                         }
                     } else if self.now_playing.art_source.is_none() {
                         self.now_playing.art_loading = false;
-                        self.now_playing.presentation_art_loading = false;
+                        self.now_playing.finish_presentation_art_load();
                     }
                 }
+            }
+
+            ApiResponse::AlbumLoadFailed { album_id, error } => {
+                if let Some(View::AlbumDetail(detail)) = self.view_stack.last_mut()
+                    && detail.album.id == album_id
+                {
+                    detail.art_loading = false;
+                }
+                if self.now_playing.is_current_album(album_id) {
+                    self.now_playing.art_loading = false;
+                    if self.now_playing.presentation_art_discovering_cover() {
+                        self.now_playing.finish_presentation_art_load();
+                    }
+                }
+                self.set_status(format!("album: {error}"), StatusLevel::Error);
             }
 
             ApiResponse::AlbumTracks { album_id, tracks } => {
@@ -194,8 +211,7 @@ impl App {
 
             ApiResponse::AlbumArt { album_id, image_data } => {
                 tracing::debug!("AlbumArt response for album_id={}, bytes={}", album_id, image_data.len());
-                let is_now_playing = self.now_playing.track.as_ref()
-                    .map(|t| t.album.id) == Some(album_id);
+                let is_now_playing = self.now_playing.is_current_album(album_id);
                 tracing::debug!("is_now_playing={}", is_now_playing);
                 if is_now_playing {
                     tracing::debug!("Setting now_playing.art_bytes");
@@ -210,9 +226,20 @@ impl App {
                 }
             }
 
+            ApiResponse::AlbumArtFailed { album_id, error } => {
+                if self.now_playing.is_current_album(album_id) {
+                    self.now_playing.art_loading = false;
+                }
+                if let Some(View::AlbumDetail(detail)) = self.view_stack.last_mut()
+                    && detail.album.id == album_id
+                {
+                    detail.art_loading = false;
+                }
+                self.set_status(format!("album art: {error}"), StatusLevel::Error);
+            }
+
             ApiResponse::PresentationArt { album_id, image_data } => {
-                let is_now_playing = self.now_playing.track.as_ref()
-                    .map(|track| track.album.id) == Some(album_id);
+                let is_now_playing = self.now_playing.is_current_album(album_id);
                 tracing::debug!(
                     album_id,
                     bytes = image_data.as_ref().map_or(0, Vec::len),
@@ -221,7 +248,7 @@ impl App {
                 );
                 if is_now_playing {
                     self.now_playing.set_presentation_art_bytes(image_data);
-                    self.now_playing.presentation_art_loading = false;
+                    self.now_playing.finish_presentation_art_load();
                 }
             }
 
@@ -517,6 +544,13 @@ impl App {
                 }
             }
 
+            ApiResponse::TrackArtFailed { track_id, error } => {
+                if self.now_playing.track.as_ref().map(|track| track.id) == Some(track_id) {
+                    self.now_playing.art_loading = false;
+                }
+                self.set_status(format!("track art: {error}"), StatusLevel::Error);
+            }
+
             ApiResponse::FavoriteAdded | ApiResponse::ArtistFollowed => {}
 
             ApiResponse::FavoriteRemoved { track_id } => {
@@ -735,21 +769,21 @@ mod tests {
     fn stale_presentation_art_does_not_replace_the_current_request() {
         let mut app = test_app().0;
         app.now_playing.track = Some(track(2));
-        app.now_playing.presentation_art_loading = true;
+        app.now_playing.begin_presentation_art_fetch();
 
         app.handle_api_response(ApiResponse::PresentationArt {
             album_id: 99,
             image_data: Some(vec![9, 9, 9]),
         });
 
-        assert!(app.now_playing.presentation_art_loading);
+        assert!(app.now_playing.presentation_art_loading());
         assert!(app.now_playing.presentation_art_bytes().is_none());
 
         app.handle_api_response(ApiResponse::PresentationArt {
             album_id: 2,
             image_data: Some(vec![1, 2, 3]),
         });
-        assert!(!app.now_playing.presentation_art_loading);
+        assert!(!app.now_playing.presentation_art_loading());
         assert_eq!(app.now_playing.presentation_art_bytes(), Some([1, 2, 3].as_slice()));
     }
 
@@ -758,12 +792,12 @@ mod tests {
         let mut app = test_app().0;
         app.now_playing.track = Some(track(2));
         app.now_playing.art_loading = true;
-        app.now_playing.presentation_art_loading = true;
+        app.now_playing.begin_presentation_art_discovery();
 
         app.handle_api_response(ApiResponse::AlbumLoaded { album: track(2).album });
 
         assert!(!app.now_playing.art_loading);
-        assert!(!app.now_playing.presentation_art_loading);
+        assert!(!app.now_playing.presentation_art_loading());
     }
 
     #[test]
@@ -771,10 +805,70 @@ mod tests {
         let mut app = test_app().0;
         app.now_playing.track = Some(track(2));
         app.now_playing.art_source = Some("cover-id".to_string());
-        app.now_playing.presentation_art_loading = true;
+        app.now_playing.begin_presentation_art_fetch();
 
         app.handle_api_response(ApiResponse::AlbumLoaded { album: track(2).album });
 
-        assert!(app.now_playing.presentation_art_loading);
+        assert!(app.now_playing.presentation_art_loading());
+    }
+
+    #[test]
+    fn discovered_cover_starts_the_presentation_fetch() {
+        let (mut app, mut api_rx) = test_app();
+        while api_rx.try_recv().is_ok() {}
+        app.now_playing.track = Some(track(2));
+        app.now_playing.begin_presentation_art_discovery();
+        app.art_fullscreen = true;
+        let mut album = track(2).album;
+        album.cover = Some("cover-id".to_string());
+
+        app.handle_api_response(ApiResponse::AlbumLoaded { album });
+
+        assert!(app.now_playing.presentation_art_loading());
+        assert!(matches!(
+            api_rx.try_recv(),
+            Ok(ApiRequest::FetchAlbumArt { album_id: 2, cover_id })
+                if cover_id == "cover-id"
+        ));
+        assert!(matches!(
+            api_rx.try_recv(),
+            Ok(ApiRequest::FetchPresentationArt { album_id: 2, cover_id })
+                if cover_id == "cover-id"
+        ));
+    }
+
+    #[test]
+    fn album_lookup_failure_finishes_discovery() {
+        let mut app = test_app().0;
+        app.now_playing.track = Some(track(2));
+        app.now_playing.art_loading = true;
+        app.now_playing.begin_presentation_art_discovery();
+
+        app.handle_api_response(ApiResponse::AlbumLoadFailed {
+            album_id: 2,
+            error: "offline".to_string(),
+        });
+
+        assert!(!app.now_playing.art_loading);
+        assert!(!app.now_playing.presentation_art_loading());
+        assert!(matches!(
+            &app.status,
+            Some((message, StatusLevel::Error, _)) if message == "album: offline"
+        ));
+    }
+
+    #[test]
+    fn unavailable_presentation_art_finishes_loading() {
+        let mut app = test_app().0;
+        app.now_playing.track = Some(track(2));
+        app.now_playing.begin_presentation_art_fetch();
+
+        app.handle_api_response(ApiResponse::PresentationArt {
+            album_id: 2,
+            image_data: None,
+        });
+
+        assert!(!app.now_playing.presentation_art_loading());
+        assert!(app.now_playing.presentation_art_bytes().is_none());
     }
 }

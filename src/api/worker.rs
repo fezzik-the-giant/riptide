@@ -146,7 +146,10 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
         ApiRequest::LoadAlbum { album_id } => {
             match client.get_album(album_id).await {
                 Ok((album, _cover_url)) => ApiResponse::AlbumLoaded { album },
-                Err(e) => ApiResponse::Error(format!("album: {e}")),
+                Err(error) => ApiResponse::AlbumLoadFailed {
+                    album_id,
+                    error: error.to_string(),
+                },
             }
         }
 
@@ -161,7 +164,10 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
             let url = thumbnail_art_url(&cover_id);
             match client.fetch_bytes(&url).await {
                 Ok(data) => ApiResponse::AlbumArt { album_id, image_data: data },
-                Err(e) => ApiResponse::Error(format!("album art: {e}")),
+                Err(error) => ApiResponse::AlbumArtFailed {
+                    album_id,
+                    error: error.to_string(),
+                },
             }
         }
 
@@ -361,7 +367,10 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
         ApiRequest::FetchTrackArt { track_id, cover_url } => {
             match client.fetch_bytes(&cover_url).await {
                 Ok(data) => ApiResponse::TrackArt { track_id, image_data: data },
-                Err(e) => ApiResponse::Error(format!("track art: {e}")),
+                Err(error) => ApiResponse::TrackArtFailed {
+                    track_id,
+                    error: error.to_string(),
+                },
             }
         }
 
