@@ -9,7 +9,7 @@ use ratatui::{
     style::Style,
     widgets::{Paragraph, Widget},
 };
-use std::{borrow::Cow, time::Duration};
+use std::time::Duration;
 
 use super::{ACCENT, DIM};
 use crate::visualizer::{SpectrumState, VisualizerMode};
@@ -70,34 +70,29 @@ impl Widget for Spectrum<'_> {
 
         let bands = match self.state {
             SpectrumState::Active(frame) if frame.received_at.elapsed() <= FRAME_STALE_AFTER => {
-                Cow::Borrowed(frame.bands.as_slice())
+                frame.bands.as_slice()
             }
-            SpectrumState::Active(frame) => Cow::Owned(vec![0.0; frame.bands.len()]),
+            SpectrumState::Active(_) => &[] as &[f32],
             SpectrumState::Starting => {
                 render_diagnostic("starting cava", area, buffer);
                 return;
             }
-            SpectrumState::Unavailable(reason) => {
-                let message = match reason {
-                    crate::visualizer::UnavailableReason::MissingBinary
-                    | crate::visualizer::UnavailableReason::SpawnFailed
-                    | crate::visualizer::UnavailableReason::Exited => "cava unavailable",
-                };
-                render_diagnostic(message, area, buffer);
+            SpectrumState::Unavailable => {
+                render_diagnostic("cava unavailable", area, buffer);
                 return;
             }
-            SpectrumState::Disabled => Cow::Borrowed(&[] as &[f32]),
+            SpectrumState::Disabled => &[],
         };
 
         // Rendering concepts are adapted from CLIamp's MIT-licensed modes; see
         // THIRD_PARTY_NOTICES.md for the source and copyright notice.
         match self.mode {
-            VisualizerMode::Bars => render_bars(area, &bands, buffer),
-            VisualizerMode::Outline => render_outline(area, &bands, buffer),
-            VisualizerMode::Columns => render_columns(area, &bands, buffer),
-            VisualizerMode::Bricks => render_bricks(area, &bands, buffer),
-            VisualizerMode::Dots => render_dots(area, &bands, buffer),
-            VisualizerMode::Butterfly => render_butterfly(area, &bands, self.tick, buffer),
+            VisualizerMode::Bars => render_bars(area, bands, buffer),
+            VisualizerMode::Outline => render_outline(area, bands, buffer),
+            VisualizerMode::Columns => render_columns(area, bands, buffer),
+            VisualizerMode::Bricks => render_bricks(area, bands, buffer),
+            VisualizerMode::Dots => render_dots(area, bands, buffer),
+            VisualizerMode::Butterfly => render_butterfly(area, bands, self.tick, buffer),
             VisualizerMode::Off => {}
         }
     }
@@ -116,21 +111,8 @@ fn render_bars(area: Rect, input: &[f32], buffer: &mut Buffer) {
     let bands = resample_bands(input, band_count);
 
     for (index, level) in bands.into_iter().enumerate() {
-        let filled_eighths = (level * f32::from(area.height) * 8.0).round() as u16;
         let (start, end) = band_columns(area, index, band_count);
-        for y_offset in 0..area.height {
-            let eighths_below = (area.height - y_offset - 1) * 8;
-            let cell_fill = filled_eighths.saturating_sub(eighths_below).min(8);
-            if cell_fill == 0 {
-                continue;
-            }
-            for x in start..end {
-                if let Some(cell) = buffer.cell_mut((x, area.y + y_offset)) {
-                    cell.set_symbol(BLOCKS[cell_fill as usize])
-                        .set_style(Style::default().fg(ACCENT));
-                }
-            }
-        }
+        render_vertical_band(area, level, start, end, buffer);
     }
 }
 
@@ -159,13 +141,21 @@ fn render_outline(area: Rect, input: &[f32], buffer: &mut Buffer) {
 fn render_columns(area: Rect, input: &[f32], buffer: &mut Buffer) {
     let bands = resample_bands(input, usize::from(area.width));
     for (x_offset, level) in bands.into_iter().enumerate() {
-        let filled_eighths = (level * f32::from(area.height) * 8.0).round() as u16;
-        for y_offset in 0..area.height {
-            let eighths_below = (area.height - y_offset - 1) * 8;
-            let cell_fill = filled_eighths.saturating_sub(eighths_below).min(8);
-            if cell_fill > 0
-                && let Some(cell) = buffer.cell_mut((area.x + x_offset as u16, area.y + y_offset))
-            {
+        let x = area.x + x_offset as u16;
+        render_vertical_band(area, level, x, x + 1, buffer);
+    }
+}
+
+fn render_vertical_band(area: Rect, level: f32, start: u16, end: u16, buffer: &mut Buffer) {
+    let filled_eighths = (level * f32::from(area.height) * 8.0).round() as u16;
+    for y_offset in 0..area.height {
+        let eighths_below = (area.height - y_offset - 1) * 8;
+        let cell_fill = filled_eighths.saturating_sub(eighths_below).min(8);
+        if cell_fill == 0 {
+            continue;
+        }
+        for x in start..end {
+            if let Some(cell) = buffer.cell_mut((x, area.y + y_offset)) {
                 cell.set_symbol(BLOCKS[cell_fill as usize])
                     .set_style(Style::default().fg(ACCENT));
             }
@@ -373,7 +363,7 @@ pub(super) fn resample_bands(input: &[f32], output_len: usize) -> Vec<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::visualizer::{SpectrumFrame, UnavailableReason};
+    use crate::visualizer::SpectrumFrame;
     use std::time::Instant;
 
     fn symbols(buffer: &Buffer, area: Rect) -> Vec<String> {
@@ -611,7 +601,7 @@ mod tests {
         let mut unavailable = Buffer::empty(area);
         Spectrum {
             mode: VisualizerMode::Bars,
-            state: &SpectrumState::Unavailable(UnavailableReason::MissingBinary),
+            state: &SpectrumState::Unavailable,
             tick: 0,
         }
         .render(area, &mut unavailable);

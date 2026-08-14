@@ -3,7 +3,7 @@
 
 //! Optional CAVA spectrum capture and the state shared with the terminal UI.
 
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use std::{
     io,
     path::{Path, PathBuf},
@@ -39,17 +39,18 @@ bar_delimiter = 59
 frame_delimiter = 10
 "#;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum VisualizerMode {
-    #[default]
-    Off,
     Bars,
     Outline,
     Columns,
     Bricks,
     Dots,
     Butterfly,
+    #[default]
+    #[serde(other)]
+    Off,
 }
 
 impl VisualizerMode {
@@ -78,24 +79,6 @@ impl VisualizerMode {
     }
 }
 
-impl<'de> Deserialize<'de> for VisualizerMode {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        Ok(match value.as_str() {
-            "bars" => Self::Bars,
-            "outline" => Self::Outline,
-            "columns" => Self::Columns,
-            "bricks" => Self::Bricks,
-            "dots" => Self::Dots,
-            "butterfly" => Self::Butterfly,
-            _ => Self::Off,
-        })
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct SpectrumFrame {
     pub bands: Vec<f32>,
@@ -108,14 +91,7 @@ pub enum SpectrumState {
     Disabled,
     Starting,
     Active(SpectrumFrame),
-    Unavailable(UnavailableReason),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UnavailableReason {
-    MissingBinary,
-    SpawnFailed,
-    Exited,
+    Unavailable,
 }
 
 pub struct CavaWorker {
@@ -126,7 +102,7 @@ pub struct CavaWorker {
 enum SessionEnd {
     Disabled,
     SenderClosed,
-    Unavailable(UnavailableReason),
+    Unavailable,
 }
 
 impl CavaWorker {
@@ -144,7 +120,7 @@ impl CavaWorker {
         self.publish(SpectrumState::Disabled);
 
         loop {
-            if !self.wait_until_enabled().await {
+            if !self.wait_for_enabled_state(true).await {
                 return;
             }
 
@@ -152,9 +128,9 @@ impl CavaWorker {
             match self.run_session().await {
                 SessionEnd::Disabled => self.publish(SpectrumState::Disabled),
                 SessionEnd::SenderClosed => return,
-                SessionEnd::Unavailable(reason) => {
-                    self.publish(SpectrumState::Unavailable(reason));
-                    if !self.wait_until_disabled().await {
+                SessionEnd::Unavailable => {
+                    self.publish(SpectrumState::Unavailable);
+                    if !self.wait_for_enabled_state(false).await {
                         return;
                     }
                     self.publish(SpectrumState::Disabled);
@@ -163,26 +139,11 @@ impl CavaWorker {
         }
     }
 
-    async fn wait_until_enabled(&mut self) -> bool {
-        loop {
-            if *self.enabled_rx.borrow_and_update() {
-                return true;
-            }
-            if self.enabled_rx.changed().await.is_err() {
-                return false;
-            }
-        }
-    }
-
-    async fn wait_until_disabled(&mut self) -> bool {
-        loop {
-            if !*self.enabled_rx.borrow_and_update() {
-                return true;
-            }
-            if self.enabled_rx.changed().await.is_err() {
-                return false;
-            }
-        }
+    async fn wait_for_enabled_state(&mut self, desired: bool) -> bool {
+        self.enabled_rx
+            .wait_for(|enabled| *enabled == desired)
+            .await
+            .is_ok()
     }
 
     async fn run_session(&mut self) -> SessionEnd {
@@ -190,7 +151,7 @@ impl CavaWorker {
         if let Err(error) = tokio::fs::write(&config_path, CAVA_CONFIG).await {
             tracing::warn!(path = %config_path.display(), %error, "failed to write CAVA config");
             remove_config(&config_path).await;
-            return SessionEnd::Unavailable(UnavailableReason::SpawnFailed);
+            return SessionEnd::Unavailable;
         }
 
         let mut child = match Command::new("cava")
@@ -203,14 +164,9 @@ impl CavaWorker {
         {
             Ok(child) => child,
             Err(error) => {
-                let reason = if error.kind() == io::ErrorKind::NotFound {
-                    UnavailableReason::MissingBinary
-                } else {
-                    UnavailableReason::SpawnFailed
-                };
                 tracing::warn!(%error, "failed to start CAVA");
                 remove_config(&config_path).await;
-                return SessionEnd::Unavailable(reason);
+                return SessionEnd::Unavailable;
             }
         };
 
@@ -218,7 +174,7 @@ impl CavaWorker {
             tracing::warn!("CAVA started without a stdout pipe");
             terminate_child(&mut child).await;
             remove_config(&config_path).await;
-            return SessionEnd::Unavailable(UnavailableReason::SpawnFailed);
+            return SessionEnd::Unavailable;
         };
 
         let stderr_task = child.stderr.take().map(|stderr| {
@@ -260,12 +216,12 @@ impl CavaWorker {
                                 Ok(status) => tracing::warn!(%status, "CAVA exited"),
                                 Err(error) => tracing::warn!(%error, "failed to wait for CAVA"),
                             }
-                            break SessionEnd::Unavailable(UnavailableReason::Exited);
+                            break SessionEnd::Unavailable;
                         }
                         Err(error) => {
                             tracing::warn!(%error, "failed to read CAVA output");
                             terminate_child(&mut child).await;
-                            break SessionEnd::Unavailable(UnavailableReason::Exited);
+                            break SessionEnd::Unavailable;
                         }
                     }
                 }
