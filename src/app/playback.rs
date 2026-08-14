@@ -328,7 +328,17 @@ mod tests {
         let (player_tx, _) = tokio::sync::mpsc::unbounded_channel();
         let (mpris_tx, _)  = tokio::sync::watch::channel(MprisState::default());
         let (lastfm_tx, _) = tokio::sync::mpsc::unbounded_channel();
-        App::new(api_tx, player_tx, mpris_tx, lastfm_tx, crate::app::Preferences::default())
+        let (visualizer_enabled_tx, _) = tokio::sync::watch::channel(false);
+        let (_, spectrum_rx) = tokio::sync::watch::channel(crate::visualizer::SpectrumState::Disabled);
+        App::new(
+            api_tx,
+            player_tx,
+            mpris_tx,
+            lastfm_tx,
+            visualizer_enabled_tx,
+            spectrum_rx,
+            crate::app::Preferences::default(),
+        )
     }
 
     // ── Shuffle ───────────────────────────────────────────────────────────────

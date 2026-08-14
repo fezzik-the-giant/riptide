@@ -49,6 +49,8 @@ impl KeybindGroup {
                 Keybind { key: "p", action: "Previous track" },
                 Keybind { key: "z", action: "Toggle shuffle" },
                 Keybind { key: "t", action: "Show/hide queue" },
+                Keybind { key: "v", action: "Cycle visualizer" },
+                Keybind { key: "V", action: "Disable visualizer" },
                 Keybind { key: "+ or =", action: "Volume Up"},
                 Keybind { key: "-", action: "Volume Down"},
                 Keybind { key: "Esc", action: "Back/Go up" },

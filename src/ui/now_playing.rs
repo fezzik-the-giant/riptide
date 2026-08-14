@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ryan Cohan
 
-//! The now-playing bar: art, lyrics, track info and the waveform.
+//! The now-playing bar: art, lyrics, track info and playback visualization.
 
 use ratatui::{
     Frame,
@@ -102,7 +102,7 @@ pub(super) fn render_now_playing(f: &mut Frame, app: &App, area: Rect) {
     };
     f.render_widget(Paragraph::new(track_info), cols[0]);
 
-    f.render_widget(render_squib(app, cols[1].width), cols[1]);
+    render_center(f, app, cols[1]);
 
     let time_str = format!("{} / {}", app.now_playing.position_display(), app.now_playing.duration_display());
     let volume_str = format!("Volume: {}%", app.now_playing.volume);
@@ -193,29 +193,33 @@ pub(super) fn render_lyrics(f: &mut Frame, app: &App, area: Rect) {
     }
 }
 
-/// Animated waveform squib: undulates while playing, flat line while paused.
-/// The played portion is highlighted in ACCENT, the remainder in DIM.
-pub(super) fn render_squib(app: &App, width: u16) -> Paragraph<'static> {
-    const WAVE: [&str; 8] = ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
+fn render_center(f: &mut Frame, app: &App, area: Rect) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
 
-    let ratio = app.now_playing.progress_ratio();
-    let played_w = ((width as f64 * ratio) as u16).min(width);
-    let playing = app.now_playing.active && !app.now_playing.paused;
+    let ratio = (app.now_playing.active && app.now_playing.duration > 0.0)
+        .then(|| app.now_playing.progress_ratio());
+    if app.visualizer_mode == crate::visualizer::VisualizerMode::Off {
+        let rail = Rect::new(
+            area.x,
+            area.y + area.height.saturating_sub(1) / 2,
+            area.width,
+            1,
+        );
+        f.render_widget(ProgressRail { ratio }, rail);
+        return;
+    }
 
-    let spans: Vec<Span<'static>> = (0..width)
-        .map(|i| {
-            let color = if i < played_w { ACCENT } else { DIM };
-            let ch: &'static str = if playing {
-                // Sine wave: spatial frequency ~1 cycle per 8 cols, phase advances with tick
-                let phase = i as f64 * 0.8 + app.tick as f64 * 0.35;
-                let t = (phase.sin() + 1.0) / 2.0; // 0.0 – 1.0
-                WAVE[(t * 7.99) as usize]
-            } else {
-                "▄" // flat mid-height line when paused or idle
-            };
-            Span::styled(ch, Style::default().fg(color))
-        })
-        .collect();
-
-    Paragraph::new(Line::from(spans))
+    let rail = Rect::new(area.x, area.bottom() - 1, area.width, 1);
+    let spectrum_area = Rect::new(area.x, area.y, area.width, area.height - 1);
+    let spectrum_state = app.spectrum_rx.borrow();
+    f.render_widget(
+        Spectrum {
+            mode: app.visualizer_mode,
+            state: &spectrum_state,
+        },
+        spectrum_area,
+    );
+    f.render_widget(ProgressRail { ratio }, rail);
 }

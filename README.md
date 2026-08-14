@@ -33,7 +33,7 @@ A terminal UI music player for Tidal, built with Rust.
   when you want the full width for browsing
 - Gapless playback via mpv
 - Audio quality indicator (Hi-Res, FLAC, MQA, AAC)
-- Animated waveform progress bar
+- Stable playback progress rail and optional compact spectrum visualization
 - Sort any library list by name, artist, or date added — your choice is remembered between sessions and shown in the
   list header
 - Volume, shuffle, and queue visibility persist across restarts
@@ -44,6 +44,7 @@ A terminal UI music player for Tidal, built with Rust.
 - **mpv** — used as the audio backend; must be on your `PATH`
 - A **Tidal** account (HiFi or HiFi Plus recommended for lossless quality)
 - **chafa** — used for terminal graphics support, dependency of ratatui-image
+- **cava** (optional) — enables the music-reactive spectrum visualizer
 
 ### Installing dependecies
 
@@ -52,6 +53,25 @@ A terminal UI music player for Tidal, built with Rust.
 | Linux (Debian/Ubuntu) | `sudo apt install mpv dbus libglib2.0-0 chafa` |
 | Linux (Arch)          | `sudo pacman -S mpv dbus glib2 chafa`          |
 | Linux (Fedora)        | `sudo dnf install mpv dbus glib2 chafa`        |
+
+To enable visualization, install CAVA separately:
+
+```bash
+# Arch
+sudo pacman -S cava
+
+# Debian/Ubuntu
+sudo apt install cava
+
+# macOS
+brew install cava
+```
+
+Riptide works normally without CAVA. Press `v` after installing it to enable
+the visualizer; if a previous attempt failed, cycle back to Off first. CAVA
+captures the default output monitor, so its bars may also react to browser
+audio, notifications, or another player. Capture or visualization failures do
+not affect playback.
 
 ## Installation
 
@@ -217,7 +237,8 @@ It is created automatically on first run. Example:
     "playlists_sort": null,
     "volume": 80,
     "shuffle": false,
-    "queue_visible": true
+    "queue_visible": true,
+    "visualizer_mode": "off"
   }
 }
 ```
@@ -233,6 +254,7 @@ optional — a config from an older version loads fine and picks up the defaults
 | `volume`                                                              | `0`–`100`                                                | `100`        |
 | `shuffle`                                                             | `true` / `false`                                         | `false`      |
 | `queue_visible`                                                       | `true` / `false`                                         | `true`       |
+| `visualizer_mode`                                                     | `"off"`, `"bars"`, `"outline"`                        | `"off"`     |
 
 `null` for a sort means "never chosen", which sorts alphabetically. Note that
 `ByArtist` only applies to the Tracks and Albums tabs; the Artists and Playlists tabs offer name and date only.
@@ -333,6 +355,8 @@ Press `?` in the player to view all keybinds. Here's the complete reference:
 | `p`         | Previous track  |
 | `z`         | Toggle shuffle  |
 | `t`         | Show/hide queue |
+| `v`         | Cycle visualizer |
+| `V`         | Disable visualizer |
 | `+ or =`    | Volume Up       |
 | `-`         | Volume Down     |
 | `Esc`       | Back/Go up      |

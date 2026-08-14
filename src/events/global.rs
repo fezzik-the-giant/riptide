@@ -74,6 +74,8 @@ pub(super) fn handle_global_key(app: &mut App, key: KeyEvent) -> bool {
         KeyCode::Char('n') => app.next_track(),
         KeyCode::Char('p') => app.prev_track(),
         KeyCode::Char('z') => app.toggle_shuffle(),
+        KeyCode::Char('v') => app.cycle_visualizer_mode(),
+        KeyCode::Char('V') => app.disable_visualizer(),
         KeyCode::Esc => {
             if leaving_album(app) { kitty_delete_album_art(); }
             if leaving_artist(app) { kitty_delete_artist_art(); }
