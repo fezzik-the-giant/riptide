@@ -49,16 +49,18 @@ use lists::*;
 
 pub fn draw(f: &mut Frame, app: &App) {
     let area = f.area();
+    let overlay_active = app.command.active
+        || app.sort_palette.active
+        || app.artist_selection.active
+        || app.help_active
+        || app.status.is_some();
+    prepare_image_frame(app.art_fullscreen, overlay_active);
 
     if app.art_fullscreen {
         render_art_view(f, app, area);
         render_overlays(f, app, area);
         return;
     }
-
-    // Fullscreen protocols can retain a multi-megabyte Kitty transmission.
-    // Once the mode closes, keep only the small thumbnail protocols.
-    release_scaled_protocols();
 
     let rows = Layout::vertical([
         Constraint::Length(3),  // tab bar (boxed active tab needs 3 rows)

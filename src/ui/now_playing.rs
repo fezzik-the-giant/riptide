@@ -122,7 +122,7 @@ pub(super) fn render_now_playing_art(f: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    if let Some(bytes) = &np.art_bytes {
+    if let Some(bytes) = np.art_bytes() {
         render_image(f, bytes, area);
     } else if np.art_loading {
         f.render_widget(

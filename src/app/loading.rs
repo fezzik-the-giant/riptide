@@ -109,9 +109,9 @@ impl App {
             Some(t) => (t.album.id, t.album.cover.clone()),
             None => return,
         };
-        self.now_playing.art_bytes = None;
+        self.now_playing.set_art_bytes(None);
         self.now_playing.art_source = cover_id.clone();
-        self.now_playing.presentation_art_bytes = None;
+        self.now_playing.set_presentation_art_bytes(None);
         self.now_playing.presentation_art_loading = false;
         tracing::debug!("fetch_now_playing_art: album_id={}, cover={:?}", album_id, cover_id);
         if let Some(cover_id) = cover_id {
@@ -128,7 +128,7 @@ impl App {
     }
 
     pub(crate) fn fetch_presentation_art(&mut self) {
-        if self.now_playing.presentation_art_bytes.is_some()
+        if self.now_playing.presentation_art_bytes().is_some()
             || self.now_playing.presentation_art_loading
         {
             return;

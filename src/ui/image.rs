@@ -3,13 +3,12 @@
 
 //! Terminal image rendering.
 //!
-//! Protocols are cached by (content, size, render generation); see
-//! PROTOCOL_CACHE for why that
-//! matters for render latency.
+//! Protocols are cached by content and size; see [`PROTOCOL_CACHE`] for why
+//! that matters for render latency.
 
-use ratatui::layout::{Rect, Size};
 use ratatui::Frame;
-use ratatui_image::{picker::Picker, protocol::Protocol, FilterType, Image, Resize};
+use ratatui::layout::{Rect, Size};
+use ratatui_image::{FilterType, Image, Resize, picker::Picker, protocol::Protocol};
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 enum ImageResize {
@@ -23,12 +22,17 @@ struct ProtocolCacheKey {
     width: u16,
     height: u16,
     resize: ImageResize,
-    render_generation: u64,
+}
+
+#[derive(Clone, Copy, Default)]
+struct ImageFrameState {
+    fullscreen_art: bool,
+    overlay_active: bool,
 }
 
 thread_local! {
     /// Cached terminal-image protocols, keyed by image content, target size,
-    /// resize behavior, and an explicit render generation.
+    /// and resize behavior.
     ///
     /// Building a protocol decodes the source image and re-encodes it for the
     /// terminal's graphics protocol — ~760 µs for a 320x320 JPEG under Kitty.
@@ -40,13 +44,19 @@ thread_local! {
     /// playlist views.
     ///
     /// Cached protocols render byte-identical cells on repeat frames, so the
-    /// diff emits nothing at all once the image has been sent. Fullscreen art
-    /// advances its generation after a modal closes: Kitty placeholders that
-    /// were overwritten by the modal then get a new protocol id and the full
-    /// affected rows are emitted again.
+    /// diff emits nothing at all once the image has been sent.
     static PROTOCOL_CACHE: std::cell::RefCell<
         std::collections::HashMap<ProtocolCacheKey, Protocol>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
+
+    /// Tracks renderer-visible transitions that invalidate the scaled Kitty
+    /// placement. Keeping this beside the cache means callers do not need to
+    /// know when a terminal image protocol must be rebuilt.
+    static IMAGE_FRAME_STATE: std::cell::Cell<ImageFrameState> =
+        const { std::cell::Cell::new(ImageFrameState {
+            fullscreen_art: false,
+            overlay_active: false,
+        }) };
 }
 
 // Initialize picker once at startup to avoid blocking on every frame
@@ -70,7 +80,7 @@ pub(super) fn get_picker() -> &'static Picker {
 /// with a wholesale clear is enough to bound growth as the user browses.
 pub(super) const PROTOCOL_CACHE_CAP: usize = 8;
 
-pub(super) fn release_scaled_protocols() {
+fn release_scaled_protocols() {
     PROTOCOL_CACHE.with(|cache| {
         cache
             .borrow_mut()
@@ -78,24 +88,32 @@ pub(super) fn release_scaled_protocols() {
     });
 }
 
-pub(super) fn render_image(f: &mut Frame, bytes: &[u8], area: Rect) {
-    render_image_with_resize(f, bytes, area, ImageResize::Fit, false, 0);
+pub(super) fn prepare_image_frame(fullscreen_art: bool, overlay_active: bool) {
+    let next = ImageFrameState {
+        fullscreen_art,
+        overlay_active,
+    };
+    let release_scaled = IMAGE_FRAME_STATE.with(|state| {
+        let previous = state.replace(next);
+        should_release_scaled_protocol(previous, next)
+    });
+
+    if release_scaled {
+        release_scaled_protocols();
+    }
 }
 
-pub(super) fn render_scaled_image(
-    f: &mut Frame,
-    bytes: &[u8],
-    area: Rect,
-    render_generation: u64,
-) {
-    render_image_with_resize(
-        f,
-        bytes,
-        area,
-        ImageResize::Scale,
-        true,
-        render_generation,
-    );
+fn should_release_scaled_protocol(previous: ImageFrameState, next: ImageFrameState) -> bool {
+    (previous.fullscreen_art && !next.fullscreen_art)
+        || (next.fullscreen_art && previous.overlay_active && !next.overlay_active)
+}
+
+pub(super) fn render_image(f: &mut Frame, bytes: &[u8], area: Rect) {
+    render_image_with_resize(f, bytes, area, ImageResize::Fit, image_content_hash(bytes));
+}
+
+pub(super) fn render_scaled_image(f: &mut Frame, bytes: &[u8], area: Rect, content_hash: u64) {
+    render_image_with_resize(f, bytes, area, ImageResize::Scale, content_hash);
 }
 
 fn render_image_with_resize(
@@ -103,27 +121,17 @@ fn render_image_with_resize(
     bytes: &[u8],
     area: Rect,
     resize: ImageResize,
-    center: bool,
-    render_generation: u64,
+    content_hash: u64,
 ) {
     if area.width == 0 || area.height == 0 {
         return;
     }
 
-    // Hash the content rather than keying on the slice's address: art buffers
-    // are freed and reallocated as the user browses, and an allocator reusing
-    // an address for a same-sized image would otherwise serve a stale picture.
-    let key = {
-        use std::hash::{Hash, Hasher};
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        bytes.hash(&mut hasher);
-        ProtocolCacheKey {
-            content_hash: hasher.finish(),
-            width: area.width,
-            height: area.height,
-            resize,
-            render_generation,
-        }
+    let key = ProtocolCacheKey {
+        content_hash,
+        width: area.width,
+        height: area.height,
+        resize,
     };
 
     PROTOCOL_CACHE.with(|cache| {
@@ -135,8 +143,8 @@ fn render_image_with_resize(
             };
 
             // A scaled Kitty protocol can retain a multi-megabyte RGBA
-            // transmission. Fullscreen redraw generations and track changes
-            // supersede one another, so keeping more than the current one can
+            // transmission. Fullscreen redraws and track changes supersede one
+            // another, so keeping more than the current one can
             // multiply RSS without making a future frame faster.
             prune_superseded_scaled_protocols(&mut cache, key);
             if cache.len() >= PROTOCOL_CACHE_CAP {
@@ -154,14 +162,21 @@ fn render_image_with_resize(
         }
 
         if let Some(protocol) = cache.get(&key) {
-            let render_area = if center {
-                centered_protocol_area(area, protocol.size())
-            } else {
-                area
+            let render_area = match resize {
+                ImageResize::Fit => area,
+                ImageResize::Scale => centered_protocol_area(area, protocol.size()),
             };
             f.render_widget(Image::new(protocol), render_area);
         }
     });
+}
+
+fn image_content_hash(bytes: &[u8]) -> u64 {
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    hasher.finish()
 }
 
 fn prune_superseded_scaled_protocols<T>(
@@ -169,13 +184,11 @@ fn prune_superseded_scaled_protocols<T>(
     requested: ProtocolCacheKey,
 ) {
     if requested.resize == ImageResize::Scale {
-        cache.retain(|existing, _| {
-            existing.resize != ImageResize::Scale || *existing == requested
-        });
+        cache.retain(|existing, _| existing.resize != ImageResize::Scale || *existing == requested);
     }
 }
 
-fn centered_protocol_area(area: Rect, size: Size) -> Rect {
+pub(super) fn centered_protocol_area(area: Rect, size: Size) -> Rect {
     let width = size.width.min(area.width);
     let height = size.height.min(area.height);
     Rect::new(
@@ -217,19 +230,18 @@ mod tests {
 
     #[test]
     fn scaled_protocols_use_one_replaceable_cache_slot() {
-        fn key(content_hash: u64, resize: ImageResize, render_generation: u64) -> ProtocolCacheKey {
+        fn key(content_hash: u64, resize: ImageResize) -> ProtocolCacheKey {
             ProtocolCacheKey {
                 content_hash,
                 width: 80,
                 height: 40,
                 resize,
-                render_generation,
             }
         }
 
-        let fit = key(1, ImageResize::Fit, 0);
-        let old_scale = key(2, ImageResize::Scale, 0);
-        let new_scale = key(2, ImageResize::Scale, 1);
+        let fit = key(1, ImageResize::Fit);
+        let old_scale = key(2, ImageResize::Scale);
+        let new_scale = key(3, ImageResize::Scale);
         let mut cache = std::collections::HashMap::from([(fit, ()), (old_scale, ())]);
 
         prune_superseded_scaled_protocols(&mut cache, new_scale);
@@ -245,5 +257,23 @@ mod tests {
                 .count(),
             1,
         );
+    }
+
+    #[test]
+    fn scaled_protocol_is_released_after_overlay_or_fullscreen_closes() {
+        let normal = ImageFrameState::default();
+        let art = ImageFrameState {
+            fullscreen_art: true,
+            overlay_active: false,
+        };
+        let art_with_overlay = ImageFrameState {
+            fullscreen_art: true,
+            overlay_active: true,
+        };
+
+        assert!(!should_release_scaled_protocol(normal, art));
+        assert!(!should_release_scaled_protocol(art, art_with_overlay));
+        assert!(should_release_scaled_protocol(art_with_overlay, art));
+        assert!(should_release_scaled_protocol(art, normal));
     }
 }

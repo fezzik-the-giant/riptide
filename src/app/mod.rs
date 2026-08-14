@@ -27,8 +27,6 @@ pub struct App {
     pub current_tab: Tab,
     pub view_stack: Vec<View>,
     pub art_fullscreen: bool,
-    /// Changes when fullscreen overlays disappear so terminal image rows are resent.
-    pub art_render_generation: u64,
 
     pub home_new_releases: HomeSection<Playlist>,
     pub home_daily_mixes: HomeSection<Playlist>,
@@ -83,7 +81,6 @@ impl App {
             current_tab: Tab::Home,
             view_stack:  Vec::new(),
             art_fullscreen: false,
-            art_render_generation: 0,
             home_new_releases: HomeSection::default(),
             home_daily_mixes: HomeSection::default(),
             home_discovery_mixes: HomeSection::default(),
@@ -107,7 +104,7 @@ impl App {
                 let mut np = NowPlaying::default();
                 // Load logo as default art
                 if let Ok(logo_bytes) = std::fs::read("assets/wave-logo-320-transparent.png") {
-                    np.art_bytes = Some(logo_bytes);
+                    np.set_art_bytes(Some(logo_bytes));
                 }
                 np.volume = prefs.volume;
                 np.shuffle = prefs.shuffle;
@@ -177,16 +174,7 @@ impl App {
             if set_at.elapsed() > std::time::Duration::from_secs(5) {
                 tracing::debug!("Clearing status after {:.1}s: {}", set_at.elapsed().as_secs_f64(), msg);
                 self.status = None;
-                self.redraw_art_fullscreen();
             }
-        }
-    }
-
-    /// Force a fresh terminal image protocol after an overlay has overwritten
-    /// some of the fullscreen image's virtual-placement cells.
-    pub(crate) fn redraw_art_fullscreen(&mut self) {
-        if self.art_fullscreen {
-            self.art_render_generation = self.art_render_generation.wrapping_add(1);
         }
     }
 
@@ -238,6 +226,24 @@ impl App {
             let _ = self.api_tx.send(crate::api::ApiRequest::SearchPlaylistsNext { next_url });
         }
     }
+}
+
+#[cfg(test)]
+pub(crate) fn test_app() -> (App, mpsc::UnboundedReceiver<ApiRequest>) {
+    let (api_tx, api_rx) = mpsc::unbounded_channel();
+    let (player_tx, _) = mpsc::unbounded_channel();
+    let (mpris_tx, _) = watch::channel(MprisState::default());
+    let (lastfm_tx, _) = mpsc::unbounded_channel();
+    (
+        App::new(
+            api_tx,
+            player_tx,
+            mpris_tx,
+            lastfm_tx,
+            Preferences::default(),
+        ),
+        api_rx,
+    )
 }
 
 /// Write text to the terminal's clipboard using an OSC 52 escape sequence.

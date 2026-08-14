@@ -9,7 +9,7 @@ impl App {
     // ── Tab switching ─────────────────────────────────────────────────────────
 
     pub fn next_tab(&mut self) {
-        self.current_tab = match self.current_tab {
+        let tab = match self.current_tab {
             Tab::Home      => Tab::Favorites,
             Tab::Favorites => Tab::Artists,
             Tab::Artists   => Tab::Albums,
@@ -17,13 +17,11 @@ impl App {
             Tab::Playlists => Tab::Search,
             Tab::Search    => Tab::Home,
         };
-        self.art_fullscreen = false;
-        self.view_stack.clear();
-        self.on_tab_entered();
+        self.set_tab(tab);
     }
 
     pub fn prev_tab(&mut self) {
-        self.current_tab = match self.current_tab {
+        let tab = match self.current_tab {
             Tab::Home      => Tab::Search,
             Tab::Favorites => Tab::Home,
             Tab::Artists   => Tab::Favorites,
@@ -31,9 +29,7 @@ impl App {
             Tab::Playlists => Tab::Albums,
             Tab::Search    => Tab::Playlists,
         };
-        self.art_fullscreen = false;
-        self.view_stack.clear();
-        self.on_tab_entered();
+        self.set_tab(tab);
     }
 
     pub fn set_tab(&mut self, tab: Tab) {
@@ -251,22 +247,7 @@ mod tests {
     use super::*;
     use crate::api::ApiRequest;
     use crate::api::models::{Album, ArtistRef, Track};
-    use crate::app::Preferences;
-    use crate::lastfm::LastfmCmd;
-    use crate::mpris::MprisState;
-    use crate::player::PlayerCmd;
-    use tokio::sync::{mpsc, watch};
-
-    fn make_app() -> (App, mpsc::UnboundedReceiver<ApiRequest>) {
-        let (api_tx, api_rx) = mpsc::unbounded_channel();
-        let (player_tx, _): (mpsc::UnboundedSender<PlayerCmd>, _) = mpsc::unbounded_channel();
-        let (mpris_tx, _) = watch::channel(MprisState::default());
-        let (lastfm_tx, _): (mpsc::UnboundedSender<LastfmCmd>, _) = mpsc::unbounded_channel();
-        (
-            App::new(api_tx, player_tx, mpris_tx, lastfm_tx, Preferences::default()),
-            api_rx,
-        )
-    }
+    use crate::app::test_app;
 
     fn track() -> Track {
         Track {
@@ -295,7 +276,7 @@ mod tests {
 
     #[test]
     fn tabs_wrap_between_search_and_home_in_both_directions() {
-        let (mut app, _) = make_app();
+        let (mut app, _) = test_app();
         app.current_tab = Tab::Search;
         app.queue_focused = true;
 
@@ -309,7 +290,7 @@ mod tests {
 
     #[test]
     fn fullscreen_art_preserves_the_current_view_and_requests_art_on_demand() {
-        let (mut app, mut api_rx) = make_app();
+        let (mut app, mut api_rx) = test_app();
         while api_rx.try_recv().is_ok() {}
         app.now_playing.track = Some(track());
         app.now_playing.art_source = Some("cover-id".to_string());

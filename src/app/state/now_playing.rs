@@ -16,9 +16,11 @@ pub struct NowPlaying {
     pub duration: f64,
     pub queue: Vec<Track>,
     pub queue_index: usize,
-    pub art_bytes: Option<Vec<u8>>,
+    art_bytes: Option<Vec<u8>>,
+    art_content_hash: Option<u64>,
     pub art_loading: bool,
-    pub presentation_art_bytes: Option<Vec<u8>>,
+    presentation_art_bytes: Option<Vec<u8>>,
+    presentation_art_content_hash: Option<u64>,
     pub presentation_art_loading: bool,
     pub art_source: Option<String>,
     pub lyrics_synced: Vec<(f64, String)>,
@@ -51,8 +53,10 @@ impl Default for NowPlaying {
             queue: Vec::new(),
             queue_index: 0,
             art_bytes: None,
+            art_content_hash: None,
             art_loading: false,
             presentation_art_bytes: None,
+            presentation_art_content_hash: None,
             presentation_art_loading: false,
             art_source: None,
             lyrics_synced: Vec::new(),
@@ -72,6 +76,33 @@ impl Default for NowPlaying {
 }
 
 impl NowPlaying {
+    pub(crate) fn set_art_bytes(&mut self, bytes: Option<Vec<u8>>) {
+        self.art_content_hash = bytes.as_deref().map(image_content_hash);
+        self.art_bytes = bytes;
+    }
+
+    pub(crate) fn set_presentation_art_bytes(&mut self, bytes: Option<Vec<u8>>) {
+        self.presentation_art_content_hash = bytes.as_deref().map(image_content_hash);
+        self.presentation_art_bytes = bytes;
+    }
+
+    pub(crate) fn art_bytes(&self) -> Option<&[u8]> {
+        self.art_bytes.as_deref()
+    }
+
+    pub(crate) fn presentation_art_bytes(&self) -> Option<&[u8]> {
+        self.presentation_art_bytes.as_deref()
+    }
+
+    pub(crate) fn art_image(&self) -> Option<(&[u8], u64)> {
+        self.art_bytes().zip(self.art_content_hash)
+    }
+
+    pub(crate) fn presentation_art_image(&self) -> Option<(&[u8], u64)> {
+        self.presentation_art_bytes()
+            .zip(self.presentation_art_content_hash)
+    }
+
     pub fn progress_ratio(&self) -> f64 {
         if self.duration > 0.0 {
             (self.position / self.duration).clamp(0.0, 1.0)
@@ -87,6 +118,14 @@ impl NowPlaying {
     pub fn duration_display(&self) -> String {
         fmt_secs(self.duration as u32)
     }
+}
+
+fn image_content_hash(bytes: &[u8]) -> u64 {
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    hasher.finish()
 }
 
 pub(super) fn fmt_secs(secs: u32) -> String {

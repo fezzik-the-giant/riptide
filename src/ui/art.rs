@@ -4,11 +4,11 @@
 //! Full-window presentation of the current album artwork.
 
 use ratatui::{
-    layout::{Alignment, Rect},
+    Frame,
+    layout::{Alignment, Rect, Size},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
-    Frame,
 };
 use ratatui_image::FontSize;
 
@@ -25,9 +25,9 @@ pub(super) fn render_art_view(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_art(f: &mut Frame, app: &App, area: Rect) {
-    if let Some(bytes) = art_bytes(app) {
+    if let Some((bytes, content_hash)) = art_image(app) {
         let art_area = centered_square_art_area(area, get_picker().font_size());
-        render_scaled_image(f, bytes, art_area, app.art_render_generation);
+        render_scaled_image(f, bytes, art_area, content_hash);
         return;
     }
 
@@ -47,11 +47,10 @@ fn render_art(f: &mut Frame, app: &App, area: Rect) {
     );
 }
 
-fn art_bytes(app: &App) -> Option<&[u8]> {
+fn art_image(app: &App) -> Option<(&[u8], u64)> {
     app.now_playing
-        .presentation_art_bytes
-        .as_deref()
-        .or(app.now_playing.art_bytes.as_deref())
+        .presentation_art_image()
+        .or_else(|| app.now_playing.art_image())
 }
 
 fn render_art_hud(f: &mut Frame, app: &App, area: Rect) {
@@ -180,37 +179,18 @@ fn centered_square_art_area(area: Rect, font_size: FontSize) -> Rect {
         .div_ceil(u32::from(font_size.height))
         .min(u32::from(area.height)) as u16;
 
-    Rect::new(
-        area.x + area.width.saturating_sub(width) / 2,
-        area.y + area.height.saturating_sub(height) / 2,
-        width,
-        height,
-    )
+    centered_protocol_area(area, Size::new(width, height))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::api::models::{Album, ArtistRef, Track};
-    use crate::app::Preferences;
-    use crate::lastfm::LastfmCmd;
-    use crate::mpris::MprisState;
-    use crate::player::PlayerCmd;
-    use ratatui::{backend::TestBackend, Terminal};
-    use tokio::sync::{mpsc, watch};
+    use crate::app::test_app;
+    use ratatui::{Terminal, backend::TestBackend};
 
     fn app_with_track() -> App {
-        let (api_tx, _) = mpsc::unbounded_channel();
-        let (player_tx, _): (mpsc::UnboundedSender<PlayerCmd>, _) = mpsc::unbounded_channel();
-        let (mpris_tx, _) = watch::channel(MprisState::default());
-        let (lastfm_tx, _): (mpsc::UnboundedSender<LastfmCmd>, _) = mpsc::unbounded_channel();
-        let mut app = App::new(
-            api_tx,
-            player_tx,
-            mpris_tx,
-            lastfm_tx,
-            Preferences::default(),
-        );
+        let mut app = test_app().0;
         app.now_playing.track = Some(Track {
             id: 1,
             title: "HUD Track".to_string(),
@@ -251,11 +231,18 @@ mod tests {
     #[test]
     fn presentation_art_takes_priority_over_the_thumbnail() {
         let mut app = app_with_track();
-        app.now_playing.art_bytes = Some(vec![3, 2, 0]);
-        assert_eq!(art_bytes(&app), Some([3, 2, 0].as_slice()));
+        app.now_playing.set_art_bytes(Some(vec![3, 2, 0]));
+        assert_eq!(
+            art_image(&app).map(|(bytes, _)| bytes),
+            Some([3, 2, 0].as_slice())
+        );
 
-        app.now_playing.presentation_art_bytes = Some(vec![12, 8, 0]);
-        assert_eq!(art_bytes(&app), Some([12, 8, 0].as_slice()));
+        app.now_playing
+            .set_presentation_art_bytes(Some(vec![12, 8, 0]));
+        assert_eq!(
+            art_image(&app).map(|(bytes, _)| bytes),
+            Some([12, 8, 0].as_slice())
+        );
     }
 
     #[test]
@@ -326,7 +313,7 @@ mod tests {
     fn art_view_omits_the_generic_footer() {
         let mut app = app_with_track();
         app.art_fullscreen = true;
-        app.now_playing.art_bytes = None;
+        app.now_playing.set_art_bytes(None);
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
         terminal.draw(|f| crate::ui::draw(f, &app)).unwrap();
 

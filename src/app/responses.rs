@@ -165,17 +165,15 @@ impl App {
                 }
 
                 // Also handle when album is loaded for now_playing track (from fetch_now_playing_art)
-                let mut fetch_presentation = false;
                 let is_now_playing = self.now_playing.track.as_ref()
                     .map(|track| track.album.id) == Some(album_id);
                 if is_now_playing && let Some(cover_url) = cover {
                     self.now_playing.art_source = Some(cover_url.clone());
                     self.now_playing.art_loading = true;
                     let _ = self.api_tx.send(ApiRequest::FetchAlbumArt { album_id, cover_id: cover_url });
-                    fetch_presentation = self.art_fullscreen;
-                }
-                if fetch_presentation {
-                    self.fetch_presentation_art();
+                    if self.art_fullscreen {
+                        self.fetch_presentation_art();
+                    }
                 }
             }
 
@@ -196,7 +194,7 @@ impl App {
                 tracing::debug!("is_now_playing={}", is_now_playing);
                 if is_now_playing {
                     tracing::debug!("Setting now_playing.art_bytes");
-                    self.now_playing.art_bytes = Some(image_data.clone());
+                    self.now_playing.set_art_bytes(Some(image_data.clone()));
                     self.now_playing.art_loading = false;
                 }
                 if let Some(View::AlbumDetail(detail)) = self.view_stack.last_mut() {
@@ -211,7 +209,7 @@ impl App {
                 let is_now_playing = self.now_playing.track.as_ref()
                     .map(|track| track.album.id) == Some(album_id);
                 if is_now_playing {
-                    self.now_playing.presentation_art_bytes = image_data;
+                    self.now_playing.set_presentation_art_bytes(image_data);
                     self.now_playing.presentation_art_loading = false;
                 }
             }
@@ -450,7 +448,7 @@ impl App {
                     if track_changed {
                         // Clear old art and lyrics so we don't show the previous track's content
                         tracing::debug!("Clearing old art and lyrics for new track");
-                        self.now_playing.art_bytes = None;
+                        self.now_playing.set_art_bytes(None);
                         self.now_playing.art_loading = true;
                         self.now_playing.lyrics_synced.clear();
                         self.now_playing.lyrics_plain.clear();
@@ -489,7 +487,7 @@ impl App {
                             tracing::debug!("TrackDetails has valid image cover_url, fetching");
                             self.now_playing.art_source = Some(url.clone());
                             self.now_playing.art_loading = true;
-                            self.now_playing.art_bytes = None;
+                            self.now_playing.set_art_bytes(None);
                             let _ = self.api_tx.send(ApiRequest::FetchTrackArt { track_id, cover_url: url });
                             if self.art_fullscreen {
                                 self.fetch_presentation_art();
@@ -503,7 +501,7 @@ impl App {
 
             ApiResponse::TrackArt { track_id, image_data } => {
                 if self.now_playing.track.as_ref().map(|t| t.id) == Some(track_id) {
-                    self.now_playing.art_bytes = Some(image_data);
+                    self.now_playing.set_art_bytes(Some(image_data));
                     self.now_playing.art_loading = false;
                 }
             }

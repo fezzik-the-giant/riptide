@@ -59,11 +59,10 @@ pub(super) fn handle_global_key(app: &mut App, key: KeyEvent) -> bool {
             app.command.input.clear();
             app.command.selected = 0;
         }
+        KeyCode::Tab | KeyCode::BackTab | KeyCode::Esc if app.art_fullscreen => {
+            app.exit_art_fullscreen();
+        }
         KeyCode::Tab => {
-            if app.art_fullscreen {
-                app.exit_art_fullscreen();
-                return true;
-            }
             if leaving_album(app) { kitty_delete_album_art(); }
             if leaving_artist(app) { kitty_delete_artist_art(); }
             if key.modifiers.contains(KeyModifiers::SHIFT) {
@@ -73,10 +72,6 @@ pub(super) fn handle_global_key(app: &mut App, key: KeyEvent) -> bool {
             }
         }
         KeyCode::BackTab => {
-            if app.art_fullscreen {
-                app.exit_art_fullscreen();
-                return true;
-            }
             if leaving_album(app) { kitty_delete_album_art(); }
             if leaving_artist(app) { kitty_delete_artist_art(); }
             app.prev_tab();
@@ -87,10 +82,6 @@ pub(super) fn handle_global_key(app: &mut App, key: KeyEvent) -> bool {
         KeyCode::Char('p') => app.prev_track(),
         KeyCode::Char('z') => app.toggle_shuffle(),
         KeyCode::Esc => {
-            if app.art_fullscreen {
-                app.exit_art_fullscreen();
-                return true;
-            }
             if leaving_album(app) { kitty_delete_album_art(); }
             if leaving_artist(app) { kitty_delete_artist_art(); }
             app.go_back();
@@ -115,24 +106,11 @@ pub(super) fn handle_global_key(app: &mut App, key: KeyEvent) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::sync::{mpsc, watch};
-
-    use crate::api::ApiRequest;
-    use crate::app::{Preferences, Tab};
-    use crate::lastfm::LastfmCmd;
-    use crate::mpris::MprisState;
-
-    fn app() -> App {
-        let (api_tx, _): (mpsc::UnboundedSender<ApiRequest>, _) = mpsc::unbounded_channel();
-        let (player_tx, _): (mpsc::UnboundedSender<PlayerCmd>, _) = mpsc::unbounded_channel();
-        let (mpris_tx, _) = watch::channel(MprisState::default());
-        let (lastfm_tx, _): (mpsc::UnboundedSender<LastfmCmd>, _) = mpsc::unbounded_channel();
-        App::new(api_tx, player_tx, mpris_tx, lastfm_tx, Preferences::default())
-    }
+    use crate::app::{Tab, test_app};
 
     #[test]
     fn shift_a_toggles_fullscreen_without_changing_tabs() {
-        let mut app = app();
+        let mut app = test_app().0;
         app.current_tab = Tab::Albums;
         let key = KeyEvent::new(KeyCode::Char('A'), KeyModifiers::SHIFT);
 
@@ -147,7 +125,7 @@ mod tests {
 
     #[test]
     fn tab_leaves_fullscreen_without_advancing_the_hidden_tab() {
-        let mut app = app();
+        let mut app = test_app().0;
         app.current_tab = Tab::Albums;
         app.art_fullscreen = true;
 

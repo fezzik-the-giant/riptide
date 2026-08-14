@@ -178,12 +178,7 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
         }
 
         ApiRequest::FetchArtistArt { artist_id, picture_id } => {
-            // picture_id can be either a direct URL (from v2 search) or an ID to construct (from v1 API)
-            let url = if picture_id.starts_with("http") {
-                picture_id.clone()
-            } else {
-                format!("https://resources.tidal.com/images/{}/320x320.jpg", picture_id.replace('-', "/"))
-            };
+            let url = thumbnail_art_url(&picture_id);
             tracing::debug!("FetchArtistArt for artist {}: {}", artist_id, url);
             match client.fetch_bytes(&url).await {
                 Ok(data) => {
@@ -391,32 +386,34 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
     }
 }
 
+const TIDAL_IMAGE_CDN_PREFIX: &str = "https://resources.tidal.com/images/";
+
 fn thumbnail_art_url(cover: &str) -> String {
     if cover.starts_with("http") {
         cover.to_string()
     } else {
-        format!(
-            "https://resources.tidal.com/images/{}/320x320.jpg",
-            cover.replace('-', "/")
-        )
+        tidal_art_url(cover, "320x320.jpg")
     }
 }
 
 fn presentation_art_url(cover: &str) -> String {
     const SIZE: &str = "640x640.jpg";
-    const CDN_PREFIX: &str = "https://resources.tidal.com/images/";
 
-    if let Some(path) = cover.strip_prefix(CDN_PREFIX)
+    if let Some(path) = cover.strip_prefix(TIDAL_IMAGE_CDN_PREFIX)
         && let Some((image_id, _)) = path.rsplit_once('/')
     {
-        return format!("{CDN_PREFIX}{image_id}/{SIZE}");
+        return format!("{TIDAL_IMAGE_CDN_PREFIX}{image_id}/{SIZE}");
     }
     if cover.starts_with("http") {
         return cover.to_string();
     }
+    tidal_art_url(cover, SIZE)
+}
+
+fn tidal_art_url(image_id: &str, size: &str) -> String {
     format!(
-        "{CDN_PREFIX}{}/{SIZE}",
-        cover.replace('-', "/")
+        "{TIDAL_IMAGE_CDN_PREFIX}{}/{size}",
+        image_id.replace('-', "/")
     )
 }
 
