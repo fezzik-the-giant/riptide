@@ -59,6 +59,7 @@ impl Widget for ProgressRail {
 pub(super) struct Spectrum<'a> {
     pub mode: VisualizerMode,
     pub state: &'a SpectrumState,
+    pub tick: u64,
 }
 
 impl Widget for Spectrum<'_> {
@@ -93,6 +94,10 @@ impl Widget for Spectrum<'_> {
         match self.mode {
             VisualizerMode::Bars => render_bars(area, &bands, buffer),
             VisualizerMode::Outline => render_outline(area, &bands, buffer),
+            VisualizerMode::Columns => render_columns(area, &bands, buffer),
+            VisualizerMode::Bricks => render_bricks(area, &bands, buffer),
+            VisualizerMode::Dots => render_dots(area, &bands, buffer),
+            VisualizerMode::Butterfly => render_butterfly(area, &bands, self.tick, buffer),
             VisualizerMode::Off => {}
         }
     }
@@ -149,6 +154,147 @@ fn render_outline(area: Rect, input: &[f32], buffer: &mut Buffer) {
             }
         }
     }
+}
+
+fn render_columns(area: Rect, input: &[f32], buffer: &mut Buffer) {
+    let bands = resample_bands(input, usize::from(area.width));
+    for (x_offset, level) in bands.into_iter().enumerate() {
+        let filled_eighths = (level * f32::from(area.height) * 8.0).round() as u16;
+        for y_offset in 0..area.height {
+            let eighths_below = (area.height - y_offset - 1) * 8;
+            let cell_fill = filled_eighths.saturating_sub(eighths_below).min(8);
+            if cell_fill > 0
+                && let Some(cell) = buffer.cell_mut((area.x + x_offset as u16, area.y + y_offset))
+            {
+                cell.set_symbol(BLOCKS[cell_fill as usize])
+                    .set_style(Style::default().fg(ACCENT));
+            }
+        }
+    }
+}
+
+fn render_bricks(area: Rect, input: &[f32], buffer: &mut Buffer) {
+    let band_count = usize::from(area.width.div_ceil(2));
+    let bands = resample_bands(input, band_count);
+    for (index, level) in bands.into_iter().enumerate() {
+        let filled_rows = (level * f32::from(area.height)).round() as u16;
+        let x = area.x + (index * 2) as u16;
+        for row in 0..filled_rows.min(area.height) {
+            let y = area.bottom() - 1 - row;
+            if let Some(cell) = buffer.cell_mut((x, y)) {
+                cell.set_symbol("▄").set_style(Style::default().fg(ACCENT));
+            }
+        }
+    }
+}
+
+fn render_dots(area: Rect, input: &[f32], buffer: &mut Buffer) {
+    let dot_width = usize::from(area.width) * 2;
+    let dot_height = usize::from(area.height) * 4;
+    if dot_width == 0 || dot_height == 0 {
+        return;
+    }
+
+    let band_count = if area.width < 4 {
+        usize::from(area.width)
+    } else {
+        dot_width.div_ceil(3)
+    };
+    let bands = resample_bands(input, band_count);
+    let mut dots = vec![false; dot_width * dot_height];
+    for (index, level) in bands.into_iter().enumerate() {
+        let start = index * dot_width / band_count;
+        let end = (index + 1) * dot_width / band_count;
+        let visible_end = if area.width >= 4 && end.saturating_sub(start) > 1 {
+            end - 1
+        } else {
+            end
+        };
+        let filled = (level * dot_height as f32).round() as usize;
+        for y in dot_height.saturating_sub(filled.min(dot_height))..dot_height {
+            for x in start..visible_end {
+                dots[y * dot_width + x] = true;
+            }
+        }
+    }
+    render_dot_grid(area, &dots, dot_width, buffer);
+}
+
+fn render_butterfly(area: Rect, input: &[f32], tick: u64, buffer: &mut Buffer) {
+    let (dots, dot_width) = butterfly_grid(area, input, tick);
+    render_dot_grid(area, &dots, dot_width, buffer);
+}
+
+fn butterfly_grid(area: Rect, input: &[f32], tick: u64) -> (Vec<bool>, usize) {
+    let dot_width = usize::from(area.width) * 2;
+    let dot_height = usize::from(area.height) * 4;
+    if dot_width == 0 || dot_height == 0 {
+        return (Vec::new(), dot_width);
+    }
+
+    let levels = resample_bands(input, dot_height);
+    let half_width = dot_width / 2;
+    let mut dots = vec![false; dot_width * dot_height];
+    for y in 0..dot_height {
+        let level = levels.get(y).copied().unwrap_or(0.0);
+        let base_width = (level * half_width as f32).round() as isize;
+        let wobble = (deterministic_hash(y as u64, tick) % 3) as isize - 1;
+        let wing_width = (base_width + wobble).clamp(1, half_width as isize) as usize;
+
+        for distance in 0..wing_width {
+            let boundary = distance == 0 || distance + 1 == wing_width;
+            let visible = boundary
+                || deterministic_hash(distance as u64, y as u64 ^ tick).trailing_zeros() < 2;
+            if visible {
+                dots[y * dot_width + half_width - 1 - distance] = true;
+                dots[y * dot_width + half_width + distance] = true;
+            }
+        }
+    }
+    (dots, dot_width)
+}
+
+fn deterministic_hash(first: u64, second: u64) -> u64 {
+    let mut value = first.wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ second;
+    value ^= value >> 30;
+    value = value.wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value ^= value >> 27;
+    value.wrapping_mul(0x94d0_49bb_1331_11eb) ^ (value >> 31)
+}
+
+fn render_dot_grid(area: Rect, dots: &[bool], dot_width: usize, buffer: &mut Buffer) {
+    if dot_width == 0 {
+        return;
+    }
+    for cell_y in 0..usize::from(area.height) {
+        for cell_x in 0..usize::from(area.width) {
+            let symbol = braille_char(cell_x * 2, cell_y * 4, |x, y| {
+                dots.get(y * dot_width + x).copied().unwrap_or(false)
+            });
+            if symbol != '\u{2800}'
+                && let Some(cell) =
+                    buffer.cell_mut((area.x + cell_x as u16, area.y + cell_y as u16))
+            {
+                cell.set_char(symbol).set_style(Style::default().fg(ACCENT));
+            }
+        }
+    }
+}
+
+fn braille_char<F>(cell_x: usize, cell_y: usize, is_set: F) -> char
+where
+    F: Fn(usize, usize) -> bool,
+{
+    const BITS: [[u32; 2]; 4] = [[0x01, 0x08], [0x02, 0x10], [0x04, 0x20], [0x40, 0x80]];
+    let mut bits = 0;
+    for (y, row) in BITS.iter().enumerate() {
+        for (x, bit) in row.iter().enumerate() {
+            if is_set(cell_x + x, cell_y + y) {
+                bits |= bit;
+            }
+        }
+    }
+    char::from_u32(0x2800 + bits).expect("Braille bit mapping is a valid Unicode scalar")
 }
 
 fn preferred_band_count(width: u16) -> usize {
@@ -273,6 +419,7 @@ mod tests {
                     bands: vec![1.0],
                     received_at: Instant::now(),
                 }),
+                tick: 0,
             }
             .render(area, &mut buffer);
         }
@@ -290,6 +437,7 @@ mod tests {
         Spectrum {
             mode: VisualizerMode::Bars,
             state: &state,
+            tick: 0,
         }
         .render(render_area, &mut buffer);
 
@@ -325,6 +473,121 @@ mod tests {
     }
 
     #[test]
+    fn columns_are_dense_and_bricks_have_gaps() {
+        let area = Rect::new(0, 0, 6, 3);
+        let mut columns = Buffer::empty(area);
+        render_columns(area, &[1.0; 64], &mut columns);
+        assert_eq!(symbols(&columns, area), ["██████"; 3]);
+
+        let mut bricks = Buffer::empty(area);
+        render_bricks(area, &[1.0; 64], &mut bricks);
+        for y in area.y..area.bottom() {
+            for x in area.x..area.right() {
+                let expected = if x % 2 == 0 { "▄" } else { " " };
+                assert_eq!(bricks[(x, y)].symbol(), expected);
+            }
+        }
+    }
+
+    #[test]
+    fn braille_mapping_uses_standard_dot_order() {
+        for (point, expected) in [
+            ((0, 0), '\u{2801}'),
+            ((0, 1), '\u{2802}'),
+            ((0, 2), '\u{2804}'),
+            ((0, 3), '\u{2840}'),
+            ((1, 0), '\u{2808}'),
+            ((1, 1), '\u{2810}'),
+            ((1, 2), '\u{2820}'),
+            ((1, 3), '\u{2880}'),
+        ] {
+            assert_eq!(braille_char(0, 0, |x, y| (x, y) == point), expected);
+        }
+    }
+
+    #[test]
+    fn dots_fill_from_the_bottom() {
+        let area = Rect::new(0, 0, 1, 1);
+        let mut buffer = Buffer::empty(area);
+        render_dots(area, &[0.25], &mut buffer);
+        assert_eq!(buffer[(0, 0)].symbol(), "⣀");
+    }
+
+    #[test]
+    fn butterfly_is_symmetric_deterministic_and_tick_driven() {
+        let area = Rect::new(0, 0, 8, 3);
+        let bands = [1.0; 64];
+        let (first, width) = butterfly_grid(area, &bands, 0);
+        let (repeat, _) = butterfly_grid(area, &bands, 0);
+        let (later, _) = butterfly_grid(area, &bands, 7);
+        assert_eq!(first, repeat);
+        assert_ne!(first, later);
+
+        for y in 0..usize::from(area.height) * 4 {
+            for x in 0..width {
+                assert_eq!(first[y * width + x], first[y * width + width - 1 - x]);
+            }
+        }
+    }
+
+    #[test]
+    fn every_mode_is_bounded_and_deterministic_at_pathological_sizes() {
+        let buffer_area = Rect::new(0, 0, 36, 6);
+        let modes = [
+            VisualizerMode::Off,
+            VisualizerMode::Bars,
+            VisualizerMode::Outline,
+            VisualizerMode::Columns,
+            VisualizerMode::Bricks,
+            VisualizerMode::Dots,
+            VisualizerMode::Butterfly,
+        ];
+        let sizes = [(0, 0), (0, 3), (1, 1), (1, 3), (2, 1), (8, 3), (30, 3)];
+        let patterns = [
+            vec![0.0; 64],
+            vec![1.0; 64],
+            (0..64)
+                .map(|index| if index % 2 == 0 { 0.0 } else { 1.0 })
+                .collect(),
+        ];
+
+        for mode in modes {
+            for (width, height) in sizes {
+                let area = Rect::new(2, 1, width, height);
+                for bands in &patterns {
+                    let state = SpectrumState::Active(SpectrumFrame {
+                        bands: bands.clone(),
+                        received_at: Instant::now(),
+                    });
+                    let mut first = Buffer::empty(buffer_area);
+                    Spectrum {
+                        mode,
+                        state: &state,
+                        tick: 11,
+                    }
+                    .render(area, &mut first);
+                    let mut second = Buffer::empty(buffer_area);
+                    Spectrum {
+                        mode,
+                        state: &state,
+                        tick: 11,
+                    }
+                    .render(area, &mut second);
+                    assert_eq!(first, second, "mode={mode:?}, area={area:?}");
+
+                    for y in buffer_area.y..buffer_area.bottom() {
+                        for x in buffer_area.x..buffer_area.right() {
+                            if !area.contains((x, y).into()) {
+                                assert_eq!(first[(x, y)].symbol(), " ");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn progress_handles_start_middle_end_and_unknown_duration() {
         let area = Rect::new(0, 0, 4, 1);
         for (ratio, expected) in [
@@ -349,6 +612,7 @@ mod tests {
         Spectrum {
             mode: VisualizerMode::Bars,
             state: &SpectrumState::Unavailable(UnavailableReason::MissingBinary),
+            tick: 0,
         }
         .render(area, &mut unavailable);
         assert!(symbols(&unavailable, area)[1].contains("cava unavailable"));
@@ -361,6 +625,7 @@ mod tests {
         Spectrum {
             mode: VisualizerMode::Bars,
             state: &stale_state,
+            tick: 0,
         }
         .render(area, &mut stale);
         assert_eq!(symbols(&stale, area), ["                    "; 3]);
@@ -372,6 +637,7 @@ mod tests {
                 bands: vec![1.0; 64],
                 received_at: Instant::now(),
             }),
+            tick: 0,
         }
         .render(area, &mut off);
         assert_eq!(symbols(&off, area), ["                    "; 3]);

@@ -46,6 +46,10 @@ pub enum VisualizerMode {
     Off,
     Bars,
     Outline,
+    Columns,
+    Bricks,
+    Dots,
+    Butterfly,
 }
 
 impl VisualizerMode {
@@ -54,6 +58,10 @@ impl VisualizerMode {
             Self::Off => "Off",
             Self::Bars => "Bars",
             Self::Outline => "Outline",
+            Self::Columns => "Columns",
+            Self::Bricks => "Bricks",
+            Self::Dots => "Dots",
+            Self::Butterfly => "Butterfly",
         }
     }
 
@@ -61,7 +69,11 @@ impl VisualizerMode {
         match self {
             Self::Off => Self::Bars,
             Self::Bars => Self::Outline,
-            Self::Outline => Self::Off,
+            Self::Outline => Self::Columns,
+            Self::Columns => Self::Bricks,
+            Self::Bricks => Self::Dots,
+            Self::Dots => Self::Butterfly,
+            Self::Butterfly => Self::Off,
         }
     }
 }
@@ -75,6 +87,10 @@ impl<'de> Deserialize<'de> for VisualizerMode {
         Ok(match value.as_str() {
             "bars" => Self::Bars,
             "outline" => Self::Outline,
+            "columns" => Self::Columns,
+            "bricks" => Self::Bricks,
+            "dots" => Self::Dots,
+            "butterfly" => Self::Butterfly,
             _ => Self::Off,
         })
     }
@@ -318,6 +334,10 @@ mod tests {
             (VisualizerMode::Off, "\"off\""),
             (VisualizerMode::Bars, "\"bars\""),
             (VisualizerMode::Outline, "\"outline\""),
+            (VisualizerMode::Columns, "\"columns\""),
+            (VisualizerMode::Bricks, "\"bricks\""),
+            (VisualizerMode::Dots, "\"dots\""),
+            (VisualizerMode::Butterfly, "\"butterfly\""),
         ] {
             assert_eq!(serde_json::to_string(&mode).unwrap(), encoded);
             assert_eq!(
@@ -330,9 +350,26 @@ mod tests {
     #[test]
     fn unknown_mode_defaults_to_off() {
         assert_eq!(
-            serde_json::from_str::<VisualizerMode>("\"butterfly\"").unwrap(),
+            serde_json::from_str::<VisualizerMode>("\"future-mode\"").unwrap(),
             VisualizerMode::Off
         );
+    }
+
+    #[test]
+    fn mode_cycle_visits_every_mode_in_order() {
+        let mut mode = VisualizerMode::Off;
+        for expected in [
+            VisualizerMode::Bars,
+            VisualizerMode::Outline,
+            VisualizerMode::Columns,
+            VisualizerMode::Bricks,
+            VisualizerMode::Dots,
+            VisualizerMode::Butterfly,
+            VisualizerMode::Off,
+        ] {
+            mode = mode.next();
+            assert_eq!(mode, expected);
+        }
     }
 
     #[test]

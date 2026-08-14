@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Optional CAVA-backed Bars and Outline spectrum visualizers with persisted `v`/`V` controls
+- Columns, Bricks, Dots, and Butterfly compact spectrum modes
 - Stable playback progress rail with graceful missing-CAVA and stale-frame fallbacks
 
 ## [1.0.0] - 2026-08-13

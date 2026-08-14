@@ -67,11 +67,12 @@ sudo apt install cava
 brew install cava
 ```
 
-Riptide works normally without CAVA. Press `v` after installing it to enable
-the visualizer; if a previous attempt failed, cycle back to Off first. CAVA
-captures the default output monitor, so its bars may also react to browser
-audio, notifications, or another player. Capture or visualization failures do
-not affect playback.
+Riptide works normally without CAVA. Press `v` after installing it to cycle
+through Bars, Outline, Columns, Bricks, Dots, and Butterfly; press `V` to turn
+visualization off. If a previous launch attempt failed, cycle back to Off
+first. CAVA captures the default output monitor, so its bars may also react to
+browser audio, notifications, or another player. Capture or visualization
+failures do not affect playback.
 
 ## Installation
 
@@ -254,7 +255,7 @@ optional — a config from an older version loads fine and picks up the defaults
 | `volume`                                                              | `0`–`100`                                                | `100`        |
 | `shuffle`                                                             | `true` / `false`                                         | `false`      |
 | `queue_visible`                                                       | `true` / `false`                                         | `true`       |
-| `visualizer_mode`                                                     | `"off"`, `"bars"`, `"outline"`                        | `"off"`     |
+| `visualizer_mode`                                                     | `"off"`, `"bars"`, `"outline"`, `"columns"`, `"bricks"`, `"dots"`, `"butterfly"` | `"off"` |
 
 `null` for a sort means "never chosen", which sorts alphabetically. Note that
 `ByArtist` only applies to the Tracks and Albums tabs; the Artists and Playlists tabs offer name and date only.

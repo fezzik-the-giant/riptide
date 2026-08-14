@@ -2,7 +2,8 @@
 
 ## CLIamp
 
-The compact spectrum renderer designs include ideas adapted from
+The Bars, Outline, Columns, Bricks, Dots, and Butterfly renderer designs
+include ideas adapted from
 [CLIamp](https://github.com/bjarneo/cliamp/tree/2b6b27f1f1837a1da806bbd8ef83297029a7e1ac),
 which is licensed under the MIT License:
 

@@ -218,6 +218,7 @@ fn render_center(f: &mut Frame, app: &App, area: Rect) {
         Spectrum {
             mode: app.visualizer_mode,
             state: &spectrum_state,
+            tick: app.tick,
         },
         spectrum_area,
     );

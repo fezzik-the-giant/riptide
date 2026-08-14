@@ -305,9 +305,17 @@ mod visualizer_tests {
         assert_eq!(app.visualizer_mode, VisualizerMode::Bars);
         assert!(*enabled_rx.borrow_and_update());
 
-        app.cycle_visualizer_mode();
-        assert_eq!(app.visualizer_mode, VisualizerMode::Outline);
-        assert!(!enabled_rx.has_changed().unwrap());
+        for expected in [
+            VisualizerMode::Outline,
+            VisualizerMode::Columns,
+            VisualizerMode::Bricks,
+            VisualizerMode::Dots,
+            VisualizerMode::Butterfly,
+        ] {
+            app.cycle_visualizer_mode();
+            assert_eq!(app.visualizer_mode, expected);
+            assert!(!enabled_rx.has_changed().unwrap());
+        }
 
         app.cycle_visualizer_mode();
         assert_eq!(app.visualizer_mode, VisualizerMode::Off);
