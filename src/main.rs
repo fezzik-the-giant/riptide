@@ -20,12 +20,14 @@ mod player;
 mod playlist;
 mod search;
 mod ui;
+mod visualizer;
 
 use api::ApiWorker;
 use app::App;
 use lastfm::auth as lastfm_auth_module;
 use mpris::MprisServer;
 use player::PlayerWorker;
+use visualizer::{CavaWorker, SpectrumState};
 
 fn lastfm_auth() -> Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
@@ -107,6 +109,11 @@ fn main() -> Result<()> {
     let (lastfm_cmd_tx, lastfm_cmd_rx) = mpsc::unbounded_channel::<lastfm::LastfmCmd>();
     let (_lastfm_evt_tx, _lastfm_evt_rx) = mpsc::unbounded_channel::<lastfm::LastfmEvent>();
 
+    let visualizer_enabled = config.prefs.visualizer_mode != visualizer::VisualizerMode::Off;
+    let (visualizer_enabled_tx, visualizer_enabled_rx) =
+        tokio::sync::watch::channel(visualizer_enabled);
+    let (spectrum_tx, spectrum_rx) = tokio::sync::watch::channel(SpectrumState::Disabled);
+
     // Spawn async workers on a dedicated Tokio thread.
     // We keep the handle so we can join it on exit and let PlayerWorker kill mpv cleanly.
     let worker_config = config.clone();
@@ -122,12 +129,14 @@ fn main() -> Result<()> {
                 player_evt_lastfm_rx,
                 _lastfm_evt_tx,
             );
+            let cava_worker = CavaWorker::new(visualizer_enabled_rx, spectrum_tx);
             tokio::spawn(manifest::run_server());
             tokio::join!(
                 api_worker.run(),
                 player_worker.run(),
                 mpris_server.run(),
-                lastfm_worker.run()
+                lastfm_worker.run(),
+                cava_worker.run()
             );
         });
     });
@@ -145,6 +154,8 @@ fn main() -> Result<()> {
         player_cmd_tx,
         mpris_state_tx,
         lastfm_cmd_tx,
+        visualizer_enabled_tx,
+        spectrum_rx,
         config.prefs.clone(),
     );
     let result = events::run_app(

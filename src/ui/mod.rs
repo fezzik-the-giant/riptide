@@ -30,6 +30,7 @@ mod artist_detail;
 mod album_detail;
 mod playlist_detail;
 mod lists;
+mod visualizer;
 
 use theme::*;
 use image::*;
@@ -44,6 +45,7 @@ use artist_detail::*;
 use album_detail::*;
 use playlist_detail::*;
 use lists::*;
+use visualizer::*;
 
 pub fn draw(f: &mut Frame, app: &App) {
     let area = f.area();
@@ -129,4 +131,3 @@ pub fn draw(f: &mut Frame, app: &App) {
 // ── Toast ─────────────────────────────────────────────────────────────────────
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-

@@ -4,6 +4,7 @@
 //! Sort fields, the sort palette, and the preferences persisted to config.
 
 use super::*;
+use crate::visualizer::VisualizerMode;
 
 // ── Sort palette ─────────────────────────────────────────────────────────────
 
@@ -49,6 +50,8 @@ pub struct Preferences {
     pub shuffle: bool,
     #[serde(default = "default_queue_visible")]
     pub queue_visible: bool,
+    #[serde(default)]
+    pub visualizer_mode: VisualizerMode,
 }
 
 fn default_volume() -> u8 { 100 }
@@ -64,6 +67,7 @@ impl Default for Preferences {
             volume: default_volume(),
             shuffle: false,
             queue_visible: default_queue_visible(),
+            visualizer_mode: VisualizerMode::Off,
         }
     }
 }
@@ -94,5 +98,23 @@ impl SortPalette {
             ],
             Tab::Search => &[],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_visualizer_preference_defaults_to_off() {
+        let preferences: Preferences = serde_json::from_str("{}").unwrap();
+        assert_eq!(preferences.visualizer_mode, VisualizerMode::Off);
+    }
+
+    #[test]
+    fn unknown_visualizer_preference_defaults_to_off() {
+        let preferences: Preferences =
+            serde_json::from_str(r#"{"visualizer_mode":"future-mode"}"#).unwrap();
+        assert_eq!(preferences.visualizer_mode, VisualizerMode::Off);
     }
 }

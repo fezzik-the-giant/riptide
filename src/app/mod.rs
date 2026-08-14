@@ -19,6 +19,7 @@ use crate::lastfm::LastfmCmd;
 use crate::mpris::MprisState;
 use crate::player::PlayerCmd;
 use crate::search::SearchState;
+use crate::visualizer::{SpectrumState, VisualizerMode};
 
 // ── App ───────────────────────────────────────────────────────────────────────
 
@@ -61,6 +62,10 @@ pub struct App {
     /// (message, level, Instant when set) — cleared automatically after ~5 s
     pub status: Option<(String, StatusLevel, std::time::Instant)>,
 
+    visualizer_mode: VisualizerMode,
+    visualizer_enabled_tx: watch::Sender<bool>,
+    pub spectrum_rx: watch::Receiver<SpectrumState>,
+
     pub api_tx:    mpsc::UnboundedSender<ApiRequest>,
     pub player_tx: mpsc::UnboundedSender<PlayerCmd>,
     pub mpris_tx:  watch::Sender<MprisState>,
@@ -73,6 +78,8 @@ impl App {
         player_tx: mpsc::UnboundedSender<PlayerCmd>,
         mpris_tx:  watch::Sender<MprisState>,
         lastfm_tx: mpsc::UnboundedSender<LastfmCmd>,
+        visualizer_enabled_tx: watch::Sender<bool>,
+        spectrum_rx: watch::Receiver<SpectrumState>,
         prefs:     Preferences,
     ) -> Self {
         let mut app = Self {
@@ -116,6 +123,9 @@ impl App {
             help_scroll: 0,
             tick:   0,
             status: None,
+            visualizer_mode: prefs.visualizer_mode,
+            visualizer_enabled_tx,
+            spectrum_rx,
             api_tx,
             player_tx,
             mpris_tx,
@@ -143,7 +153,36 @@ impl App {
             volume: self.now_playing.volume,
             shuffle: self.now_playing.shuffle,
             queue_visible: self.queue_visible,
+            visualizer_mode: self.visualizer_mode,
         }
+    }
+
+    pub(crate) fn set_visualizer_mode(&mut self, mode: VisualizerMode) {
+        let was_enabled = self.visualizer_mode != VisualizerMode::Off;
+        let is_enabled = mode != VisualizerMode::Off;
+        let retrying = is_enabled
+            && matches!(&*self.spectrum_rx.borrow(), SpectrumState::Unavailable);
+        self.visualizer_mode = mode;
+        if was_enabled != is_enabled || retrying {
+            let _ = self.visualizer_enabled_tx.send(is_enabled);
+        }
+        if retrying {
+            self.spectrum_rx.borrow_and_update();
+        }
+        let action = if retrying { "Retrying visualizer" } else { "Visualizer" };
+        self.set_status(format!("{action}: {}", mode.label()), StatusLevel::Info);
+    }
+
+    pub(crate) fn visualizer_mode(&self) -> VisualizerMode {
+        self.visualizer_mode
+    }
+
+    pub(crate) fn cycle_visualizer_mode(&mut self) {
+        self.set_visualizer_mode(self.visualizer_mode.next());
+    }
+
+    pub(crate) fn disable_visualizer(&mut self) {
+        self.set_visualizer_mode(VisualizerMode::Off);
     }
 
     pub fn queue_scroll_offset(&self, height: usize) -> usize {
@@ -173,6 +212,17 @@ impl App {
                 tracing::debug!("Clearing status after {:.1}s: {}", set_at.elapsed().as_secs_f64(), msg);
                 self.status = None;
             }
+        }
+        let visualizer_failed = self.spectrum_rx.has_changed().unwrap_or(false)
+            && matches!(
+                &*self.spectrum_rx.borrow_and_update(),
+                SpectrumState::Unavailable
+            );
+        if visualizer_failed && self.visualizer_mode != VisualizerMode::Off {
+            self.set_status(
+                "Visualizer unavailable — check cava; press v to retry".to_string(),
+                StatusLevel::Error,
+            );
         }
     }
 
@@ -238,4 +288,80 @@ fn copy_to_clipboard(text: &str) {
     let b64 = base64::engine::general_purpose::STANDARD.encode(text.as_bytes());
     print!("\x1b]52;c;{b64}\x07");
     let _ = std::io::stdout().flush();
+}
+
+#[cfg(test)]
+mod visualizer_tests {
+    use super::*;
+
+    fn make_app() -> (App, watch::Receiver<bool>, watch::Sender<SpectrumState>) {
+        let (api_tx, _) = mpsc::unbounded_channel();
+        let (player_tx, _) = mpsc::unbounded_channel();
+        let (mpris_tx, _) = watch::channel(MprisState::default());
+        let (lastfm_tx, _) = mpsc::unbounded_channel();
+        let (visualizer_enabled_tx, visualizer_enabled_rx) = watch::channel(false);
+        let (spectrum_tx, spectrum_rx) = watch::channel(SpectrumState::Disabled);
+        (
+            App::new(
+                api_tx,
+                player_tx,
+                mpris_tx,
+                lastfm_tx,
+                visualizer_enabled_tx,
+                spectrum_rx,
+                Preferences::default(),
+            ),
+            visualizer_enabled_rx,
+            spectrum_tx,
+        )
+    }
+
+    #[test]
+    fn active_mode_changes_do_not_restart_capture() {
+        let (mut app, mut enabled_rx, _) = make_app();
+
+        app.cycle_visualizer_mode();
+        assert_eq!(app.visualizer_mode, VisualizerMode::Bars);
+        assert!(*enabled_rx.borrow_and_update());
+
+        for expected in [
+            VisualizerMode::Outline,
+            VisualizerMode::Columns,
+            VisualizerMode::Bricks,
+            VisualizerMode::Dots,
+            VisualizerMode::Butterfly,
+        ] {
+            app.cycle_visualizer_mode();
+            assert_eq!(app.visualizer_mode, expected);
+            assert!(!enabled_rx.has_changed().unwrap());
+        }
+
+        app.cycle_visualizer_mode();
+        assert_eq!(app.visualizer_mode, VisualizerMode::Off);
+        assert!(!*enabled_rx.borrow_and_update());
+        assert_eq!(app.preferences().visualizer_mode, VisualizerMode::Off);
+    }
+
+    #[test]
+    fn unavailable_capture_reports_an_error_and_active_mode_change_retries() {
+        let (mut app, mut enabled_rx, spectrum_tx) = make_app();
+        app.set_visualizer_mode(VisualizerMode::Bars);
+        assert!(*enabled_rx.borrow_and_update());
+
+        spectrum_tx.send(SpectrumState::Unavailable).unwrap();
+        app.tick();
+        assert!(matches!(
+            &app.status,
+            Some((message, StatusLevel::Error, _))
+                if message.contains("check cava") && message.contains("press v to retry")
+        ));
+
+        app.cycle_visualizer_mode();
+        assert_eq!(app.visualizer_mode(), VisualizerMode::Outline);
+        assert!(*enabled_rx.borrow_and_update());
+        assert!(matches!(
+            &app.status,
+            Some((message, StatusLevel::Info, _)) if message == "Retrying visualizer: Outline"
+        ));
+    }
 }

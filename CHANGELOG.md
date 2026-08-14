@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Optional CAVA-backed Bars and Outline spectrum visualizers with persisted `v`/`V` controls
+- Columns, Bricks, Dots, and Butterfly compact spectrum modes
+- Stable playback progress rail with graceful missing-CAVA and stale-frame fallbacks
+
 ## [1.0.0] - 2026-08-13
 
 The Tidal API migration is complete: every endpoint that can use the v2 API now
