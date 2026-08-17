@@ -32,3 +32,8 @@ pub(super) const SPINNER: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴'
 pub(super) fn spinner_char(tick: u64) -> char {
     SPINNER[(tick / 3) as usize % SPINNER.len()]
 }
+
+/// Blinking block for text inputs. Shared so every input box blinks in step.
+pub(super) fn cursor_char(tick: u64) -> &'static str {
+    if (tick / 30) % 2 == 0 { "█" } else { " " }
+}

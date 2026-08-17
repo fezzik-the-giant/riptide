@@ -337,7 +337,8 @@ Press `?` in the player to view all keybinds. Here's the complete reference:
 |-------------|-----------------|
 | `?`         | Show this help  |
 | `q`         | Quit            |
-| `/`         | Command palette |
+| `:`         | Command palette |
+| `/`         | Filter list     |
 | `Tab`       | Next tab        |
 | `Shift+Tab` | Previous tab    |
 | `Shift+A`   | Toggle fullscreen art |
@@ -351,6 +352,20 @@ Press `?` in the player to view all keybinds. Here's the complete reference:
 | `Esc`       | Back/Go up      |
 
 These work everywhere, including while the queue is focused.
+
+### Filtering
+
+Press `/` on the Tracks, Artists, Albums or Playlists tab to narrow the list as
+you type. Tracks match on title or artist; the others match on name.
+
+| Key         | Action                                  |
+|-------------|-----------------------------------------|
+| `/`         | Open the filter box                     |
+| `Enter`     | Close the box, keep the list filtered   |
+| `Esc`       | Clear the filter and show everything    |
+
+The active filter is shown in the list header, e.g. `Tracks (3 of 214) · A-Z · /ts`.
+It stays applied when you switch tabs, and `Esc` clears it from anywhere on the tab.
 
 ### Navigation
 

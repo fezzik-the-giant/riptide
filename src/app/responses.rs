@@ -49,24 +49,14 @@ impl App {
             }
 
             ApiResponse::AlbumUnfavorited { album_id } => {
-                self.fav_albums.items.retain(|a| a.id != album_id);
-                self.fav_albums.total = self.fav_albums.total.saturating_sub(1);
-                self.fav_albums.selected = self
-                    .fav_albums
-                    .selected
-                    .min(self.fav_albums.items.len().saturating_sub(1));
+                self.fav_albums.remove_where(|a| a.id != album_id);
                 self.favorite_album_ids.remove(&album_id);
             }
 
             ApiResponse::PlaylistSaved => {}
 
             ApiResponse::PlaylistRemoved { uuid } => {
-                self.playlists.items.retain(|p| p.uuid != uuid);
-                self.playlists.total = self.playlists.total.saturating_sub(1);
-                self.playlists.selected = self
-                    .playlists
-                    .selected
-                    .min(self.playlists.items.len().saturating_sub(1));
+                self.playlists.remove_where(|p| p.uuid != uuid);
             }
 
             ApiResponse::Playlists(items, total) => {
@@ -387,7 +377,7 @@ impl App {
                 let is_source = self.now_playing.source_playlist_uuid.as_deref() == Some(&uuid);
                 if is_source {
                     let qi = self.now_playing.queue_index;
-                    let old_queue_len = self.now_playing.queue.len();
+                    let old_next_id = self.now_playing.queue.get(qi + 1).map(|t| t.id);
 
                     if self.now_playing.shuffle {
                         self.now_playing.original_queue.extend(tracks.clone());
@@ -428,12 +418,10 @@ impl App {
                         });
                     }
 
-                    if old_queue_len <= qi + 1 {
-                        if let Some(next) = self.now_playing.queue.get(qi + 1) {
-                            let _ = self
-                                .api_tx
-                                .send(ApiRequest::ResolveStreamUrl { track_id: next.id });
-                        }
+                    // A shuffled insert can land directly after the current track, so
+                    // it is not enough to check whether the queue merely grew past it.
+                    if self.now_playing.queue.get(qi + 1).map(|t| t.id) != old_next_id {
+                        self.replace_prefetched_next();
                     }
                 }
             }
@@ -567,14 +555,24 @@ impl App {
                     self.fetch_now_playing_metadata();
                     self.push_mpris_state();
 
+                    // `loadfile replace` wipes mpv's playlist and always loads media,
+                    // so anything prefetched into it is gone and mpv is no longer dry.
                     let _ = self.player_tx.send(PlayerCmd::Play(url));
+                    self.now_playing.next_prefetched = None;
+                    self.now_playing.mpv_exhausted = false;
                     if let Some(next) = self.now_playing.queue.get(idx + 1) {
                         let _ = self
                             .api_tx
                             .send(ApiRequest::ResolveStreamUrl { track_id: next.id });
                     }
-                } else if self.now_playing.queue.get(idx + 1).map(|t| t.id) == Some(track_id) {
-                    let _ = self.player_tx.send(PlayerCmd::Append(url));
+                } else if self.now_playing.queue.get(idx + 1).map(|t| t.id) == Some(track_id)
+                    && !self.now_playing.mpv_exhausted
+                {
+                    // Only queue behind media mpv still has loaded — see the field's
+                    // doc comment. A prefetch dropped here is recovered by the
+                    // divergence check in `TrackEnded`.
+                    let _ = self.player_tx.send(PlayerCmd::SetNext(url));
+                    self.now_playing.next_prefetched = Some(track_id);
                 }
             }
 
@@ -647,22 +645,12 @@ impl App {
             ApiResponse::FavoriteAdded | ApiResponse::ArtistFollowed => {}
 
             ApiResponse::FavoriteRemoved { track_id } => {
-                self.favorites.items.retain(|t| t.id != track_id);
-                self.favorites.total = self.favorites.total.saturating_sub(1);
-                self.favorites.selected = self
-                    .favorites
-                    .selected
-                    .min(self.favorites.items.len().saturating_sub(1));
+                self.favorites.remove_where(|t| t.id != track_id);
                 self.rebuild_favorite_track_ids();
             }
 
             ApiResponse::ArtistUnfollowed { artist_id } => {
-                self.artists.items.retain(|a| a.id != artist_id);
-                self.artists.total = self.artists.total.saturating_sub(1);
-                self.artists.selected = self
-                    .artists
-                    .selected
-                    .min(self.artists.items.len().saturating_sub(1));
+                self.artists.remove_where(|a| a.id != artist_id);
             }
 
             ApiResponse::RadioTracks { tracks } => {
@@ -763,21 +751,41 @@ impl App {
                 self.push_mpris_state();
             }
             PlayerEvent::TrackEnded => {
-                if self.now_playing.queue_index + 1 < self.now_playing.queue.len() {
-                    self.now_playing.queue_index += 1;
-                    self.now_playing.track = self
-                        .now_playing
-                        .queue
-                        .get(self.now_playing.queue_index)
-                        .cloned();
-                    let next_idx = self.now_playing.queue_index + 1;
-                    if let Some(next) = self.now_playing.queue.get(next_idx) {
+                let next_idx = self.now_playing.queue_index + 1;
+                if next_idx < self.now_playing.queue.len() {
+                    // mpv rolls over to whatever it had prefetched, which is only the
+                    // track we are about to display if that is what we appended. When
+                    // it is not, the two sides have diverged — re-resolve the track so
+                    // the StreamUrl handler issues a fresh `Play` and puts them back in
+                    // step, instead of narrating a track that is not being played.
+                    let diverged = self.now_playing.next_prefetched
+                        != self.now_playing.queue.get(next_idx).map(|t| t.id);
+
+                    self.now_playing.queue_index = next_idx;
+                    self.now_playing.track = self.now_playing.queue.get(next_idx).cloned();
+                    // mpv rolled onto the entry it had queued; if it had none it has
+                    // now run off the end of its playlist.
+                    self.now_playing.mpv_exhausted = self.now_playing.next_prefetched.is_none();
+                    self.now_playing.next_prefetched = None;
+
+                    if diverged {
+                        tracing::debug!(
+                            "mpv did not advance to queue[{}]; replaying it to resync",
+                            next_idx
+                        );
+                        self.now_playing.active = false;
+                        if let Some(current) = self.now_playing.queue.get(next_idx) {
+                            let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl {
+                                track_id: current.id,
+                            });
+                        }
+                    } else if let Some(next) = self.now_playing.queue.get(next_idx + 1) {
                         let _ = self
                             .api_tx
                             .send(ApiRequest::ResolveStreamUrl { track_id: next.id });
                     }
-                    if let Some(current) = self.now_playing.queue.get(self.now_playing.queue_index)
-                    {
+
+                    if let Some(current) = self.now_playing.queue.get(next_idx) {
                         let _ = self.api_tx.send(ApiRequest::GetTrackDetails {
                             track_id: current.id,
                         });
@@ -785,6 +793,8 @@ impl App {
                     self.fetch_now_playing_metadata();
                 } else {
                     self.now_playing.active = false;
+                    self.now_playing.next_prefetched = None;
+                    self.now_playing.mpv_exhausted = true;
                     self.push_mpris_state();
                 }
                 self.now_playing.position = 0.0;

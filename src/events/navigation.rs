@@ -499,8 +499,13 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
             Tab::Albums => app.open_selected_fav_album(),
             Tab::Playlists => app.open_selected_playlist(),
             Tab::Favorites => {
+                // Queue what is on screen: `selected` indexes the visible rows,
+                // so with a filter applied the unfiltered list would play the
+                // wrong track.
                 let idx = app.favorites.selected;
-                let tracks = app.favorites.items.clone();
+                let tracks: Vec<_> = (0..app.favorites.visible_len())
+                    .filter_map(|i| app.favorites.get_visible(i).cloned())
+                    .collect();
                 if !tracks.is_empty() {
                     app.play_tracks(tracks, idx);
                 }

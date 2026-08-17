@@ -45,7 +45,7 @@ pub(super) fn render_search_modal(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(block, modal_area);
 
     // Render search input
-    let cursor = if (app.tick / 30) % 2 == 0 { "█" } else { " " };
+    let cursor = cursor_char(app.tick);
     let input_text = format!("{}{}", app.search.query, cursor);
     f.render_widget(
         Paragraph::new(input_text)

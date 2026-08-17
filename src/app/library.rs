@@ -27,6 +27,7 @@ impl App {
             self.favorites.items.insert(0, track.clone());
             self.favorites.total = self.favorites.total.saturating_add(1);
             self.favorites.selected = self.favorites.selected.saturating_add(1);
+            self.favorites.refilter();
             self.rebuild_favorite_track_ids();
         }
         self.set_status(
@@ -69,6 +70,7 @@ impl App {
             if pos <= self.artists.selected {
                 self.artists.selected = self.artists.selected.saturating_add(1);
             }
+            self.artists.refilter();
         }
         self.set_status(format!("Following {}", artist.name), StatusLevel::Info);
     }
@@ -132,6 +134,7 @@ impl App {
         if !self.playlists.items.iter().any(|p| p.uuid == playlist.uuid) {
             self.playlists.items.insert(0, playlist.clone());
             self.playlists.total = self.playlists.total.saturating_add(1);
+            self.playlists.refilter();
         }
         self.set_status(
             format!("Saved '{}' to playlists", playlist.title),
@@ -258,6 +261,8 @@ impl App {
                     .cmp(&b.artist_name().to_lowercase())
             }),
         }
+        // `matches` holds positions, so reordering invalidates it.
+        self.favorites.refilter();
     }
 
     pub(crate) fn sort_artists(&mut self) {
@@ -273,6 +278,8 @@ impl App {
                 .items
                 .sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
         }
+        // `matches` holds positions, so reordering invalidates it.
+        self.artists.refilter();
     }
 
     pub(crate) fn sort_fav_albums(&mut self) {
@@ -291,6 +298,8 @@ impl App {
                     .cmp(&b.artist_name().to_lowercase())
             }),
         }
+        // `matches` holds positions, so reordering invalidates it.
+        self.fav_albums.refilter();
     }
 
     pub(crate) fn sort_playlists(&mut self) {
@@ -304,5 +313,44 @@ impl App {
                 .items
                 .sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase())),
         }
+        // `matches` holds positions, so reordering invalidates it.
+        self.playlists.refilter();
+    }
+
+    // ── Filtering ─────────────────────────────────────────────────────────────
+
+    /// Whether the current tab shows a list that can be filtered. Detail views
+    /// have their own lists and are not covered.
+    pub fn filterable_tab(&self) -> bool {
+        self.view_stack.is_empty()
+            && matches!(
+                self.current_tab,
+                Tab::Favorites | Tab::Artists | Tab::Albums | Tab::Playlists
+            )
+    }
+
+    /// The filter query of the list the current tab shows.
+    pub fn active_filter(&self) -> &str {
+        match self.current_tab {
+            Tab::Favorites => self.favorites.filter(),
+            Tab::Artists => self.artists.filter(),
+            Tab::Albums => self.fav_albums.filter(),
+            Tab::Playlists => self.playlists.filter(),
+            _ => "",
+        }
+    }
+
+    pub fn edit_active_filter(&mut self, edit: impl FnOnce(&mut String)) {
+        match self.current_tab {
+            Tab::Favorites => self.favorites.edit_filter(edit),
+            Tab::Artists => self.artists.edit_filter(edit),
+            Tab::Albums => self.fav_albums.edit_filter(edit),
+            Tab::Playlists => self.playlists.edit_filter(edit),
+            _ => {}
+        }
+    }
+
+    pub fn clear_active_filter(&mut self) {
+        self.edit_active_filter(|f| f.clear());
     }
 }

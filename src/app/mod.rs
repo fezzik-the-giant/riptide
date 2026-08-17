@@ -49,6 +49,9 @@ pub struct App {
     pub favorite_artist_ids: HashSet<u64>,
     pub search: SearchState,
     pub command: CommandState,
+    /// Whether the filter box is open and capturing input. The query itself
+    /// lives on each list, so every tab keeps its own.
+    pub filter_active: bool,
     pub sort_palette: SortPalette,
     pub artist_selection: ArtistSelection,
     pub tracks_sort: Option<SortField>,
@@ -101,6 +104,7 @@ impl App {
             favorite_artist_ids: HashSet::new(),
             search: SearchState::default(),
             command: CommandState::default(),
+            filter_active: false,
             sort_palette: SortPalette::default(),
             artist_selection: ArtistSelection::default(),
             tracks_sort: prefs.tracks_sort,

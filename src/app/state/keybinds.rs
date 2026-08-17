@@ -47,8 +47,12 @@ impl KeybindGroup {
                     action: "Quit",
                 },
                 Keybind {
-                    key: "/",
+                    key: ":",
                     action: "Command palette",
+                },
+                Keybind {
+                    key: "/",
+                    action: "Filter list",
                 },
                 Keybind {
                     key: "Tab",

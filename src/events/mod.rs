@@ -16,12 +16,14 @@ use crate::app::{App, Tab};
 use crate::mpris::MprisCmd;
 use crate::player::{PlayerCmd, PlayerEvent};
 
+mod filter;
 mod global;
 mod navigation;
 mod overlays;
 mod queue;
 mod search;
 
+use filter::*;
 use global::*;
 use navigation::*;
 use overlays::*;
@@ -98,6 +100,11 @@ fn handle_key(app: &mut App, key: KeyEvent) {
 
     if app.command.active {
         handle_command_input(app, key);
+        return;
+    }
+
+    if app.filter_active {
+        handle_filter_input(app, key);
         return;
     }
 

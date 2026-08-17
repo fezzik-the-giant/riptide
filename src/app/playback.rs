@@ -17,8 +17,7 @@ impl App {
         self.now_playing.position = 0.0;
         self.now_playing.shuffle = false;
         self.now_playing.original_queue = Vec::new();
-        self.now_playing.source_playlist_uuid = None;
-        self.now_playing.source_playlist_next_offset = 0;
+        self.now_playing.clear_source_playlist();
         let _ = self
             .api_tx
             .send(ApiRequest::ResolveStreamUrl { track_id: id });
@@ -28,39 +27,32 @@ impl App {
         if tracks.is_empty() {
             return;
         }
-        if self.now_playing.shuffle {
+        let start_index = start_index.min(tracks.len() - 1);
+        self.now_playing.clear_source_playlist();
+
+        let (queue, queue_index) = if self.now_playing.shuffle {
             self.now_playing.original_queue = tracks.clone();
             let mut queue = tracks;
             let current = queue.remove(start_index);
             use rand::seq::SliceRandom;
             queue.shuffle(&mut rand::thread_rng());
             queue.insert(0, current);
-            let track_id = queue.first().map(|t| t.id);
-            // Don't set track yet - wait for successful StreamUrl response
-            self.now_playing.queue = queue;
-            self.now_playing.queue_index = 0;
-            self.now_playing.active = false;
-            self.now_playing.position = 0.0;
-            if let Some(id) = track_id {
-                let _ = self
-                    .api_tx
-                    .send(ApiRequest::ResolveStreamUrl { track_id: id });
-            }
+            (queue, 0)
         } else {
             self.now_playing.original_queue = Vec::new();
-            self.now_playing.source_playlist_uuid = None;
-            self.now_playing.source_playlist_next_offset = 0;
-            let track_id = tracks.get(start_index).map(|t| t.id);
-            // Don't set track yet - wait for successful StreamUrl response
-            self.now_playing.queue = tracks;
-            self.now_playing.queue_index = start_index;
-            self.now_playing.active = false;
-            self.now_playing.position = 0.0;
-            if let Some(id) = track_id {
-                let _ = self
-                    .api_tx
-                    .send(ApiRequest::ResolveStreamUrl { track_id: id });
-            }
+            (tracks, start_index)
+        };
+
+        let track_id = queue.get(queue_index).map(|t| t.id);
+        // Don't set track yet - wait for successful StreamUrl response
+        self.now_playing.queue = queue;
+        self.now_playing.queue_index = queue_index;
+        self.now_playing.active = false;
+        self.now_playing.position = 0.0;
+        if let Some(id) = track_id {
+            let _ = self
+                .api_tx
+                .send(ApiRequest::ResolveStreamUrl { track_id: id });
         }
     }
 
@@ -119,19 +111,28 @@ impl App {
         }
         if self.now_playing.shuffle {
             self.now_playing.shuffle = false;
-            if !self.now_playing.original_queue.is_empty() {
-                let current_id = self.now_playing.track.as_ref().map(|t| t.id);
-                self.now_playing.queue = std::mem::take(&mut self.now_playing.original_queue);
-                if let Some(id) = current_id {
-                    if let Some(idx) = self.now_playing.queue.iter().position(|t| t.id == id) {
-                        self.now_playing.queue_index = idx;
-                        if let Some(next) = self.now_playing.queue.get(idx + 1) {
-                            let _ = self
-                                .api_tx
-                                .send(ApiRequest::ResolveStreamUrl { track_id: next.id });
-                        }
-                    }
+            // Restoring is only safe if the current track can still be located in
+            // the saved order; without that anchor `queue_index` would end up
+            // addressing a queue it no longer belongs to. Anchor on the queue rather
+            // than `now_playing.track`, which stays None until a stream URL resolves.
+            let restore_to = self
+                .now_playing
+                .queue
+                .get(self.now_playing.queue_index)
+                .map(|t| t.id)
+                .and_then(|id| {
+                    self.now_playing
+                        .original_queue
+                        .iter()
+                        .position(|t| t.id == id)
+                });
+            match restore_to {
+                Some(idx) => {
+                    self.now_playing.queue = std::mem::take(&mut self.now_playing.original_queue);
+                    self.now_playing.queue_index = idx;
+                    self.replace_prefetched_next();
                 }
+                None => self.now_playing.original_queue.clear(),
             }
             self.set_status("Shuffle off".to_string(), StatusLevel::Info);
         } else {
@@ -145,13 +146,31 @@ impl App {
             }
             self.now_playing.queue.insert(0, current);
             self.now_playing.queue_index = 0;
-            let _ = self.player_tx.send(PlayerCmd::RemoveNext);
-            if let Some(next) = self.now_playing.queue.get(1) {
-                let _ = self
-                    .api_tx
-                    .send(ApiRequest::ResolveStreamUrl { track_id: next.id });
-            }
+            self.replace_prefetched_next();
             self.set_status("Shuffle on".to_string(), StatusLevel::Info);
+        }
+    }
+
+    /// Point mpv at whatever now follows the current track. Call after any
+    /// reordering, so mpv's idea of "next" cannot outlive the queue that produced it.
+    ///
+    /// The entry mpv already holds is deliberately left alone until the replacement
+    /// URL arrives — `PlayerCmd::SetNext` swaps them in one step. Clearing it here
+    /// instead would leave mpv with an empty playlist for a whole round-trip, and a
+    /// file appended to an exhausted playlist starts playing rather than queueing.
+    /// `next_prefetched` therefore keeps describing what mpv actually holds, which is
+    /// what lets `TrackEnded` notice if the track runs out first.
+    pub(super) fn replace_prefetched_next(&mut self) {
+        match self.now_playing.queue.get(self.now_playing.queue_index + 1) {
+            Some(next) if self.now_playing.next_prefetched != Some(next.id) => {
+                let track_id = next.id;
+                let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl { track_id });
+            }
+            Some(_) => {}
+            None => {
+                let _ = self.player_tx.send(PlayerCmd::ClearNext);
+                self.now_playing.next_prefetched = None;
+            }
         }
     }
 
@@ -176,12 +195,7 @@ impl App {
 
         let new_next_id = self.now_playing.queue.get(new_qi + 1).map(|t| t.id);
         if new_next_id != old_next_id {
-            let _ = self.player_tx.send(PlayerCmd::RemoveNext);
-            if let Some(next) = self.now_playing.queue.get(new_qi + 1) {
-                let _ = self
-                    .api_tx
-                    .send(ApiRequest::ResolveStreamUrl { track_id: next.id });
-            }
+            self.replace_prefetched_next();
         }
 
         self.queue_cursor = idx - 1;
@@ -208,12 +222,7 @@ impl App {
 
         let new_next_id = self.now_playing.queue.get(new_qi + 1).map(|t| t.id);
         if new_next_id != old_next_id {
-            let _ = self.player_tx.send(PlayerCmd::RemoveNext);
-            if let Some(next) = self.now_playing.queue.get(new_qi + 1) {
-                let _ = self
-                    .api_tx
-                    .send(ApiRequest::ResolveStreamUrl { track_id: next.id });
-            }
+            self.replace_prefetched_next();
         }
 
         self.queue_cursor = idx + 1;
@@ -225,6 +234,9 @@ impl App {
             return;
         }
         let title = track.title.clone();
+        if self.now_playing.shuffle {
+            self.now_playing.original_queue.push(track.clone());
+        }
         self.now_playing.queue.push(track);
         let qi = self.now_playing.queue_index;
         let new_idx = self.now_playing.queue.len() - 1;
@@ -275,6 +287,15 @@ impl App {
         }
         let qi = self.now_playing.queue_index;
 
+        // Drop it from the pre-shuffle order too, or turning shuffle off would
+        // bring it back.
+        if self.now_playing.shuffle {
+            let removed_id = self.now_playing.queue[idx].id;
+            self.now_playing
+                .original_queue
+                .retain(|t| t.id != removed_id);
+        }
+
         if idx == qi {
             self.now_playing.queue.remove(idx);
             if self.now_playing.queue.is_empty() {
@@ -298,12 +319,7 @@ impl App {
             self.fetch_now_playing_metadata();
         } else if idx == qi + 1 {
             self.now_playing.queue.remove(idx);
-            let _ = self.player_tx.send(PlayerCmd::RemoveNext);
-            if let Some(next) = self.now_playing.queue.get(qi + 1) {
-                let _ = self
-                    .api_tx
-                    .send(ApiRequest::ResolveStreamUrl { track_id: next.id });
-            }
+            self.replace_prefetched_next();
         } else {
             self.now_playing.queue.remove(idx);
             if idx < qi {
@@ -352,7 +368,11 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::App;
+    use crate::api::ApiRequest;
     use crate::api::models::{Album, ArtistRef, Track};
+    use crate::mpris::MprisState;
+    use crate::player::{PlayerCmd, PlayerEvent};
+    use tokio::sync::mpsc;
 
     fn track(id: u64) -> Track {
         Track {
@@ -382,7 +402,43 @@ mod tests {
     }
 
     fn make_app() -> App {
-        crate::app::test_app().0
+        make_app_watching_api().0
+    }
+
+    /// Keeps the API receiver alive so tests can assert on what was requested.
+    fn make_app_watching_api() -> (App, mpsc::UnboundedReceiver<ApiRequest>) {
+        let (app, api_rx, _) = make_app_watching_all();
+        (app, api_rx)
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn make_app_watching_all() -> (
+        App,
+        mpsc::UnboundedReceiver<ApiRequest>,
+        mpsc::UnboundedReceiver<PlayerCmd>,
+    ) {
+        let (api_tx, api_rx) = mpsc::unbounded_channel();
+        let (player_tx, player_rx) = mpsc::unbounded_channel();
+        let (mpris_tx, _) = tokio::sync::watch::channel(MprisState::default());
+        let (lastfm_tx, _) = mpsc::unbounded_channel();
+        let app = App::new(
+            api_tx,
+            player_tx,
+            mpris_tx,
+            lastfm_tx,
+            crate::app::Preferences::default(),
+        );
+        (app, api_rx, player_rx)
+    }
+
+    fn resolved_track_ids(rx: &mut mpsc::UnboundedReceiver<ApiRequest>) -> Vec<u64> {
+        let mut ids = Vec::new();
+        while let Ok(req) = rx.try_recv() {
+            if let ApiRequest::ResolveStreamUrl { track_id } = req {
+                ids.push(track_id);
+            }
+        }
+        ids
     }
 
     // ── Shuffle ───────────────────────────────────────────────────────────────
@@ -446,6 +502,287 @@ mod tests {
 
         let new_idx = app.now_playing.queue_index;
         assert_eq!(app.now_playing.queue[new_idx].id, playing_id);
+    }
+
+    /// Stand-in for mpv's playlist, matching the behaviour verified against the real
+    /// player: entries are appended and never dropped, `pos` advances on EOF,
+    /// `loadfile replace` resets both, `playlist-clear` keeps only the playing entry,
+    /// and — the part that bites — a file appended to an exhausted playlist starts
+    /// playing rather than queueing.
+    #[derive(Default)]
+    struct FakeMpv {
+        playlist: Vec<u64>,
+        pos: usize,
+        exhausted: bool,
+    }
+
+    impl FakeMpv {
+        fn apply(&mut self, cmd: PlayerCmd) {
+            match cmd {
+                PlayerCmd::Play(url) => {
+                    self.playlist = vec![id_of(&url)];
+                    self.pos = 0;
+                    self.exhausted = false;
+                }
+                PlayerCmd::SetNext(url) => {
+                    self.clear_but_playing();
+                    self.append(id_of(&url));
+                }
+                PlayerCmd::ClearNext => self.clear_but_playing(),
+                _ => {}
+            }
+        }
+
+        fn clear_but_playing(&mut self) {
+            if let Some(&cur) = self.playlist.get(self.pos) {
+                self.playlist = vec![cur];
+                self.pos = 0;
+            }
+        }
+
+        fn append(&mut self, id: u64) {
+            self.playlist.push(id);
+            if self.exhausted {
+                self.pos = self.playlist.len() - 1;
+                self.exhausted = false;
+            }
+        }
+
+        fn playing(&self) -> Option<u64> {
+            if self.exhausted {
+                return None;
+            }
+            self.playlist.get(self.pos).copied()
+        }
+
+        /// Natural end of the current entry; true if mpv rolled to another entry.
+        fn end_of_file(&mut self) -> bool {
+            if self.pos + 1 < self.playlist.len() {
+                self.pos += 1;
+                true
+            } else {
+                self.exhausted = true;
+                false
+            }
+        }
+    }
+
+    fn id_of(url: &str) -> u64 {
+        url.trim_start_matches("url-").parse().unwrap()
+    }
+
+    /// Drives one full turn of the real loop: player commands into mpv, API
+    /// requests answered, responses fed back to the app until it settles.
+    fn settle(
+        app: &mut App,
+        mpv: &mut FakeMpv,
+        api_rx: &mut mpsc::UnboundedReceiver<ApiRequest>,
+        player_rx: &mut mpsc::UnboundedReceiver<PlayerCmd>,
+    ) {
+        for _ in 0..32 {
+            let mut progressed = false;
+            while let Ok(cmd) = player_rx.try_recv() {
+                let was_playing = mpv.playing();
+                mpv.apply(cmd);
+                // mpv reports file-loaded as soon as it loads media, long before any
+                // API response could come back.
+                if mpv.playing().is_some() && mpv.playing() != was_playing {
+                    app.handle_player_event(PlayerEvent::TrackStarted);
+                }
+                progressed = true;
+            }
+            while let Ok(req) = api_rx.try_recv() {
+                if let ApiRequest::ResolveStreamUrl { track_id } = req {
+                    app.handle_api_response(crate::api::ApiResponse::StreamUrl {
+                        track_id,
+                        url: format!("url-{track_id}"),
+                    });
+                }
+                progressed = true;
+            }
+            if !progressed {
+                return;
+            }
+        }
+        panic!("app and mpv never settled");
+    }
+
+    /// The invariant the whole design exists to protect: whatever mpv is playing is
+    /// what Now Playing describes. Vacuous once mpv has run out of playlist.
+    fn assert_in_sync(app: &App, mpv: &FakeMpv, when: &str) {
+        let Some(playing) = mpv.playing() else {
+            return;
+        };
+        assert_eq!(
+            app.now_playing.track.as_ref().map(|t| t.id),
+            Some(playing),
+            "{when}: Now Playing shows {:?} but mpv is playing {playing} (queue {:?}, qi {})",
+            app.now_playing.track.as_ref().map(|t| t.id),
+            app.now_playing
+                .queue
+                .iter()
+                .map(|t| t.id)
+                .collect::<Vec<_>>(),
+            app.now_playing.queue_index,
+        );
+    }
+
+    #[test]
+    fn unshuffling_and_reshuffling_does_not_change_the_playing_track() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+
+        app.now_playing.shuffle = true;
+        app.play_tracks((1..=8).map(track).collect(), 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        assert_in_sync(&app, &mpv, "after starting playback");
+
+        let playing = mpv.playing();
+
+        app.toggle_shuffle();
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        assert_eq!(mpv.playing(), playing, "unshuffling changed the audio");
+        assert_in_sync(&app, &mpv, "after z (unshuffle)");
+
+        app.toggle_shuffle();
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        assert_eq!(mpv.playing(), playing, "reshuffling changed the audio");
+        assert_in_sync(&app, &mpv, "after z (reshuffle)");
+    }
+
+    /// The reported bug: `z` used to clear mpv's queued entry immediately and only
+    /// then go ask for a replacement URL. A track ending inside that round-trip left
+    /// mpv with an exhausted playlist, so the late prefetch started playing instead
+    /// of queueing — the audio moved while Now Playing did not.
+    #[test]
+    fn a_track_ending_while_a_prefetch_is_in_flight_does_not_hijack_playback() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+
+        app.now_playing.shuffle = true;
+        app.play_tracks((1..=8).map(track).collect(), 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        let playing = mpv.playing();
+
+        // Both presses land before any stream URL comes back.
+        app.toggle_shuffle();
+        app.toggle_shuffle();
+        while let Ok(cmd) = player_rx.try_recv() {
+            mpv.apply(cmd);
+        }
+        assert_eq!(
+            mpv.playing(),
+            playing,
+            "mpv must still be playing the same track while the prefetch is in flight"
+        );
+        assert!(
+            mpv.playlist.len() > mpv.pos + 1,
+            "mpv must have something queued behind the current track, or a late \
+             prefetch will start playing instead of queueing"
+        );
+
+        // Only now does the track run out, with the responses still outstanding.
+        mpv.end_of_file();
+        app.handle_player_event(PlayerEvent::TrackEnded);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+
+        assert_in_sync(&app, &mpv, "after the track ended mid-prefetch");
+    }
+
+    #[test]
+    fn queue_stays_in_sync_across_shuffling_and_natural_advances() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+
+        app.play_tracks((1..=8).map(track).collect(), 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+
+        for step in 0..6 {
+            // mpv reports EOF whether or not another entry follows.
+            mpv.end_of_file();
+            app.handle_player_event(PlayerEvent::TrackEnded);
+            settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+            assert_in_sync(&app, &mpv, &format!("after advance {step}"));
+
+            app.toggle_shuffle();
+            settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+            assert_in_sync(&app, &mpv, &format!("after toggling shuffle at {step}"));
+        }
+    }
+
+    #[test]
+    fn shuffle_off_keeps_tracks_queued_while_shuffling() {
+        let mut app = make_app();
+        app.play_tracks((1..=5).map(track).collect(), 0);
+        app.now_playing.track = Some(app.now_playing.queue[0].clone());
+
+        app.toggle_shuffle();
+        app.add_to_queue(track(99));
+        app.toggle_shuffle();
+
+        assert!(app.now_playing.queue.iter().any(|t| t.id == 99));
+    }
+
+    #[test]
+    fn shuffle_off_without_a_resolved_track_keeps_queue_index_valid() {
+        let mut app = make_app();
+        app.play_tracks((1..=5).map(track).collect(), 0);
+        app.toggle_shuffle();
+        // `now_playing.track` is still None here: play_tracks waits for a stream URL.
+        let playing_id = app.now_playing.queue[app.now_playing.queue_index].id;
+
+        app.toggle_shuffle();
+
+        assert_eq!(
+            app.now_playing.queue[app.now_playing.queue_index].id, playing_id,
+            "the track at queue_index must not change under the player"
+        );
+    }
+
+    #[test]
+    fn new_queue_clears_source_playlist_while_shuffled() {
+        let mut app = make_app();
+        app.play_playlist_tracks((1..=5).map(track).collect(), 0, "playlist-a".to_string());
+        app.now_playing.shuffle = true;
+
+        app.play_tracks((6..=10).map(track).collect(), 0);
+
+        assert!(app.now_playing.source_playlist_uuid.is_none());
+        assert_eq!(app.now_playing.source_playlist_next_offset, 0);
+    }
+
+    // ── Advancing on mpv's own ────────────────────────────────────────────────
+
+    #[test]
+    fn track_ended_prefetches_the_following_track_when_mpv_kept_up() {
+        let (mut app, mut api_rx) = make_app_watching_api();
+        app.play_tracks((1..=3).map(track).collect(), 0);
+        app.now_playing.active = true;
+        app.now_playing.next_prefetched = Some(2);
+        let _ = resolved_track_ids(&mut api_rx);
+
+        app.handle_player_event(PlayerEvent::TrackEnded);
+
+        assert_eq!(app.now_playing.queue_index, 1);
+        assert_eq!(resolved_track_ids(&mut api_rx), vec![3]);
+        assert!(app.now_playing.active);
+    }
+
+    #[test]
+    fn track_ended_replays_the_current_track_when_mpv_had_nothing_queued() {
+        let (mut app, mut api_rx) = make_app_watching_api();
+        app.play_tracks((1..=3).map(track).collect(), 0);
+        app.now_playing.active = true;
+        app.now_playing.next_prefetched = None;
+        let _ = resolved_track_ids(&mut api_rx);
+
+        app.handle_player_event(PlayerEvent::TrackEnded);
+
+        assert_eq!(app.now_playing.queue_index, 1);
+        // Resolving the *current* track routes through the Play branch, which resets
+        // mpv's playlist — rather than narrating a track mpv never loaded.
+        assert_eq!(resolved_track_ids(&mut api_rx), vec![2]);
+        assert!(!app.now_playing.active);
     }
 
     #[test]

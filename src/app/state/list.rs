@@ -5,6 +5,41 @@
 
 use super::*;
 
+// ── Filtering ─────────────────────────────────────────────────────────────────
+
+/// An item a library list can be narrowed by as the user types.
+pub trait Filterable {
+    /// Text the filter query is matched against, lowercased.
+    fn filter_text(&self) -> String;
+}
+
+impl Filterable for Track {
+    fn filter_text(&self) -> String {
+        format!("{} {}", self.title, self.all_artist_names()).to_lowercase()
+    }
+}
+
+impl Filterable for Artist {
+    fn filter_text(&self) -> String {
+        self.name.to_lowercase()
+    }
+}
+
+impl Filterable for Album {
+    fn filter_text(&self) -> String {
+        match &self.artist {
+            Some(artist) => format!("{} {}", self.title, artist.name).to_lowercase(),
+            None => self.title.to_lowercase(),
+        }
+    }
+}
+
+impl Filterable for Playlist {
+    fn filter_text(&self) -> String {
+        self.title.to_lowercase()
+    }
+}
+
 // ── StatefulList ──────────────────────────────────────────────────────────────
 
 pub struct StatefulList<T> {
@@ -14,6 +49,13 @@ pub struct StatefulList<T> {
     pub exhausted: bool,
     pub total: u32,
     pub pagination_cursor: Option<String>,
+    /// Live filter query as typed. Empty means "show everything", and that is
+    /// a fast path: `matches` is never consulted, so lists that are never
+    /// filtered cost nothing and a stale `matches` cannot be reached.
+    filter: String,
+    /// Indices into `items` that match `filter`. Only meaningful while `filter`
+    /// is non-empty; keep it in step with `items` via `refilter`.
+    matches: Vec<usize>,
     viewport: ListViewport,
 }
 
@@ -45,7 +87,6 @@ impl ListViewport {
         offset
     }
 
-    #[allow(dead_code)]
     pub(crate) fn reset(&self) {
         self.offset.set(0);
     }
@@ -87,22 +128,60 @@ impl<T> Default for StatefulList<T> {
             exhausted: false,
             total: 0,
             pagination_cursor: None,
+            filter: String::new(),
+            matches: Vec::new(),
             viewport: ListViewport::default(),
         }
     }
 }
 
 impl<T> StatefulList<T> {
+    /// How many rows are on screen. `selected` indexes this sequence, not
+    /// `items`, so every caller works the same whether or not a filter is on.
+    pub fn visible_len(&self) -> usize {
+        if self.filter.is_empty() {
+            self.items.len()
+        } else {
+            self.matches.len()
+        }
+    }
+
+    pub fn get_visible(&self, index: usize) -> Option<&T> {
+        if self.filter.is_empty() {
+            self.items.get(index)
+        } else {
+            self.matches.get(index).and_then(|&i| self.items.get(i))
+        }
+    }
+
+    /// The visible rows in `[offset, offset + height)`, paired with their index
+    /// in the visible sequence so renderers can compare against `selected`.
+    pub fn visible_window(&self, height: usize) -> Vec<(usize, &T)> {
+        let offset = self.scroll_offset(height);
+        (offset..(offset + height).min(self.visible_len()))
+            .filter_map(|i| self.get_visible(i).map(|item| (i, item)))
+            .collect()
+    }
+
+    pub fn filter(&self) -> &str {
+        &self.filter
+    }
+
+    pub fn is_filtered(&self) -> bool {
+        !self.filter.is_empty()
+    }
+
     pub fn scroll_offset(&self, height: usize) -> usize {
         self.viewport
-            .offset(self.selected, self.items.len(), height)
+            .offset(self.selected, self.visible_len(), height)
     }
 
     pub fn next(&mut self) {
-        if self.items.is_empty() {
+        let len = self.visible_len();
+        if len == 0 {
             return;
         }
-        self.selected = (self.selected + 1).min(self.items.len() - 1);
+        self.selected = (self.selected + 1).min(len - 1);
     }
 
     pub fn prev(&mut self) {
@@ -112,22 +191,65 @@ impl<T> StatefulList<T> {
     }
 
     pub fn page_up(&mut self) {
-        self.selected = self.viewport.previous_page(self.selected, self.items.len());
+        self.selected = self
+            .viewport
+            .previous_page(self.selected, self.visible_len());
     }
 
     pub fn page_down(&mut self) {
-        self.selected = self.viewport.next_page(self.selected, self.items.len());
+        self.selected = self.viewport.next_page(self.selected, self.visible_len());
     }
 
     pub fn selected_item(&self) -> Option<&T> {
-        self.items.get(self.selected)
+        self.get_visible(self.selected)
     }
+}
 
+impl<T: Filterable> StatefulList<T> {
     pub fn append(&mut self, new_items: Vec<T>, total: u32) {
         self.items.extend(new_items);
         self.total = total;
         self.exhausted = self.items.len() as u32 >= total;
         self.loading = false;
+        self.refilter();
+    }
+
+    /// Edit the query and re-narrow. Selection returns to the top because the
+    /// row it pointed at is unlikely to still be there.
+    pub fn edit_filter(&mut self, edit: impl FnOnce(&mut String)) {
+        edit(&mut self.filter);
+        self.selected = 0;
+        self.viewport.reset();
+        self.refilter();
+    }
+
+    /// Drop the items `keep` rejects, holding `total`, the filter and the
+    /// selection consistent with what is left.
+    pub fn remove_where(&mut self, keep: impl FnMut(&T) -> bool) {
+        let before = self.items.len();
+        self.items.retain(keep);
+        let removed = (before - self.items.len()) as u32;
+        self.total = self.total.saturating_sub(removed);
+        self.refilter();
+        self.selected = self.selected.min(self.visible_len().saturating_sub(1));
+    }
+
+    /// Recompute `matches`. Call after anything mutates `items` directly, or the
+    /// indices go stale. Free when no filter is set.
+    pub fn refilter(&mut self) {
+        if self.filter.is_empty() {
+            self.matches.clear();
+            return;
+        }
+        let needle = self.filter.to_lowercase();
+        self.matches = self
+            .items
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| item.filter_text().contains(&needle))
+            .map(|(i, _)| i)
+            .collect();
+        self.selected = self.selected.min(self.matches.len().saturating_sub(1));
     }
 }
 
@@ -136,6 +258,14 @@ impl<T> StatefulList<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Lets the list tests stay on plain numbers. Filtering by digit is enough to
+    /// exercise the index mapping without dragging in a full `Track`.
+    impl Filterable for u32 {
+        fn filter_text(&self) -> String {
+            self.to_string()
+        }
+    }
 
     // ── fmt_secs ──────────────────────────────────────────────────────────────
 
@@ -315,5 +445,151 @@ mod tests {
         empty.page_up();
         empty.page_down();
         assert_eq!(empty.selected, 0);
+    }
+
+    // ── Filtering ─────────────────────────────────────────────────────────────
+
+    fn filtered(items: Vec<u32>, query: &str) -> StatefulList<u32> {
+        let mut list: StatefulList<u32> = StatefulList::default();
+        let total = items.len() as u32;
+        list.append(items, total);
+        list.edit_filter(|f| f.push_str(query));
+        list
+    }
+
+    #[test]
+    fn filtering_narrows_the_visible_rows() {
+        let list = filtered((1..=25).collect(), "2");
+
+        // 2, 12, 20..25 — everything containing the digit.
+        assert_eq!(list.visible_len(), 8);
+        assert_eq!(list.items.len(), 25, "the full list is kept intact");
+    }
+
+    #[test]
+    fn selection_addresses_the_visible_rows_not_the_backing_list() {
+        let mut list = filtered((1..=25).collect(), "2");
+
+        assert_eq!(list.selected_item(), Some(&2));
+        list.next();
+        assert_eq!(list.selected_item(), Some(&12));
+        list.next();
+        assert_eq!(list.selected_item(), Some(&20));
+    }
+
+    #[test]
+    fn navigation_stays_inside_the_filtered_set() {
+        let mut list = filtered((1..=25).collect(), "2");
+
+        for _ in 0..50 {
+            list.next();
+        }
+        assert_eq!(list.selected, list.visible_len() - 1);
+        assert_eq!(list.selected_item(), Some(&25));
+
+        list.page_down();
+        assert!(list.selected < list.visible_len());
+    }
+
+    #[test]
+    fn narrowing_the_filter_clamps_a_selection_that_falls_off_the_end() {
+        let mut list = filtered((1..=25).collect(), "2");
+        list.selected = list.visible_len() - 1;
+
+        // "23" matches a single row, well short of the old selection.
+        list.edit_filter(|f| {
+            f.clear();
+            f.push_str("23")
+        });
+
+        assert_eq!(list.visible_len(), 1);
+        assert_eq!(list.selected_item(), Some(&23));
+    }
+
+    #[test]
+    fn clearing_the_filter_restores_the_whole_list() {
+        let mut list = filtered((1..=25).collect(), "23");
+        list.edit_filter(|f| f.clear());
+
+        assert!(!list.is_filtered());
+        assert_eq!(list.visible_len(), 25);
+        assert_eq!(list.selected_item(), Some(&1));
+    }
+
+    #[test]
+    fn pages_arriving_during_an_active_filter_are_matched_too() {
+        let mut list = filtered((1..=9).collect(), "2");
+        assert_eq!(list.visible_len(), 1);
+
+        list.append((20..=22).collect(), 12);
+
+        assert_eq!(list.visible_len(), 4);
+        assert_eq!(list.selected_item(), Some(&2));
+    }
+
+    #[test]
+    fn removing_an_item_keeps_the_filtered_view_consistent() {
+        let mut list = filtered((1..=25).collect(), "2");
+        let before = list.visible_len();
+
+        list.remove_where(|n| *n != 12);
+
+        assert_eq!(list.visible_len(), before - 1);
+        assert_eq!(list.total, 24);
+        assert!(list.selected < list.visible_len());
+    }
+
+    #[test]
+    fn matching_is_case_insensitive() {
+        let mut list: StatefulList<String> = StatefulList::default();
+        list.append(
+            vec!["Tsunami Sea".to_string(), "Circle With Me".to_string()],
+            2,
+        );
+        list.edit_filter(|f| f.push_str("TSUNAMI"));
+
+        assert_eq!(list.visible_len(), 1);
+    }
+
+    impl Filterable for String {
+        fn filter_text(&self) -> String {
+            self.to_lowercase()
+        }
+    }
+
+    #[test]
+    fn a_track_matches_on_its_artist_as_well_as_its_title() {
+        let track = Track {
+            id: 1,
+            title: "Circle With Me".to_string(),
+            duration: 180,
+            artist: Some(ArtistRef {
+                name: "Spiritbox".to_string(),
+            }),
+            artists: vec![],
+            album: Album {
+                id: 1,
+                title: "Eternal Blue".to_string(),
+                number_of_tracks: None,
+                release_date: None,
+                cover: None,
+                artist: None,
+                audio_quality: None,
+                media_metadata: None,
+                added_at: None,
+                album_type: None,
+            },
+            audio_quality: None,
+            media_metadata: None,
+            added_at: None,
+        };
+
+        let text = track.filter_text();
+        assert!(text.contains("circle"), "matches the title");
+        assert!(text.contains("spiritbox"), "matches the artist");
+        assert!(
+            !text.contains("eternal"),
+            "the album is deliberately not matched"
+        );
     }
 }

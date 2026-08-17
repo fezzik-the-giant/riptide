@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-08-17
+
+### Added
+- Filter the Tracks, Artists, Albums and Playlists tabs by pressing `/` and typing. Tracks match on title or artist, the other tabs on name. The active filter is named in the list header (`Tracks (3 of 214) · A-Z · /ts`), `Enter` keeps it applied so you can navigate the narrowed list, and `Esc` clears it
+
+### Changed
+- The command palette moved from `/` to `:`, freeing `/` for filtering. `/` already opened the search box on the Search tab, so it now means "find something here" nearly everywhere
+
+### Fixed
+- The Now Playing bar — title, album art, details and lyrics — could describe a different track than the one actually playing. Toggling shuffle removed the wrong entry from mpv's playlist, which made mpv jump to the next track without telling the app. It only happened once a track had advanced on its own, because skipping with next/previous silently repaired it
+- Pressing shuffle while a track was ending could hand playback to a different track, again leaving Now Playing behind. Clearing the queued-up next track before its replacement was ready left mpv with nothing to play, and a file handed to an empty mpv playlist starts playing rather than waiting its turn
+- Turning shuffle off discarded every track queued since it was turned on, and could leave the selection pointing at a different track than the one playing
+- Starting a new album or playlist while shuffle was on left the previous playlist still loading pages into the queue
+
+### Internal
+- The app now tracks what mpv actually has queued and re-syncs when the two disagree, instead of assuming mpv followed along. mpv's playlist is append-only with a moving position, so the old fixed-index removal hit the playing entry once anything had advanced
+- Removing an item from a library list goes through one helper rather than three near-identical copies, and the blinking input cursor is defined once instead of in every text box
+
 ## [1.0.1] - 2026-08-14
 
 ### Fixed

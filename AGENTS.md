@@ -259,6 +259,60 @@ GOOD
 - Extract relationships and included objects manually
 - Build maps for efficient lookups during transformation
 
+### mpv's Playlist Is Not the Queue
+
+The app owns `now_playing.queue`; mpv holds only the current track plus one
+prefetched next (`--prefetch-playlist=yes` gives gapless playback). Two mpv
+behaviours make this harder than it looks, both verified against a live mpv:
+
+1. **The playlist is append-only.** Finished entries are never removed — only
+   `playlist-pos` advances. After `k` self-advances it holds `k + 2` entries with
+   `playlist-pos == k`, so any *absolute* `playlist-remove` index computed as if
+   the current track were at 0 will hit the wrong entry — and removing the playing
+   entry makes mpv jump to the next one while reporting `end-file` with
+   `reason: "stop"`, which the read loop ignores (only `"eof"` advances the queue).
+2. **A file appended to an exhausted playlist is *played*, not queued.** If mpv
+   has run off the end, `loadfile … append` starts it immediately.
+
+The design that satisfies both:
+
+- **`PlayerCmd::SetNext`** is the only way to queue a track. It sends
+  `playlist-clear` (keeps just the playing entry, so it cannot touch what is
+  playing and needs no index arithmetic) followed by `loadfile … append`, as one
+  burst so the playlist is never left empty behind the current track. It also
+  keeps the playlist from growing without bound.
+- **Never clear mpv's queued entry before the replacement URL is in hand.**
+  `App::replace_prefetched_next()` only *requests* the URL; the swap happens in the
+  `StreamUrl` handler. Clearing eagerly leaves the playlist empty for a whole
+  round-trip, and a track ending in that window turns the late prefetch into
+  hijacked playback (bug 2 above).
+- **`now_playing.mpv_exhausted`** gates every `SetNext`. Nothing may be appended
+  once mpv has run out of playlist.
+- **`now_playing.next_prefetched`** records what mpv actually holds.
+  `PlayerEvent::TrackEnded` compares it against `queue[queue_index + 1]` and
+  replays the track instead of advancing blindly when they disagree.
+- **`PlayerCmd::Play`** (`loadfile replace`) is the resync point — it resets the
+  playlist to one entry at position 0. Explicit actions (next/prev/play-from-queue)
+  all route through it, which is why they never desync, and why bugs here only
+  reproduce while tracks advance on their own.
+
+`src/app/playback.rs` tests carry a `FakeMpv` modelling all of the above; the
+`assert_in_sync` invariant (what mpv plays is what Now Playing shows) is the thing
+to preserve. Some of those tests depend on shuffle order — run the suite repeatedly
+when changing this area.
+
+### Filtering Library Lists
+
+`StatefulList::selected` indexes the **visible** rows, not `items`. With a filter
+active they differ, and `matches` holds positions into `items`, so **anything that
+mutates `items` directly must call `refilter()`** or the indices go stale. Use
+`remove_where` for removals — it handles `total`, the refilter and the clamp.
+An empty filter is a fast path that reads `items` directly, so unfiltered lists
+(every detail view) cost nothing.
+
+Reach rows through `selected_item()` / `get_visible()` / `visible_window()`, never
+`items[selected]` — that pairing is what makes a filtered list act on the wrong row.
+
 ## Remaining V1 API Usage & Refactoring Opportunities
 
 ### Complete V1 API Usage Inventory
@@ -293,10 +347,10 @@ above before adding anything back here.
 - Pattern: Log error with body snippet, return formatted error
 - **Opportunity:** Extract to `parse_error_response()` helper
 
-**3. Favorite/Collection Management (4 instances)**
-- Files: `responses.rs` `:49-52`, `:59-62`, `:480-483`, `:488-491`
-- Pattern: `.retain()`, `total.saturating_sub()`, adjust selection index
-- **Opportunity:** Extract to `remove_item_from_list()` helper
+**3. Favorite/Collection Management — Done**
+- All four removal sites now call `StatefulList::remove_where`, which owns the
+  `.retain()`, the `total` decrement, the refilter and the selection clamp.
+  Removing an item from a library list any other way will desync a filtered list.
 
 **4. Duplicate Deduplication (2 instances)**
 - Files: `responses.rs` `:20-28` (fav_albums dedup via HashSet), `:66-79` (favorites/playlists dedup)
@@ -327,7 +381,7 @@ above before adding anything back here.
 |--------|--------|--------|-----------------|------------|----------|
 | Query Param Builder | High | Low | client.rs (4 places) | 60+ | **P0** |
 | Error Parser | Medium | Low | client.rs (2 places) | 20+ | P1 |
-| Collection Manager | Medium | Low | responses.rs (4 places) | 30+ | P1 |
+| ~~Collection Manager~~ | — | — | done: `StatefulList::remove_where` | 30+ | — |
 | Deduplication | Medium | Low | responses.rs (2 places) | 15+ | P1 |
 | UI List Item | High | High | ui.rs (75+ places) | 200+ | P2 |
 | Queue Extension | Low | Medium | responses.rs, playback.rs | 25+ | P2 |

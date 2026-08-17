@@ -5,16 +5,26 @@
 
 use ratatui::{
     Frame,
-    layout::{Alignment, Rect},
+    layout::{Alignment, Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
 
 use super::*;
-use crate::app::App;
+use crate::app::{App, StatefulList};
 
 pub(super) fn render_content(f: &mut Frame, app: &App, area: Rect) {
+    // The filter box takes a slice off the top rather than floating over the
+    // list — the point is to watch the list narrow while typing.
+    let area = if app.filter_active && app.filterable_tab() {
+        let rows = Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).split(area);
+        render_filter_box(f, app, rows[0]);
+        rows[1]
+    } else {
+        area
+    };
+
     // If there's a view on the stack, render it
     if let Some(view) = app.view_stack.last() {
         match view {
@@ -39,11 +49,7 @@ pub(super) fn render_content(f: &mut Frame, app: &App, area: Rect) {
         Tab::Albums => render_fav_albums_list(f, app, area),
         Tab::Playlists => render_playlist_list(f, app, area),
         Tab::Favorites => {
-            let title = format!(
-                " Tracks ({}){} ",
-                app.favorites.items.len(),
-                sort_suffix(app)
-            );
+            let title = list_title("Tracks", &app.favorites, app.favorites.items.len(), app);
             render_track_list(f, app, &app.favorites, true, area, &title);
         }
         Tab::Search => render_search_results(f, app, area),
@@ -58,6 +64,51 @@ pub(super) fn sort_suffix(app: &App) -> String {
         .unwrap_or_default()
 }
 
+/// " Tracks (3 of 214) · A-Z · /ts " — an active filter is always named in the
+/// title, so a narrowed list can never look like the whole library.
+fn list_title<T>(name: &str, list: &StatefulList<T>, total: usize, app: &App) -> String {
+    if list.is_filtered() {
+        format!(
+            " {name} ({} of {total}){} · /{} ",
+            list.visible_len(),
+            sort_suffix(app),
+            list.filter()
+        )
+    } else {
+        format!(" {name} ({total}){} ", sort_suffix(app))
+    }
+}
+
+/// What to show in place of an empty list, distinguishing "you have none" from
+/// "none match what you typed".
+fn empty_text<T>(list: &StatefulList<T>, when_empty: &str) -> String {
+    if list.is_filtered() {
+        format!("No matches for \"{}\".", list.filter())
+    } else {
+        when_empty.to_string()
+    }
+}
+
+fn render_filter_box(f: &mut Frame, app: &App, area: Rect) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(ACCENT));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                "/ ",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(app.active_filter(), Style::default().fg(Color::White)),
+            Span::styled(cursor_char(app.tick), Style::default().fg(ACCENT)),
+        ])),
+        inner,
+    );
+}
+
 pub(super) fn render_artist_list(f: &mut Frame, app: &App, area: Rect) {
     let loading = app.artists.loading && app.artists.items.is_empty();
     let spinner = spinner_char(app.tick);
@@ -66,7 +117,7 @@ pub(super) fn render_artist_list(f: &mut Frame, app: &App, area: Rect) {
         .title(if loading {
             format!(" Artists {spinner} ")
         } else {
-            format!(" Artists ({}){} ", app.artists.total, sort_suffix(app))
+            list_title("Artists", &app.artists, app.artists.total as usize, app)
         })
         .borders(Borders::TOP)
         .border_style(Style::default().fg(ACCENT));
@@ -75,10 +126,12 @@ pub(super) fn render_artist_list(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(block, area);
 
     let height = inner.height as usize;
-    let items: Vec<ListItem> = visible_artist_items(&app.artists, height)
+    let items: Vec<ListItem> = app
+        .artists
+        .visible_window(height)
         .iter()
-        .map(|(abs_idx, artist)| {
-            let selected = *abs_idx == app.artists.selected;
+        .map(|(idx, artist)| {
+            let selected = *idx == app.artists.selected;
             let style = if selected {
                 Style::default()
                     .bg(HIGHLIGHT_BG)
@@ -93,7 +146,7 @@ pub(super) fn render_artist_list(f: &mut Frame, app: &App, area: Rect) {
         .collect();
 
     if items.is_empty() && !loading {
-        let p = Paragraph::new("No followed artists found.")
+        let p = Paragraph::new(empty_text(&app.artists, "No followed artists found."))
             .style(Style::default().fg(DIM))
             .alignment(Alignment::Center);
         f.render_widget(p, inner);
@@ -112,7 +165,12 @@ pub(super) fn render_fav_albums_list(f: &mut Frame, app: &App, area: Rect) {
         .title(if loading {
             format!(" Albums {spinner} ")
         } else {
-            format!(" Albums ({}){} ", app.fav_albums.total, sort_suffix(app))
+            list_title(
+                "Albums",
+                &app.fav_albums,
+                app.fav_albums.total as usize,
+                app,
+            )
         })
         .borders(Borders::TOP)
         .border_style(Style::default().fg(ACCENT));
@@ -120,9 +178,9 @@ pub(super) fn render_fav_albums_list(f: &mut Frame, app: &App, area: Rect) {
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    if app.fav_albums.items.is_empty() && !loading {
+    if app.fav_albums.visible_len() == 0 && !loading {
         f.render_widget(
-            Paragraph::new("No saved albums found.")
+            Paragraph::new(empty_text(&app.fav_albums, "No saved albums found."))
                 .style(Style::default().fg(DIM))
                 .alignment(Alignment::Center),
             inner,
@@ -132,17 +190,13 @@ pub(super) fn render_fav_albums_list(f: &mut Frame, app: &App, area: Rect) {
 
     let height = inner.height as usize;
     let selected = app.fav_albums.selected;
-    let offset = app.fav_albums.scroll_offset(height);
 
     let items: Vec<ListItem> = app
         .fav_albums
-        .items
+        .visible_window(height)
         .iter()
-        .enumerate()
-        .skip(offset)
-        .take(height)
         .map(|(idx, album)| {
-            let is_sel = idx == selected;
+            let is_sel = *idx == selected;
             let bg = if is_sel { HIGHLIGHT_BG } else { Color::Reset };
             let prefix = if is_sel { "▶ " } else { "  " };
             let artist = album.artist.as_ref().map(|a| a.name.as_str()).unwrap_or("");
@@ -192,7 +246,12 @@ pub(super) fn render_playlist_list(f: &mut Frame, app: &App, area: Rect) {
         .title(if loading {
             format!(" Playlists {spinner} ")
         } else {
-            format!(" Playlists ({}){} ", app.playlists.total, sort_suffix(app))
+            list_title(
+                "Playlists",
+                &app.playlists,
+                app.playlists.total as usize,
+                app,
+            )
         })
         .borders(Borders::TOP)
         .border_style(Style::default().fg(ACCENT));
@@ -201,16 +260,12 @@ pub(super) fn render_playlist_list(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(block, area);
 
     let height = inner.height as usize;
-    let offset = app.playlists.scroll_offset(height);
     let items: Vec<ListItem> = app
         .playlists
-        .items
+        .visible_window(height)
         .iter()
-        .enumerate()
-        .skip(offset)
-        .take(height)
         .map(|(i, pl)| {
-            let selected = i == app.playlists.selected;
+            let selected = *i == app.playlists.selected;
             let style = if selected {
                 Style::default()
                     .bg(HIGHLIGHT_BG)
@@ -230,7 +285,7 @@ pub(super) fn render_playlist_list(f: &mut Frame, app: &App, area: Rect) {
         .collect();
 
     if items.is_empty() && !loading {
-        let p = Paragraph::new("No playlists found.")
+        let p = Paragraph::new(empty_text(&app.playlists, "No playlists found."))
             .style(Style::default().fg(DIM))
             .alignment(Alignment::Center);
         f.render_widget(p, inner);
@@ -259,15 +314,11 @@ pub(super) fn render_track_list(
     f.render_widget(block, area);
 
     let height = inner.height as usize;
-    let offset = tracks.scroll_offset(height);
 
     let items: Vec<ListItem> = tracks
-        .items
+        .visible_window(height)
         .iter()
-        .enumerate()
-        .skip(offset)
-        .take(height)
-        .map(|(i, track)| {
+        .map(|&(i, track)| {
             let is_selected = i == selected && focused && !app.help_active;
             let is_playing = app
                 .now_playing
@@ -318,7 +369,7 @@ pub(super) fn render_track_list(
         .collect();
 
     if items.is_empty() {
-        let p = Paragraph::new("No tracks.")
+        let p = Paragraph::new(empty_text(tracks, "No tracks."))
             .style(Style::default().fg(DIM))
             .alignment(Alignment::Center);
         f.render_widget(p, inner);
@@ -327,17 +378,4 @@ pub(super) fn render_track_list(
 
     let list = List::new(items);
     f.render_widget(list, inner);
-}
-
-pub(super) fn visible_artist_items(
-    list: &crate::app::StatefulList<crate::api::models::Artist>,
-    height: usize,
-) -> Vec<(usize, &crate::api::models::Artist)> {
-    let offset = list.scroll_offset(height);
-    list.items
-        .iter()
-        .enumerate()
-        .skip(offset)
-        .take(height)
-        .collect()
 }

@@ -15,10 +15,12 @@ const SOCKET_PATH: &str = "/tmp/riptide-mpv.sock";
 #[derive(Debug)]
 pub enum PlayerCmd {
     Play(String),
-    Append(String),
+    /// Queue this URL behind the current track, replacing whatever was queued.
+    SetNext(String),
+    /// Drop whatever is queued behind the current track.
+    ClearNext,
     TogglePause,
     Stop,
-    RemoveNext,
     SetMediaTitle(String),
     ChangeVolume(i8),
     /// Absolute level, used to restore the saved volume at startup.
@@ -100,9 +102,28 @@ impl PlayerWorker {
                                 json!({"command": ["set_property", "pause", false]}).to_string()
                             ));
                         }
-                        PlayerCmd::Append(url) => {
+                        PlayerCmd::SetNext(url) => {
+                            // Sent as one burst, clear before append, because mpv
+                            // plays a file appended to an exhausted playlist rather
+                            // than queueing it. Leaving the playlist empty behind the
+                            // current track for the length of a stream-URL round-trip
+                            // let a late prefetch take over the audio while the app
+                            // still believed it was only queueing.
+                            //
+                            // `playlist-clear` keeps the playing entry, so it also
+                            // drops the finished entries mpv otherwise accumulates —
+                            // no index arithmetic, and nothing that can hit the entry
+                            // currently being played.
+                            let _ = ipc_tx.send(IpcRequest::Write(
+                                json!({"command": ["playlist-clear"]}).to_string()
+                            ));
                             let _ = ipc_tx.send(IpcRequest::Write(
                                 json!({"command": ["loadfile", url, "append"]}).to_string()
+                            ));
+                        }
+                        PlayerCmd::ClearNext => {
+                            let _ = ipc_tx.send(IpcRequest::Write(
+                                json!({"command": ["playlist-clear"]}).to_string()
                             ));
                         }
                         PlayerCmd::TogglePause => {
@@ -113,11 +134,6 @@ impl PlayerWorker {
                         PlayerCmd::Stop => {
                             let _ = ipc_tx.send(IpcRequest::Write(
                                 json!({"command": ["stop"]}).to_string()
-                            ));
-                        }
-                        PlayerCmd::RemoveNext => {
-                            let _ = ipc_tx.send(IpcRequest::Write(
-                                json!({"command": ["playlist-remove", 1]}).to_string()
                             ));
                         }
                         PlayerCmd::SetMediaTitle(t) => {

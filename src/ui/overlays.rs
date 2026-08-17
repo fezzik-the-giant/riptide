@@ -48,7 +48,7 @@ pub(super) fn render_command_overlay(f: &mut Frame, app: &App, area: Rect) {
     // Input line: "/ <typed><ghost>█"
     let q_lower = app.command.input.to_lowercase();
     let ghost = matches.first().map(|m| &m[q_lower.len()..]).unwrap_or("");
-    let cursor = if (app.tick / 30) % 2 == 0 { "█" } else { " " };
+    let cursor = cursor_char(app.tick);
     f.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled(
