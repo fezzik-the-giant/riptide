@@ -11,12 +11,11 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use crate::app::App;
 use super::*;
+use crate::app::App;
 
 pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
-    let cols = Layout::horizontal([Constraint::Min(0), Constraint::Length(20)])
-        .split(area);
+    let cols = Layout::horizontal([Constraint::Min(0), Constraint::Length(20)]).split(area);
 
     let context_hint = get_context_hint(app);
     let context_span = Span::styled(context_hint, Style::default().fg(DIM));
@@ -25,7 +24,12 @@ pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
         cols[0],
     );
 
-    let help_span = Span::styled("? show keybinds", Style::default().fg(Color::White).add_modifier(Modifier::BOLD));
+    let help_span = Span::styled(
+        "? show keybinds",
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD),
+    );
     f.render_widget(
         Paragraph::new(Line::from(help_span)).alignment(Alignment::Right),
         cols[1],
@@ -41,9 +45,7 @@ pub(super) fn get_context_hint(app: &App) -> String {
             ArtistDetailFocus::Albums | ArtistDetailFocus::EPs | ArtistDetailFocus::Singles => {
                 "↑↓ Select | ← → Section | f Fav | c Copy".to_string()
             }
-            ArtistDetailFocus::Bio => {
-                "↑↓ Scroll | ← → Section".to_string()
-            }
+            ArtistDetailFocus::Bio => "↑↓ Scroll | ← → Section".to_string(),
         }
     } else if let Some(View::AlbumDetail(_)) = app.view_stack.last() {
         "↑↓ Select | a Add | f Fav | r Radio | c Copy".to_string()
@@ -52,9 +54,7 @@ pub(super) fn get_context_hint(app: &App) -> String {
             PlaylistDetailFocus::Tracks => {
                 "↑↓ Select | ← → Section | a Add | f Fav | r Radio | c Copy".to_string()
             }
-            PlaylistDetailFocus::Description => {
-                "↑↓ Scroll | ← → Section".to_string()
-            }
+            PlaylistDetailFocus::Description => "↑↓ Scroll | ← → Section".to_string(),
         }
     } else {
         match app.current_tab {

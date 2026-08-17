@@ -1,0 +1,18 @@
+#!/usr/bin/env sh
+# Mirrors the `Lint` job in .github/workflows/ci.yml so formatting failures
+# surface here rather than after a push.
+#
+# Enable with: git config core.hooksPath .githooks
+
+# Nothing to check when the commit touches no Rust source. `cargo fmt` looks at
+# the whole tree, so without this a docs-only commit could be blocked by
+# unrelated unformatted work still in progress.
+if git diff --cached --name-only --diff-filter=ACMR | grep -q '\.rs$'; then
+    if ! cargo fmt --all -- --check; then
+        echo
+        echo "pre-commit: formatting check failed — CI would reject this."
+        echo "Fix with:  cargo fmt --all"
+        echo "Bypass with: git commit --no-verify"
+        exit 1
+    fi
+fi

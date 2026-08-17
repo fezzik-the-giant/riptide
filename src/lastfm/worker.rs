@@ -4,7 +4,7 @@
 use super::{LastfmCmd, LastfmConfig, LastfmEvent, ScrobbleState};
 use crate::player::PlayerEvent;
 use tokio::sync::mpsc;
-use tokio::time::{interval, Duration};
+use tokio::time::{Duration, interval};
 use tracing::{debug, info, warn};
 
 use super::client::LastfmClient;
@@ -33,7 +33,11 @@ impl LastfmWorker {
         event_tx: mpsc::UnboundedSender<LastfmEvent>,
     ) -> Self {
         let client = if config.enabled {
-            match (config.session_key.clone(), config.api_key.clone(), config.api_secret.clone()) {
+            match (
+                config.session_key.clone(),
+                config.api_key.clone(),
+                config.api_secret.clone(),
+            ) {
                 (Some(sk), Some(ak), Some(as_)) => Some(LastfmClient::new(sk, ak, as_)),
                 _ => None,
             }
@@ -113,7 +117,13 @@ impl LastfmWorker {
                 album,
                 duration,
             } => {
-                debug!("► Track: {} by {} ({}s, album: {})", track_name, artist, duration as u32, album.as_deref().unwrap_or("unknown"));
+                debug!(
+                    "► Track: {} by {} ({}s, album: {})",
+                    track_name,
+                    artist,
+                    duration as u32,
+                    album.as_deref().unwrap_or("unknown")
+                );
 
                 let timestamp = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -202,7 +212,12 @@ impl LastfmWorker {
         if elapsed_secs >= threshold {
             debug!("Threshold reached, attempting scrobble");
             if let Some(client) = &self.client {
-                info!("Sending to Last.fm: {} by {} ({})", track.track_name, track.artist, track.album.as_deref().unwrap_or("no album"));
+                info!(
+                    "Sending to Last.fm: {} by {} ({})",
+                    track.track_name,
+                    track.artist,
+                    track.album.as_deref().unwrap_or("no album")
+                );
                 match client
                     .scrobble(
                         &track.artist,
@@ -221,7 +236,10 @@ impl LastfmWorker {
                         });
                     }
                     Err(e) => {
-                        warn!("✗ Failed to scrobble {} by {}: {}", track.track_name, track.artist, e);
+                        warn!(
+                            "✗ Failed to scrobble {} by {}: {}",
+                            track.track_name, track.artist, e
+                        );
                     }
                 }
             } else {

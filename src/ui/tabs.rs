@@ -10,8 +10,8 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-use crate::app::App;
 use super::*;
+use crate::app::App;
 
 /// Horizontal tab strip across the top, with a box drawn around the active tab.
 /// Colours match `render_carousel_tabs` in the artist and search views so

@@ -136,6 +136,18 @@ cargo install --path .
 
 The `riptide` binary will be placed in `~/.cargo/bin/`. Make sure that directory is on your `PATH`.
 
+#### Contributing
+
+CI rejects any commit that isn't `rustfmt`-clean. Enable the bundled pre-commit
+hook once per clone to catch that locally instead of after a push:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+It runs `cargo fmt --all -- --check` when a commit touches Rust source. Run
+`cargo fmt --all` to fix what it reports, or `git commit --no-verify` to skip it.
+
 ### Nix
 
 Tested on: `x86_64-linux`.

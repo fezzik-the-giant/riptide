@@ -39,7 +39,9 @@ impl ListViewport {
     }
 
     pub(super) fn previous_page(&self, selected: usize, len: usize) -> usize {
-        selected.saturating_sub(self.page_size()).min(len.saturating_sub(1))
+        selected
+            .saturating_sub(self.page_size())
+            .min(len.saturating_sub(1))
     }
 
     pub(super) fn next_page(&self, selected: usize, len: usize) -> usize {
@@ -110,15 +112,18 @@ impl SearchState {
     }
 
     pub fn track_scroll_offset(&self, height: usize) -> usize {
-        self.track_viewport.offset(self.track_sel, self.tracks.len(), height)
+        self.track_viewport
+            .offset(self.track_sel, self.tracks.len(), height)
     }
 
     pub fn artist_scroll_offset(&self, height: usize) -> usize {
-        self.artist_viewport.offset(self.artist_sel, self.artists.len(), height)
+        self.artist_viewport
+            .offset(self.artist_sel, self.artists.len(), height)
     }
 
     pub fn playlist_scroll_offset(&self, height: usize) -> usize {
-        self.playlist_viewport.offset(self.playlist_sel, self.playlists.len(), height)
+        self.playlist_viewport
+            .offset(self.playlist_sel, self.playlists.len(), height)
     }
 
     pub fn reset_viewports(&self) {
@@ -133,32 +138,52 @@ impl SearchState {
 
     pub fn pane_next(&mut self) {
         let len = self.pane_len();
-        if len == 0 { return; }
+        if len == 0 {
+            return;
+        }
         match self.pane {
-            SearchPane::Tracks    => self.track_sel   = (self.track_sel   + 1).min(len - 1),
-            SearchPane::Artists   => self.artist_sel  = (self.artist_sel  + 1).min(len - 1),
+            SearchPane::Tracks => self.track_sel = (self.track_sel + 1).min(len - 1),
+            SearchPane::Artists => self.artist_sel = (self.artist_sel + 1).min(len - 1),
             SearchPane::Playlists => self.playlist_sel = (self.playlist_sel + 1).min(len - 1),
         }
     }
 
     pub fn pane_prev(&mut self) {
         match self.pane {
-            SearchPane::Tracks    => { if self.track_sel    > 0 { self.track_sel    -= 1; } }
-            SearchPane::Artists   => { if self.artist_sel   > 0 { self.artist_sel   -= 1; } }
-            SearchPane::Playlists => { if self.playlist_sel > 0 { self.playlist_sel -= 1; } }
+            SearchPane::Tracks => {
+                if self.track_sel > 0 {
+                    self.track_sel -= 1;
+                }
+            }
+            SearchPane::Artists => {
+                if self.artist_sel > 0 {
+                    self.artist_sel -= 1;
+                }
+            }
+            SearchPane::Playlists => {
+                if self.playlist_sel > 0 {
+                    self.playlist_sel -= 1;
+                }
+            }
         }
     }
 
     pub fn pane_page_up(&mut self) {
         match self.pane {
             SearchPane::Tracks => {
-                self.track_sel = self.track_viewport.previous_page(self.track_sel, self.tracks.len())
+                self.track_sel = self
+                    .track_viewport
+                    .previous_page(self.track_sel, self.tracks.len())
             }
             SearchPane::Artists => {
-                self.artist_sel = self.artist_viewport.previous_page(self.artist_sel, self.artists.len())
+                self.artist_sel = self
+                    .artist_viewport
+                    .previous_page(self.artist_sel, self.artists.len())
             }
             SearchPane::Playlists => {
-                self.playlist_sel = self.playlist_viewport.previous_page(self.playlist_sel, self.playlists.len())
+                self.playlist_sel = self
+                    .playlist_viewport
+                    .previous_page(self.playlist_sel, self.playlists.len())
             }
         }
     }
@@ -166,53 +191,44 @@ impl SearchState {
     pub fn pane_page_down(&mut self) {
         match self.pane {
             SearchPane::Tracks => {
-                self.track_sel = self.track_viewport.next_page(self.track_sel, self.tracks.len())
+                self.track_sel = self
+                    .track_viewport
+                    .next_page(self.track_sel, self.tracks.len())
             }
             SearchPane::Artists => {
-                self.artist_sel = self.artist_viewport.next_page(self.artist_sel, self.artists.len())
+                self.artist_sel = self
+                    .artist_viewport
+                    .next_page(self.artist_sel, self.artists.len())
             }
             SearchPane::Playlists => {
-                self.playlist_sel = self.playlist_viewport.next_page(self.playlist_sel, self.playlists.len())
+                self.playlist_sel = self
+                    .playlist_viewport
+                    .next_page(self.playlist_sel, self.playlists.len())
             }
         }
     }
 
     pub fn pane_len(&self) -> usize {
         match self.pane {
-            SearchPane::Tracks    => self.tracks.len(),
-            SearchPane::Artists   => self.artists.len(),
+            SearchPane::Tracks => self.tracks.len(),
+            SearchPane::Artists => self.artists.len(),
             SearchPane::Playlists => self.playlists.len(),
         }
     }
 
     pub fn next_pane(&mut self) {
         self.pane = match self.pane {
-            SearchPane::Tracks    => SearchPane::Artists,
-            SearchPane::Artists   => SearchPane::Playlists,
+            SearchPane::Tracks => SearchPane::Artists,
+            SearchPane::Artists => SearchPane::Playlists,
             SearchPane::Playlists => SearchPane::Tracks,
         };
     }
 
     pub fn prev_pane(&mut self) {
         self.pane = match self.pane {
-            SearchPane::Tracks    => SearchPane::Playlists,
-            SearchPane::Artists   => SearchPane::Tracks,
+            SearchPane::Tracks => SearchPane::Playlists,
+            SearchPane::Artists => SearchPane::Tracks,
             SearchPane::Playlists => SearchPane::Artists,
         };
-    }
-
-    pub fn should_load_more_for_pane(&self) -> bool {
-        if self.loading {
-            return false;
-        }
-
-        let (sel, items_len, next_url) = match self.pane {
-            SearchPane::Tracks => (self.track_sel, self.tracks.len(), &self.tracks_next_url),
-            SearchPane::Artists => (self.artist_sel, self.artists.len(), &self.artists_next_url),
-            SearchPane::Playlists => (self.playlist_sel, self.playlists.len(), &self.playlists_next_url),
-        };
-
-        // Load more if: not empty, within 10 items of the end, and we have a next page
-        items_len > 0 && sel >= items_len.saturating_sub(10) && next_url.is_some()
     }
 }

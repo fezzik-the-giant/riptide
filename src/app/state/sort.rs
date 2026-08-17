@@ -20,8 +20,8 @@ impl SortField {
     pub fn label(self) -> &'static str {
         match self {
             SortField::Alphabetical => "A-Z",
-            SortField::LastAdded    => "Recent",
-            SortField::ByArtist     => "Artist",
+            SortField::LastAdded => "Recent",
+            SortField::ByArtist => "Artist",
         }
     }
 }
@@ -51,8 +51,12 @@ pub struct Preferences {
     pub queue_visible: bool,
 }
 
-fn default_volume() -> u8 { 100 }
-fn default_queue_visible() -> bool { true }
+fn default_volume() -> u8 {
+    100
+}
+fn default_queue_visible() -> bool {
+    true
+}
 
 impl Default for Preferences {
     fn default() -> Self {
@@ -75,7 +79,10 @@ pub struct SortPalette {
 
 impl Default for SortPalette {
     fn default() -> Self {
-        Self { active: false, selected: 0 }
+        Self {
+            active: false,
+            selected: 0,
+        }
     }
 }
 
@@ -85,12 +92,12 @@ impl SortPalette {
             Tab::Home => &[],
             Tab::Artists | Tab::Playlists => &[
                 ("Alphabetical", SortField::Alphabetical),
-                ("Last Added",   SortField::LastAdded)
+                ("Last Added", SortField::LastAdded),
             ],
             Tab::Albums | Tab::Favorites => &[
                 ("Alphabetical", SortField::Alphabetical),
-                ("By Artist",    SortField::ByArtist),
-                ("Last Added",   SortField::LastAdded)
+                ("By Artist", SortField::ByArtist),
+                ("Last Added", SortField::LastAdded),
             ],
             Tab::Search => &[],
         }

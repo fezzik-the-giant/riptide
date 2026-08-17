@@ -17,16 +17,16 @@ use crate::mpris::MprisCmd;
 use crate::player::{PlayerCmd, PlayerEvent};
 
 mod global;
+mod navigation;
 mod overlays;
 mod queue;
 mod search;
-mod navigation;
 
 use global::*;
+use navigation::*;
 use overlays::*;
 use queue::*;
 use search::*;
-use navigation::*;
 
 pub fn run_app(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
@@ -58,12 +58,11 @@ pub fn run_app(
                 MprisCmd::Play => app.set_paused(false),
                 MprisCmd::Pause => app.set_paused(true),
                 MprisCmd::PlayPause => app.toggle_pause(),
-                MprisCmd::Stop => { let _ = app.player_tx.send(PlayerCmd::Stop); }
+                MprisCmd::Stop => {
+                    let _ = app.player_tx.send(PlayerCmd::Stop);
+                }
             }
         }
-
-        // Check for more data to load
-        check_load_more(app);
 
         app.tick();
 
@@ -144,12 +143,11 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         handle_navigation(app, key);
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::KeyModifiers;
     use crate::app::test_app;
+    use crossterm::event::KeyModifiers;
 
     #[test]
     fn fullscreen_art_preempts_queue_focus_for_escape_and_navigation() {
@@ -165,10 +163,7 @@ mod tests {
         assert!(app.status.is_none());
         assert!(app.view_stack.is_empty());
 
-        handle_key(
-            &mut app,
-            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
-        );
+        handle_key(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
         assert!(!app.art_fullscreen);
         assert!(app.queue_focused);
     }

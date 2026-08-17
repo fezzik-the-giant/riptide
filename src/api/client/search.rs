@@ -142,14 +142,13 @@ fn parse_search_track_page(api_resp: &serde_json::Value) -> Result<SearchTrackPa
                     .unwrap_or("")
                     .to_string();
 
-                let media_metadata = item["attributes"]["mediaTags"]
-                    .as_array()
-                    .map(|arr| {
-                        let tags = arr.iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect();
-                        MediaMetadata { tags }
-                    });
+                let media_metadata = item["attributes"]["mediaTags"].as_array().map(|arr| {
+                    let tags = arr
+                        .iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect();
+                    MediaMetadata { tags }
+                });
 
                 let track = Track {
                     id,

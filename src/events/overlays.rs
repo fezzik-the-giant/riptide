@@ -5,8 +5,8 @@
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::app::{App, SortPalette, Tab};
 use super::*;
+use crate::app::{App, SortPalette, Tab};
 
 pub(super) fn handle_command_input(app: &mut App, key: KeyEvent) {
     match key.code {
@@ -15,7 +15,8 @@ pub(super) fn handle_command_input(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Enter => {
             let matches = app.command.matches();
-            let cmd = matches.get(app.command.selected)
+            let cmd = matches
+                .get(app.command.selected)
                 .or_else(|| matches.first())
                 .copied();
             if let Some(cmd) = cmd {
@@ -58,8 +59,12 @@ pub(super) fn execute_command(app: &mut App, cmd: &str) {
     app.command.active = false;
     app.command.input.clear();
     let cleanup = |app: &App| {
-        if leaving_album(app) { kitty_delete_album_art(); }
-        if leaving_artist(app) { kitty_delete_artist_art(); }
+        if leaving_album(app) {
+            kitty_delete_album_art();
+        }
+        if leaving_artist(app) {
+            kitty_delete_artist_art();
+        }
     };
     match cmd {
         "home" => {
@@ -113,7 +118,7 @@ pub(super) fn handle_sort_palette_input(app: &mut App, key: KeyEvent) {
             }
         }
         KeyCode::Enter => {
-            if let Some((_, field)) = options.get(app.sort_palette.selected){
+            if let Some((_, field)) = options.get(app.sort_palette.selected) {
                 app.apply_sort(*field);
             }
         }

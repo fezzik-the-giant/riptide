@@ -11,8 +11,8 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-use crate::app::App;
 use super::*;
+use crate::app::App;
 
 pub(super) fn render_now_playing(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
@@ -69,24 +69,45 @@ pub(super) fn render_now_playing(f: &mut Frame, app: &App, area: Rect) {
             let quality_label: Option<String> = {
                 let rate_str = app.now_playing.sample_rate.map(fmt_sample_rate);
                 // mpv may return "FLAC (Free Lossless Audio Codec)" — take first word only.
-                let codec_str = app.now_playing.codec.as_deref().map(|c| {
-                    c.split_whitespace().next().unwrap_or(c).to_uppercase()
-                });
+                let codec_str = app
+                    .now_playing
+                    .codec
+                    .as_deref()
+                    .map(|c| c.split_whitespace().next().unwrap_or(c).to_uppercase());
                 match (codec_str, rate_str) {
                     (Some(c), Some(r)) => Some(format!("{c} · {r}")),
-                    (Some(c), None)    => Some(c),
-                    (None, Some(r))    => Some(r),
-                    (None, None)       => {
+                    (Some(c), None) => Some(c),
+                    (None, Some(r)) => Some(r),
+                    (None, None) => {
                         let q = t.quality_display();
-                        if q.is_empty() { None } else { Some(q.to_owned()) }
+                        if q.is_empty() {
+                            None
+                        } else {
+                            Some(q.to_owned())
+                        }
                     }
                 }
             };
-            let heart = if app.favorite_track_ids.contains(&t.id) { " ❤" } else { "" };
+            let heart = if app.favorite_track_ids.contains(&t.id) {
+                " ❤"
+            } else {
+                ""
+            };
             let mut lines = vec![
-                Line::from(Span::styled(format!("{}{}", t.title, heart), Style::default().fg(Color::White).add_modifier(Modifier::BOLD))),
-                Line::from(Span::styled(t.all_artist_names(), Style::default().fg(Color::White))),
-                Line::from(Span::styled(t.album.title.as_str(), Style::default().fg(DIM))),
+                Line::from(Span::styled(
+                    format!("{}{}", t.title, heart),
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                )),
+                Line::from(Span::styled(
+                    t.all_artist_names(),
+                    Style::default().fg(Color::White),
+                )),
+                Line::from(Span::styled(
+                    t.album.title.as_str(),
+                    Style::default().fg(DIM),
+                )),
             ];
             if let Some(label) = quality_label {
                 lines.push(Line::from(Span::styled(
@@ -96,24 +117,27 @@ pub(super) fn render_now_playing(f: &mut Frame, app: &App, area: Rect) {
             }
             lines
         }
-        None => vec![
-            Line::from(Span::styled("No track playing", Style::default().fg(DIM))),
-        ],
+        None => vec![Line::from(Span::styled(
+            "No track playing",
+            Style::default().fg(DIM),
+        ))],
     };
     f.render_widget(Paragraph::new(track_info), cols[0]);
 
     f.render_widget(render_squib(app, cols[1].width), cols[1]);
 
-    let time_str = format!("{} / {}", app.now_playing.position_display(), app.now_playing.duration_display());
+    let time_str = format!(
+        "{} / {}",
+        app.now_playing.position_display(),
+        app.now_playing.duration_display()
+    );
     let volume_str = format!("Volume: {}%", app.now_playing.volume);
     f.render_widget(
-        Paragraph::new(vec![
-                Line::from(time_str),
-                Line::from(volume_str),
-            ]).alignment(Alignment::Right).style(Style::default().fg(DIM)),
+        Paragraph::new(vec![Line::from(time_str), Line::from(volume_str)])
+            .alignment(Alignment::Right)
+            .style(Style::default().fg(DIM)),
         cols[2],
     );
-
 }
 
 pub(super) fn render_now_playing_art(f: &mut Frame, app: &App, area: Rect) {
@@ -147,7 +171,9 @@ pub(super) fn render_lyrics(f: &mut Frame, app: &App, area: Rect) {
     if np.lyrics_loading {
         let spinner = spinner_char(app.tick);
         f.render_widget(
-            Paragraph::new(spinner.to_string()).style(Style::default().fg(DIM)).alignment(Alignment::Center),
+            Paragraph::new(spinner.to_string())
+                .style(Style::default().fg(DIM))
+                .alignment(Alignment::Center),
             Rect::new(area.x, area.y + 1, area.width, 1),
         );
         return;
@@ -162,7 +188,10 @@ pub(super) fn render_lyrics(f: &mut Frame, app: &App, area: Rect) {
         // Distribute plain lines evenly across the track duration.
         let n = np.lyrics_plain.len() as f64;
         let dur = if np.duration > 0.0 { np.duration } else { n };
-        plain_buf = np.lyrics_plain.iter().enumerate()
+        plain_buf = np
+            .lyrics_plain
+            .iter()
+            .enumerate()
             .map(|(i, t)| (i as f64 / n * dur, t.clone()))
             .collect();
         lines = &plain_buf;
@@ -177,7 +206,11 @@ pub(super) fn render_lyrics(f: &mut Frame, app: &App, area: Rect) {
     let show: [Option<usize>; 3] = [
         cur.checked_sub(1),
         Some(cur),
-        if cur + 1 < lines.len() { Some(cur + 1) } else { None },
+        if cur + 1 < lines.len() {
+            Some(cur + 1)
+        } else {
+            None
+        },
     ];
 
     for (row, opt) in show.iter().enumerate() {
@@ -185,14 +218,18 @@ pub(super) fn render_lyrics(f: &mut Frame, app: &App, area: Rect) {
             let (_, text) = &lines[*idx];
             let is_cur = row == 1;
             let style = if is_cur {
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(DIM)
             };
             let y = area.y + row as u16;
             if y < area.y + area.height {
                 f.render_widget(
-                    Paragraph::new(text.as_str()).style(style).alignment(Alignment::Center),
+                    Paragraph::new(text.as_str())
+                        .style(style)
+                        .alignment(Alignment::Center),
                     Rect::new(area.x, y, area.width, 1),
                 );
             }

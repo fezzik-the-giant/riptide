@@ -46,8 +46,12 @@ pub(super) fn handle_search_input(app: &mut App, key: KeyEvent) {
                 app.search.playlists.clear();
                 app.search.reset_viewports();
                 app.search.pane = SearchPane::Tracks;
-                let _ = app.api_tx.send(ApiRequest::SearchTracks { query: query.clone() });
-                let _ = app.api_tx.send(ApiRequest::SearchArtistsMain { query: query.clone() });
+                let _ = app.api_tx.send(ApiRequest::SearchTracks {
+                    query: query.clone(),
+                });
+                let _ = app.api_tx.send(ApiRequest::SearchArtistsMain {
+                    query: query.clone(),
+                });
                 let _ = app.api_tx.send(ApiRequest::SearchPlaylistsMain { query });
             }
         }

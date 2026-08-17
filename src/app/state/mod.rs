@@ -5,19 +5,19 @@ use crate::api::models::*;
 use crate::playlist::PlaylistDetail;
 use std::cell::Cell;
 
-mod list;
 mod detail;
-mod sort;
-mod palette;
-mod now_playing;
 mod keybinds;
+mod list;
+mod now_playing;
+mod palette;
+mod sort;
 
-pub use list::*;
 pub use detail::*;
-pub use sort::*;
-pub use palette::*;
-pub use now_playing::*;
 pub use keybinds::*;
+pub use list::*;
+pub use now_playing::*;
+pub use palette::*;
+pub use sort::*;
 
 // ── Tab ───────────────────────────────────────────────────────────────────────
 
@@ -43,12 +43,12 @@ impl Tab {
 
     pub fn title(self) -> &'static str {
         match self {
-            Tab::Home      => "Home",
+            Tab::Home => "Home",
             Tab::Favorites => "Tracks",
-            Tab::Artists   => "Artists",
-            Tab::Albums    => "Albums",
+            Tab::Artists => "Artists",
+            Tab::Albums => "Albums",
             Tab::Playlists => "Playlists",
-            Tab::Search    => "Search",
+            Tab::Search => "Search",
         }
     }
 }

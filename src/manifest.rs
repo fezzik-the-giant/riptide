@@ -11,7 +11,9 @@ pub async fn run_server() {
         return;
     };
     loop {
-        let Ok((mut stream, _)) = listener.accept().await else { continue };
+        let Ok((mut stream, _)) = listener.accept().await else {
+            continue;
+        };
         tokio::spawn(async move {
             let mut buf = vec![0u8; 2048];
             let n = stream.read(&mut buf).await.unwrap_or(0);
@@ -23,11 +25,13 @@ pub async fn run_server() {
                 .next()
                 .and_then(|l| l.split_whitespace().nth(1))
                 .and_then(|p| p.strip_prefix('/'))
-                .filter(|f| f.ends_with(".m3u8") && f[..f.len() - 5].chars().all(|c| c.is_ascii_digit()));
+                .filter(|f| {
+                    f.ends_with(".m3u8") && f[..f.len() - 5].chars().all(|c| c.is_ascii_digit())
+                });
 
-            let response = match filename.and_then(|f| {
-                std::fs::read_to_string(format!("/tmp/riptide_hls_{f}")).ok()
-            }) {
+            let response = match filename
+                .and_then(|f| std::fs::read_to_string(format!("/tmp/riptide_hls_{f}")).ok())
+            {
                 Some(body) => format!(
                     "HTTP/1.1 200 OK\r\n\
                      Content-Type: application/vnd.apple.mpegurl\r\n\

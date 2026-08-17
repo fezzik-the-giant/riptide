@@ -11,8 +11,8 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph},
 };
 
-use crate::app::App;
 use super::*;
+use crate::app::App;
 
 pub(super) fn render_command_overlay(f: &mut Frame, app: &App, area: Rect) {
     let matches = app.command.matches();
@@ -32,7 +32,10 @@ pub(super) fn render_command_overlay(f: &mut Frame, app: &App, area: Rect) {
 
     f.render_widget(Clear, overlay);
     let block = Block::default()
-        .title(Span::styled(" command ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            " command ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(ACCENT));
     let inner = block.inner(overlay);
@@ -48,7 +51,10 @@ pub(super) fn render_command_overlay(f: &mut Frame, app: &App, area: Rect) {
     let cursor = if (app.tick / 30) % 2 == 0 { "█" } else { " " };
     f.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("/ ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "/ ",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(app.command.input.clone(), Style::default().fg(Color::White)),
             Span::styled(ghost, Style::default().fg(DIM)),
             Span::styled(cursor, Style::default().fg(Color::White)),
@@ -80,7 +86,10 @@ pub(super) fn render_command_overlay(f: &mut Frame, app: &App, area: Rect) {
             }
             let selected = i == app.command.selected;
             let style = if selected {
-                Style::default().bg(SELECT_BG).fg(Color::White).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .bg(SELECT_BG)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(DIM)
             };
@@ -110,7 +119,10 @@ pub(super) fn render_sort_overlay(f: &mut Frame, app: &App, area: Rect) {
 
     f.render_widget(Clear, overlay);
     let block = Block::default()
-        .title(Span::styled(" sort by ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            " sort by ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(ACCENT));
     let inner = block.inner(overlay);
@@ -123,7 +135,10 @@ pub(super) fn render_sort_overlay(f: &mut Frame, app: &App, area: Rect) {
         }
         let selected = i == app.sort_palette.selected;
         let style = if selected {
-            Style::default().bg(SELECT_BG).fg(Color::White).add_modifier(Modifier::BOLD)
+            Style::default()
+                .bg(SELECT_BG)
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(DIM)
         };
@@ -137,7 +152,8 @@ pub(super) fn render_sort_overlay(f: &mut Frame, app: &App, area: Rect) {
 
 pub(super) fn render_artist_selection_modal(f: &mut Frame, app: &App, area: Rect) {
     let box_w = 40u16.min(area.width.saturating_sub(4));
-    let box_h = (4 + app.artist_selection.artist_names.len() as u16).min(area.height.saturating_sub(6));
+    let box_h =
+        (4 + app.artist_selection.artist_names.len() as u16).min(area.height.saturating_sub(6));
 
     let x = area.x + area.width.saturating_sub(box_w) / 2;
     let y = area.y + area.height.saturating_sub(box_h) / 2;
@@ -150,7 +166,10 @@ pub(super) fn render_artist_selection_modal(f: &mut Frame, app: &App, area: Rect
 
     f.render_widget(Clear, overlay);
     let block = Block::default()
-        .title(Span::styled(" select artist ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            " select artist ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(ACCENT));
     let inner = block.inner(overlay);
@@ -164,7 +183,10 @@ pub(super) fn render_artist_selection_modal(f: &mut Frame, app: &App, area: Rect
         }
         let selected = i == app.artist_selection.selected;
         let style = if selected {
-            Style::default().bg(SELECT_BG).fg(Color::White).add_modifier(Modifier::BOLD)
+            Style::default()
+                .bg(SELECT_BG)
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::White)
         };
@@ -190,7 +212,10 @@ pub(super) fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
     let overlay = Rect::new(x, y, box_w, box_h);
 
     let block = Block::default()
-        .title(Span::styled(" help ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            " help ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(ACCENT));
     let inner = block.inner(overlay);
@@ -259,21 +284,42 @@ pub(super) fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
             Paragraph::new(hint)
                 .style(Style::default().fg(DIM))
                 .alignment(Alignment::Right),
-            Rect::new(inner.x, inner.y + inner.height.saturating_sub(1), inner.width, 1),
+            Rect::new(
+                inner.x,
+                inner.y + inner.height.saturating_sub(1),
+                inner.width,
+                1,
+            ),
         );
     }
 }
 
 pub(super) fn render_toast(f: &mut Frame, app: &App, area: Rect) {
-    let Some((msg, level, set_at)) = &app.status else { return };
+    let Some((msg, level, set_at)) = &app.status else {
+        return;
+    };
 
     let elapsed = set_at.elapsed().as_secs_f64();
     // Fade out over the last ~1 s of the 5 s lifetime.
     let fading = elapsed > 4.0;
 
     let (border_color, text_color) = match level {
-        StatusLevel::Error => (Color::Red,  if fading { Color::DarkGray } else { Color::White }),
-        StatusLevel::Info  => (ACCENT,      if fading { Color::DarkGray } else { Color::White }),
+        StatusLevel::Error => (
+            Color::Red,
+            if fading {
+                Color::DarkGray
+            } else {
+                Color::White
+            },
+        ),
+        StatusLevel::Info => (
+            ACCENT,
+            if fading {
+                Color::DarkGray
+            } else {
+                Color::White
+            },
+        ),
     };
 
     // Size the card to the message, clamped to the terminal width.

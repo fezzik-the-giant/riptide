@@ -4,8 +4,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, watch};
-use zbus::{connection, interface};
 use zbus::zvariant::{Array, ObjectPath, OwnedValue, Signature, Str, Value};
+use zbus::{connection, interface};
 
 const OBJECT_PATH: &str = "/org/mpris/MediaPlayer2";
 const BUS_NAME: &str = "org.mpris.MediaPlayer2.riptide";
@@ -45,22 +45,34 @@ impl RootIface {
     fn quit(&self) {}
 
     #[zbus(property)]
-    fn can_quit(&self) -> bool { false }
+    fn can_quit(&self) -> bool {
+        false
+    }
 
     #[zbus(property)]
-    fn can_raise(&self) -> bool { false }
+    fn can_raise(&self) -> bool {
+        false
+    }
 
     #[zbus(property)]
-    fn has_track_list(&self) -> bool { false }
+    fn has_track_list(&self) -> bool {
+        false
+    }
 
     #[zbus(property)]
-    fn identity(&self) -> &str { "Riptide" }
+    fn identity(&self) -> &str {
+        "Riptide"
+    }
 
     #[zbus(property)]
-    fn supported_uri_schemes(&self) -> Vec<String> { vec![] }
+    fn supported_uri_schemes(&self) -> Vec<String> {
+        vec![]
+    }
 
     #[zbus(property)]
-    fn supported_mime_types(&self) -> Vec<String> { vec![] }
+    fn supported_mime_types(&self) -> Vec<String> {
+        vec![]
+    }
 }
 
 struct PlayerIface {
@@ -70,12 +82,24 @@ struct PlayerIface {
 
 #[interface(name = "org.mpris.MediaPlayer2.Player")]
 impl PlayerIface {
-    async fn next(&self) { let _ = self.cmd_tx.send(MprisCmd::Next); }
-    async fn previous(&self) { let _ = self.cmd_tx.send(MprisCmd::Previous); }
-    async fn pause(&self) { let _ = self.cmd_tx.send(MprisCmd::Pause); }
-    async fn play_pause(&self) { let _ = self.cmd_tx.send(MprisCmd::PlayPause); }
-    async fn stop(&self) { let _ = self.cmd_tx.send(MprisCmd::Stop); }
-    async fn play(&self) { let _ = self.cmd_tx.send(MprisCmd::Play); }
+    async fn next(&self) {
+        let _ = self.cmd_tx.send(MprisCmd::Next);
+    }
+    async fn previous(&self) {
+        let _ = self.cmd_tx.send(MprisCmd::Previous);
+    }
+    async fn pause(&self) {
+        let _ = self.cmd_tx.send(MprisCmd::Pause);
+    }
+    async fn play_pause(&self) {
+        let _ = self.cmd_tx.send(MprisCmd::PlayPause);
+    }
+    async fn stop(&self) {
+        let _ = self.cmd_tx.send(MprisCmd::Stop);
+    }
+    async fn play(&self) {
+        let _ = self.cmd_tx.send(MprisCmd::Play);
+    }
     async fn seek(&self, _offset: i64) {}
     async fn set_position(&self, _track_id: zbus::zvariant::ObjectPath<'_>, _position: i64) {}
     async fn open_uri(&self, _uri: String) {}
@@ -83,19 +107,29 @@ impl PlayerIface {
     #[zbus(property)]
     fn playback_status(&self) -> String {
         let s = self.state.lock().unwrap();
-        if !s.active { "Stopped".into() }
-        else if s.paused { "Paused".into() }
-        else { "Playing".into() }
+        if !s.active {
+            "Stopped".into()
+        } else if s.paused {
+            "Paused".into()
+        } else {
+            "Playing".into()
+        }
     }
 
     #[zbus(property)]
-    fn loop_status(&self) -> String { "None".into() }
+    fn loop_status(&self) -> String {
+        "None".into()
+    }
 
     #[zbus(property)]
-    fn rate(&self) -> f64 { 1.0 }
+    fn rate(&self) -> f64 {
+        1.0
+    }
 
     #[zbus(property)]
-    fn shuffle(&self) -> bool { false }
+    fn shuffle(&self) -> bool {
+        false
+    }
 
     #[zbus(property)]
     fn metadata(&self) -> HashMap<String, OwnedValue> {
@@ -103,7 +137,9 @@ impl PlayerIface {
     }
 
     #[zbus(property)]
-    fn volume(&self) -> f64 { 1.0 }
+    fn volume(&self) -> f64 {
+        1.0
+    }
 
     #[zbus(property)]
     fn position(&self) -> i64 {
@@ -111,28 +147,44 @@ impl PlayerIface {
     }
 
     #[zbus(property)]
-    fn minimum_rate(&self) -> f64 { 1.0 }
+    fn minimum_rate(&self) -> f64 {
+        1.0
+    }
 
     #[zbus(property)]
-    fn maximum_rate(&self) -> f64 { 1.0 }
+    fn maximum_rate(&self) -> f64 {
+        1.0
+    }
 
     #[zbus(property)]
-    fn can_go_next(&self) -> bool { true }
+    fn can_go_next(&self) -> bool {
+        true
+    }
 
     #[zbus(property)]
-    fn can_go_previous(&self) -> bool { true }
+    fn can_go_previous(&self) -> bool {
+        true
+    }
 
     #[zbus(property)]
-    fn can_play(&self) -> bool { true }
+    fn can_play(&self) -> bool {
+        true
+    }
 
     #[zbus(property)]
-    fn can_pause(&self) -> bool { true }
+    fn can_pause(&self) -> bool {
+        true
+    }
 
     #[zbus(property)]
-    fn can_seek(&self) -> bool { false }
+    fn can_seek(&self) -> bool {
+        false
+    }
 
     #[zbus(property)]
-    fn can_control(&self) -> bool { true }
+    fn can_control(&self) -> bool {
+        true
+    }
 }
 
 fn owned_str(s: &str) -> OwnedValue {
@@ -197,10 +249,15 @@ impl MprisServer {
         let conn = match connection::Builder::session()
             .and_then(|b| b.name(BUS_NAME))
             .and_then(|b| b.serve_at(OBJECT_PATH, RootIface))
-            .and_then(|b| b.serve_at(OBJECT_PATH, PlayerIface {
-                state: Arc::clone(&shared),
-                cmd_tx: self.cmd_tx,
-            })) {
+            .and_then(|b| {
+                b.serve_at(
+                    OBJECT_PATH,
+                    PlayerIface {
+                        state: Arc::clone(&shared),
+                        cmd_tx: self.cmd_tx,
+                    },
+                )
+            }) {
             Ok(builder) => match builder.build().await {
                 Ok(c) => c,
                 Err(_) => return,

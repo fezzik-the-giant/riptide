@@ -11,8 +11,8 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
 
-use crate::app::App;
 use super::*;
+use crate::app::App;
 
 pub(super) fn render_content(f: &mut Frame, app: &App, area: Rect) {
     // If there's a view on the stack, render it
@@ -39,7 +39,11 @@ pub(super) fn render_content(f: &mut Frame, app: &App, area: Rect) {
         Tab::Albums => render_fav_albums_list(f, app, area),
         Tab::Playlists => render_playlist_list(f, app, area),
         Tab::Favorites => {
-            let title = format!(" Tracks ({}){} ", app.favorites.items.len(), sort_suffix(app));
+            let title = format!(
+                " Tracks ({}){} ",
+                app.favorites.items.len(),
+                sort_suffix(app)
+            );
             render_track_list(f, app, &app.favorites, true, area, &title);
         }
         Tab::Search => render_search_results(f, app, area),
@@ -76,7 +80,10 @@ pub(super) fn render_artist_list(f: &mut Frame, app: &App, area: Rect) {
         .map(|(abs_idx, artist)| {
             let selected = *abs_idx == app.artists.selected;
             let style = if selected {
-                Style::default().bg(HIGHLIGHT_BG).fg(Color::White).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .bg(HIGHLIGHT_BG)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
@@ -127,7 +134,9 @@ pub(super) fn render_fav_albums_list(f: &mut Frame, app: &App, area: Rect) {
     let selected = app.fav_albums.selected;
     let offset = app.fav_albums.scroll_offset(height);
 
-    let items: Vec<ListItem> = app.fav_albums.items
+    let items: Vec<ListItem> = app
+        .fav_albums
+        .items
         .iter()
         .enumerate()
         .skip(offset)
@@ -137,18 +146,35 @@ pub(super) fn render_fav_albums_list(f: &mut Frame, app: &App, area: Rect) {
             let bg = if is_sel { HIGHLIGHT_BG } else { Color::Reset };
             let prefix = if is_sel { "▶ " } else { "  " };
             let artist = album.artist.as_ref().map(|a| a.name.as_str()).unwrap_or("");
-            let badge = album.quality_badge().map(|b| format!(" [{b}]")).unwrap_or_default();
+            let badge = album
+                .quality_badge()
+                .map(|b| format!(" [{b}]"))
+                .unwrap_or_default();
 
             let title_style = Style::default()
                 .bg(bg)
                 .fg(Color::White)
-                .add_modifier(if is_sel { Modifier::BOLD } else { Modifier::empty() });
+                .add_modifier(if is_sel {
+                    Modifier::BOLD
+                } else {
+                    Modifier::empty()
+                });
             let sub_style = Style::default().bg(bg).fg(DIM);
-            let badge_style = Style::default().bg(bg).fg(ACCENT).add_modifier(Modifier::BOLD);
+            let badge_style = Style::default()
+                .bg(bg)
+                .fg(ACCENT)
+                .add_modifier(Modifier::BOLD);
 
             let line = Line::from(vec![
                 Span::styled(format!("{prefix}{}", album.title), title_style),
-                Span::styled(if artist.is_empty() { String::new() } else { format!("  {artist}") }, sub_style),
+                Span::styled(
+                    if artist.is_empty() {
+                        String::new()
+                    } else {
+                        format!("  {artist}")
+                    },
+                    sub_style,
+                ),
                 Span::styled(badge, badge_style),
             ]);
             ListItem::new(line)
@@ -176,7 +202,9 @@ pub(super) fn render_playlist_list(f: &mut Frame, app: &App, area: Rect) {
 
     let height = inner.height as usize;
     let offset = app.playlists.scroll_offset(height);
-    let items: Vec<ListItem> = app.playlists.items
+    let items: Vec<ListItem> = app
+        .playlists
+        .items
         .iter()
         .enumerate()
         .skip(offset)
@@ -184,13 +212,20 @@ pub(super) fn render_playlist_list(f: &mut Frame, app: &App, area: Rect) {
         .map(|(i, pl)| {
             let selected = i == app.playlists.selected;
             let style = if selected {
-                Style::default().bg(HIGHLIGHT_BG).fg(Color::White).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .bg(HIGHLIGHT_BG)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
             let prefix = if selected { "▶ " } else { "  " };
-            ListItem::new(format!("{prefix}{} ({} tracks)", pl.title, pl.number_of_tracks.unwrap_or(0)))
-                .style(style)
+            ListItem::new(format!(
+                "{prefix}{} ({} tracks)",
+                pl.title,
+                pl.number_of_tracks.unwrap_or(0)
+            ))
+            .style(style)
         })
         .collect();
 
@@ -226,16 +261,25 @@ pub(super) fn render_track_list(
     let height = inner.height as usize;
     let offset = tracks.scroll_offset(height);
 
-    let items: Vec<ListItem> = tracks.items
+    let items: Vec<ListItem> = tracks
+        .items
         .iter()
         .enumerate()
         .skip(offset)
         .take(height)
         .map(|(i, track)| {
             let is_selected = i == selected && focused && !app.help_active;
-            let is_playing = app.now_playing.track.as_ref().map(|t| t.id == track.id).unwrap_or(false);
+            let is_playing = app
+                .now_playing
+                .track
+                .as_ref()
+                .map(|t| t.id == track.id)
+                .unwrap_or(false);
             let style = if is_selected {
-                Style::default().bg(HIGHLIGHT_BG).fg(Color::White).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .bg(HIGHLIGHT_BG)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
@@ -251,11 +295,17 @@ pub(super) fn render_track_list(
                     track.all_artist_names(),
                     track.duration_display()
                 ),
-                style
+                style,
             );
 
-            let badge = track.quality_badge().map(|b| format!(" [{b}]")).unwrap_or_default();
-            let badge_span = Span::styled(badge, Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
+            let badge = track
+                .quality_badge()
+                .map(|b| format!(" [{b}]"))
+                .unwrap_or_default();
+            let badge_span = Span::styled(
+                badge,
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            );
 
             let heart = if app.favorite_track_ids.contains(&track.id) {
                 Span::raw(" ❤")

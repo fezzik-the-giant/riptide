@@ -11,8 +11,8 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
 
-use crate::app::App;
 use super::*;
+use crate::app::App;
 
 pub(super) fn render_search_modal(f: &mut Frame, app: &App, area: Rect) {
     // Center a search input modal
@@ -82,7 +82,10 @@ pub(super) fn render_search_results(f: &mut Frame, app: &App, area: Rect) {
         let content: Line = if app.search.query.is_empty() {
             Line::from(vec![
                 Span::styled("Press ", Style::default().fg(DIM)),
-                Span::styled("/", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "/",
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" to search", Style::default().fg(DIM)),
             ])
         } else {
@@ -91,7 +94,10 @@ pub(super) fn render_search_results(f: &mut Frame, app: &App, area: Rect) {
                     format!("No results for \"{}\" — press ", app.search.query),
                     Style::default().fg(DIM),
                 ),
-                Span::styled("/", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "/",
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" to search again", Style::default().fg(DIM)),
             ])
         };
@@ -122,9 +128,18 @@ pub(super) fn render_search_carousel_tabs(f: &mut Frame, app: &App, area: Rect) 
     }
 
     let tabs = vec![
-        (format!(" Tracks ({}) ", app.search.tracks.len()), SearchPane::Tracks),
-        (format!("Artists ({})", app.search.artists.len()), SearchPane::Artists),
-        (format!("Playlists ({}) ", app.search.playlists.len()), SearchPane::Playlists),
+        (
+            format!(" Tracks ({}) ", app.search.tracks.len()),
+            SearchPane::Tracks,
+        ),
+        (
+            format!("Artists ({})", app.search.artists.len()),
+            SearchPane::Artists,
+        ),
+        (
+            format!("Playlists ({}) ", app.search.playlists.len()),
+            SearchPane::Playlists,
+        ),
     ];
 
     let mut line_spans = Vec::new();
@@ -164,16 +179,26 @@ pub(super) fn render_search_pane_tracks(f: &mut Frame, app: &App, area: Rect) {
     let sel = app.search.track_sel;
     let height = area.height as usize;
     let offset = app.search.track_scroll_offset(height);
-    let items: Vec<ListItem> = app.search.tracks
+    let items: Vec<ListItem> = app
+        .search
+        .tracks
         .iter()
         .enumerate()
         .skip(offset)
         .take(height)
         .map(|(i, t)| {
             let selected = i == sel;
-            let is_playing = app.now_playing.track.as_ref().map(|np| np.id == t.id).unwrap_or(false);
+            let is_playing = app
+                .now_playing
+                .track
+                .as_ref()
+                .map(|np| np.id == t.id)
+                .unwrap_or(false);
             let style = if selected {
-                Style::default().bg(HIGHLIGHT_BG).fg(Color::White).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .bg(HIGHLIGHT_BG)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
@@ -183,13 +208,21 @@ pub(super) fn render_search_pane_tracks(f: &mut Frame, app: &App, area: Rect) {
             let title_span = Span::styled(
                 format!(
                     "{prefix}{playing}{} — {} ({})",
-                    t.title, t.all_artist_names(), t.duration_display()
+                    t.title,
+                    t.all_artist_names(),
+                    t.duration_display()
                 ),
-                style
+                style,
             );
 
-            let badge = t.quality_badge().map(|b| format!(" [{b}]")).unwrap_or_default();
-            let badge_span = Span::styled(badge, Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
+            let badge = t
+                .quality_badge()
+                .map(|b| format!(" [{b}]"))
+                .unwrap_or_default();
+            let badge_span = Span::styled(
+                badge,
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            );
 
             let heart = if app.favorite_track_ids.contains(&t.id) {
                 Span::raw(" ❤")
@@ -203,7 +236,9 @@ pub(super) fn render_search_pane_tracks(f: &mut Frame, app: &App, area: Rect) {
 
     if items.is_empty() {
         f.render_widget(
-            Paragraph::new("No tracks").style(Style::default().fg(DIM)).alignment(Alignment::Center),
+            Paragraph::new("No tracks")
+                .style(Style::default().fg(DIM))
+                .alignment(Alignment::Center),
             area,
         );
     } else {
@@ -215,7 +250,9 @@ pub(super) fn render_search_pane_artists(f: &mut Frame, app: &App, area: Rect) {
     let sel = app.search.artist_sel;
     let height = area.height as usize;
     let offset = app.search.artist_scroll_offset(height);
-    let items: Vec<ListItem> = app.search.artists
+    let items: Vec<ListItem> = app
+        .search
+        .artists
         .iter()
         .enumerate()
         .skip(offset)
@@ -223,15 +260,15 @@ pub(super) fn render_search_pane_artists(f: &mut Frame, app: &App, area: Rect) {
         .map(|(i, a)| {
             let selected = i == sel;
             let style = if selected {
-                Style::default().bg(HIGHLIGHT_BG).fg(Color::White).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .bg(HIGHLIGHT_BG)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
             let prefix = if selected { "▶ " } else { "  " };
-            let title_span = Span::styled(
-                format!("{prefix}{}", a.name),
-                style
-            );
+            let title_span = Span::styled(format!("{prefix}{}", a.name), style);
             let heart = if app.favorite_artist_ids.contains(&a.id) {
                 Span::raw(" ❤")
             } else {
@@ -243,7 +280,9 @@ pub(super) fn render_search_pane_artists(f: &mut Frame, app: &App, area: Rect) {
 
     if items.is_empty() {
         f.render_widget(
-            Paragraph::new("No artists").style(Style::default().fg(DIM)).alignment(Alignment::Center),
+            Paragraph::new("No artists")
+                .style(Style::default().fg(DIM))
+                .alignment(Alignment::Center),
             area,
         );
     } else {
@@ -255,7 +294,9 @@ pub(super) fn render_search_pane_playlists(f: &mut Frame, app: &App, area: Rect)
     let sel = app.search.playlist_sel;
     let height = area.height as usize;
     let offset = app.search.playlist_scroll_offset(height);
-    let items: Vec<ListItem> = app.search.playlists
+    let items: Vec<ListItem> = app
+        .search
+        .playlists
         .iter()
         .enumerate()
         .skip(offset)
@@ -263,19 +304,28 @@ pub(super) fn render_search_pane_playlists(f: &mut Frame, app: &App, area: Rect)
         .map(|(i, pl)| {
             let selected = i == sel;
             let style = if selected {
-                Style::default().bg(HIGHLIGHT_BG).fg(Color::White).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .bg(HIGHLIGHT_BG)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
             let prefix = if selected { "▶ " } else { "  " };
-            ListItem::new(format!("{prefix}{} ({} tracks)", pl.title, pl.number_of_tracks.unwrap_or(0)))
-                .style(style)
+            ListItem::new(format!(
+                "{prefix}{} ({} tracks)",
+                pl.title,
+                pl.number_of_tracks.unwrap_or(0)
+            ))
+            .style(style)
         })
         .collect();
 
     if items.is_empty() {
         f.render_widget(
-            Paragraph::new("No playlists").style(Style::default().fg(DIM)).alignment(Alignment::Center),
+            Paragraph::new("No playlists")
+                .style(Style::default().fg(DIM))
+                .alignment(Alignment::Center),
             area,
         );
     } else {

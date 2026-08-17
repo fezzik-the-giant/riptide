@@ -11,8 +11,8 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-use crate::app::App;
 use super::*;
+use crate::app::App;
 
 pub(super) fn render_queue(f: &mut Frame, app: &App, area: Rect) {
     let focused = app.queue_focused;
@@ -30,9 +30,16 @@ pub(super) fn render_queue(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(block, area);
 
     // Title row rendered manually at the top of the inner area.
-    let queue_title = if app.now_playing.shuffle { " Queue ⇄ " } else { " Queue " };
+    let queue_title = if app.now_playing.shuffle {
+        " Queue ⇄ "
+    } else {
+        " Queue "
+    };
     f.render_widget(
-        Paragraph::new(Span::styled(queue_title, Style::default().fg(ACCENT).add_modifier(Modifier::BOLD))),
+        Paragraph::new(Span::styled(
+            queue_title,
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        )),
         Rect::new(inner.x, inner.y, inner.width, 1),
     );
 
@@ -66,13 +73,28 @@ pub(super) fn render_queue(f: &mut Frame, app: &App, area: Rect) {
         }
         let is_cur = i == current;
         let is_cursor = focused && i == cursor && !app.help_active;
-        let heart = if app.favorite_track_ids.contains(&track.id) { " ❤" } else { "" };
-        let (title_line, line_style) = if is_cur {
-            (format!("♪ {}{}", track.title, heart), Style::default().fg(Color::Rgb(180, 200, 255)).add_modifier(Modifier::BOLD))
-        } else if is_cursor {
-            (format!("▶ {}{}", track.title, heart), Style::default().fg(ACCENT).add_modifier(Modifier::BOLD))
+        let heart = if app.favorite_track_ids.contains(&track.id) {
+            " ❤"
         } else {
-            (format!("{}{}", track.title, heart), Style::default().fg(Color::White))
+            ""
+        };
+        let (title_line, line_style) = if is_cur {
+            (
+                format!("♪ {}{}", track.title, heart),
+                Style::default()
+                    .fg(Color::Rgb(180, 200, 255))
+                    .add_modifier(Modifier::BOLD),
+            )
+        } else if is_cursor {
+            (
+                format!("▶ {}{}", track.title, heart),
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            )
+        } else {
+            (
+                format!("{}{}", track.title, heart),
+                Style::default().fg(Color::White),
+            )
         };
 
         f.render_widget(

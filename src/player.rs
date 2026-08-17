@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ryan Cohan
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use serde_json::json;
 use std::path::Path;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::process::Command;
 use tokio::sync::mpsc;
-use tokio::time::{interval, Duration};
+use tokio::time::{Duration, interval};
 
 const SOCKET_PATH: &str = "/tmp/riptide-mpv.sock";
 

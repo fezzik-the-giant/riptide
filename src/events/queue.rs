@@ -5,8 +5,8 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::app::App;
 use super::*;
+use crate::app::App;
 
 pub(super) fn handle_queue_input(app: &mut App, key: KeyEvent) {
     match key.code {
@@ -46,12 +46,22 @@ pub(super) fn handle_queue_input(app: &mut App, key: KeyEvent) {
             }
         }
         KeyCode::Char('c') => {
-            if let Some(url) = app.now_playing.queue.get(app.queue_cursor).map(|t| t.share_url()) {
+            if let Some(url) = app
+                .now_playing
+                .queue
+                .get(app.queue_cursor)
+                .map(|t| t.share_url())
+            {
                 app.copy_url(url);
             }
         }
         KeyCode::Char('C') => {
-            if let Some(url) = app.now_playing.queue.get(app.queue_cursor).map(|t| t.album.share_url()) {
+            if let Some(url) = app
+                .now_playing
+                .queue
+                .get(app.queue_cursor)
+                .map(|t| t.album.share_url())
+            {
                 app.copy_url(url);
             }
         }
@@ -62,11 +72,16 @@ pub(super) fn handle_queue_input(app: &mut App, key: KeyEvent) {
             if let Some(track) = app.now_playing.queue.get(app.queue_cursor).cloned() {
                 app.go_to_artist_from_track(&track);
             } else {
-                app.set_status("No track selected".to_string(), crate::app::StatusLevel::Error);
+                app.set_status(
+                    "No track selected".to_string(),
+                    crate::app::StatusLevel::Error,
+                );
             }
         }
         // Anything the queue doesn't claim falls through to the global bindings
         // so transport, volume, tabs and help keep working in here.
-        _ => { handle_global_key(app, key); }
+        _ => {
+            handle_global_key(app, key);
+        }
     }
 }

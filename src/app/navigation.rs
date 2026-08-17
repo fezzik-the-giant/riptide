@@ -1,33 +1,36 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ryan Cohan
 
+use super::{
+    AlbumDetail, App, ArtistDetail, ArtistDetailFocus, PlaylistDetail, PlaylistDetailFocus,
+    StatefulList, Tab, View,
+};
 use crate::api::ApiRequest;
 use crate::api::models::{Album, Artist, Playlist};
-use super::{App, ArtistDetail, ArtistDetailFocus, AlbumDetail, PlaylistDetail, PlaylistDetailFocus, StatefulList, Tab, View};
 
 impl App {
     // ── Tab switching ─────────────────────────────────────────────────────────
 
     pub fn next_tab(&mut self) {
         let tab = match self.current_tab {
-            Tab::Home      => Tab::Favorites,
+            Tab::Home => Tab::Favorites,
             Tab::Favorites => Tab::Artists,
-            Tab::Artists   => Tab::Albums,
-            Tab::Albums    => Tab::Playlists,
+            Tab::Artists => Tab::Albums,
+            Tab::Albums => Tab::Playlists,
             Tab::Playlists => Tab::Search,
-            Tab::Search    => Tab::Home,
+            Tab::Search => Tab::Home,
         };
         self.set_tab(tab);
     }
 
     pub fn prev_tab(&mut self) {
         let tab = match self.current_tab {
-            Tab::Home      => Tab::Search,
+            Tab::Home => Tab::Search,
             Tab::Favorites => Tab::Home,
-            Tab::Artists   => Tab::Favorites,
-            Tab::Albums    => Tab::Artists,
+            Tab::Artists => Tab::Favorites,
+            Tab::Albums => Tab::Artists,
             Tab::Playlists => Tab::Albums,
-            Tab::Search    => Tab::Playlists,
+            Tab::Search => Tab::Playlists,
         };
         self.set_tab(tab);
     }
@@ -86,12 +89,18 @@ impl App {
     // ── Opening views ─────────────────────────────────────────────────────────
 
     pub fn open_selected_artist(&mut self) {
-        let Some(artist) = self.artists.selected_item().cloned() else { return };
+        let Some(artist) = self.artists.selected_item().cloned() else {
+            return;
+        };
         self.open_artist(artist);
     }
 
     pub fn open_artist(&mut self, artist: Artist) {
-        tracing::debug!("Fetching details for artist {} [{}]", artist.name, artist.id);
+        tracing::debug!(
+            "Fetching details for artist {} [{}]",
+            artist.name,
+            artist.id
+        );
         let id = artist.id;
         let mut tracks = StatefulList::default();
         tracks.loading = true;
@@ -109,9 +118,15 @@ impl App {
             bio_scroll: 0,
         };
         self.view_stack.push(View::ArtistDetail(detail));
-        let _ = self.api_tx.send(ApiRequest::LoadArtistTopTracks { artist_id: id });
-        let _ = self.api_tx.send(ApiRequest::LoadArtistBio      { artist_id: id });
-        let _ = self.api_tx.send(ApiRequest::LoadArtistPicture  { artist_id: id });
+        let _ = self
+            .api_tx
+            .send(ApiRequest::LoadArtistTopTracks { artist_id: id });
+        let _ = self
+            .api_tx
+            .send(ApiRequest::LoadArtistBio { artist_id: id });
+        let _ = self
+            .api_tx
+            .send(ApiRequest::LoadArtistPicture { artist_id: id });
     }
 
     pub fn open_album(&mut self, album: Album) {
@@ -122,7 +137,7 @@ impl App {
             art_bytes: None,
             art_loading: true,
         }));
-        let _ = self.api_tx.send(ApiRequest::LoadAlbum       { album_id });
+        let _ = self.api_tx.send(ApiRequest::LoadAlbum { album_id });
         let _ = self.api_tx.send(ApiRequest::LoadAlbumTracks { album_id });
         // Don't fetch cover here - let AlbumLoaded handler fetch with the correct cover ID
     }
@@ -138,7 +153,9 @@ impl App {
         } else {
             None
         };
-        if let Some(album) = album { self.open_album(album); }
+        if let Some(album) = album {
+            self.open_album(album);
+        }
     }
 
     pub fn open_selected_fav_album(&mut self) {
@@ -166,18 +183,26 @@ impl App {
         self.view_stack.push(View::PlaylistDetail(detail));
         // Use v2 API for mixes from Home tab, v1 for regular playlists
         if self.current_tab == Tab::Home {
-            let _ = self.api_tx.send(ApiRequest::LoadMixTracks { uuid, offset: 0 });
+            let _ = self.api_tx.send(ApiRequest::LoadMixTracks { uuid });
         } else {
-            let _ = self.api_tx.send(ApiRequest::LoadPlaylistTracks { uuid, next_url: None });
+            let _ = self.api_tx.send(ApiRequest::LoadPlaylistTracks {
+                uuid,
+                next_url: None,
+            });
         }
         if let Some(cover_url) = playlist.cover {
             let uuid_for_art = playlist.uuid.clone();
-            let _ = self.api_tx.send(ApiRequest::FetchPlaylistArt { uuid: uuid_for_art, cover_url });
+            let _ = self.api_tx.send(ApiRequest::FetchPlaylistArt {
+                uuid: uuid_for_art,
+                cover_url,
+            });
         }
     }
 
     pub fn open_selected_playlist(&mut self) {
-        let Some(playlist) = self.playlists.selected_item().cloned() else { return };
+        let Some(playlist) = self.playlists.selected_item().cloned() else {
+            return;
+        };
         self.open_playlist(playlist);
     }
 
@@ -212,16 +237,19 @@ impl App {
         };
 
         if artist_names.is_empty() {
-            self.set_status("No artist information available".to_string(), crate::app::StatusLevel::Error);
+            self.set_status(
+                "No artist information available".to_string(),
+                crate::app::StatusLevel::Error,
+            );
             return;
         }
 
         if artist_names.len() == 1 {
             let name = artist_names[0].clone();
             self.artist_selection.searching_for = Some(name.clone());
-            let _ = self.api_tx.send(ApiRequest::SearchArtistByName {
-                query: name,
-            });
+            let _ = self
+                .api_tx
+                .send(ApiRequest::SearchArtistByName { query: name });
         } else {
             self.artist_selection.artist_names = artist_names;
             self.artist_selection.selected = 0;
@@ -230,13 +258,18 @@ impl App {
     }
 
     pub fn open_selected_artist_from_selection(&mut self) {
-        if let Some(name) = self.artist_selection.artist_names.get(self.artist_selection.selected).cloned() {
+        if let Some(name) = self
+            .artist_selection
+            .artist_names
+            .get(self.artist_selection.selected)
+            .cloned()
+        {
             self.artist_selection.active = false;
             self.artist_selection.searching_for = Some(name.clone());
             self.artist_selection.artist_names.clear();
-            let _ = self.api_tx.send(ApiRequest::SearchArtistByName {
-                query: name,
-            });
+            let _ = self
+                .api_tx
+                .send(ApiRequest::SearchArtistByName { query: name });
         }
     }
 }
@@ -253,7 +286,9 @@ mod tests {
             id: 1,
             title: "Track".to_string(),
             duration: 180,
-            artist: Some(ArtistRef { name: "Artist".to_string() }),
+            artist: Some(ArtistRef {
+                name: "Artist".to_string(),
+            }),
             artists: Vec::new(),
             album: Album {
                 id: 2,

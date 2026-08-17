@@ -9,6 +9,21 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # No system dependencies or cache: `cargo fmt` parses the source without
+      # building it, so nothing here needs to link against libssl/dbus.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -21,12 +36,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release
 
       - name: Run tests
         run: cargo test
 
   build-linux:
-    needs: test
+    needs: [test, lint]
     name: Build x86_64-linux
     runs-on: ubuntu-latest
     steps:
@@ -38,6 +55,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release
 
       - name: Build release
         run: cargo build --release --target x86_64-unknown-linux-gnu
@@ -57,20 +76,26 @@ jobs:
             riptide-${{ github.ref_name }}-x86_64-linux-gnu.tar.gz
             riptide-${{ github.ref_name }}-x86_64-linux-gnu.tar.gz.sha256
 
+  # Both macOS targets build natively. ratatui-image's default `chafa-dyn`
+  # feature links the system libchafa through pkg-config, so cross-compiling
+  # x86_64 from an Apple Silicon runner cannot work: the pkg-config crate
+  # refuses to run when cross-compiling, and Homebrew there supplies an arm64
+  # dylib that will not link into an x86_64 binary.
   build-macos-intel:
-    needs: test
+    needs: [test, lint]
     name: Build x86_64-macos
     runs-on: macos-26-intel
     steps:
       - uses: actions/checkout@v7
 
       - name: Install system dependencies
-        run: |
-          brew install chafa
+        run: brew install chafa
 
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-macos-intel
 
       - name: Build release
         run: cargo build --release
@@ -91,7 +116,7 @@ jobs:
             riptide-${{ github.ref_name }}-x86_64-apple-darwin.tar.gz.sha256
 
   build-macos-arm:
-    needs: test
+    needs: [test, lint]
     name: Build aarch64-macos (native ARM)
     runs-on: macos-latest
     steps:
@@ -103,8 +128,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-macos-arm
 
-      - name: Build release (native ARM64)
+      - name: Build release
         run: cargo build --release
 
       - name: Create archive
@@ -169,7 +196,7 @@ jobs:
           cat SHA256SUMS
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: release-files/*
           body_path: release_notes.txt

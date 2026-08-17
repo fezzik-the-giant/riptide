@@ -7,7 +7,7 @@ use anyhow::Result;
 use std::collections::HashMap;
 
 use super::parse::*;
-use super::{ApiClient, OpenApiPlaylistAttrs, OpenApiRelPage, OPENAPI_BASE};
+use super::{ApiClient, OPENAPI_BASE, OpenApiPlaylistAttrs, OpenApiRelPage};
 use crate::api::models::*;
 
 pub(super) fn parse_v2_playlist_tracks(
@@ -319,7 +319,9 @@ pub(super) fn parse_playlist_relationship_items(
     Ok((tracks, total, next_url))
 }
 
-pub(super) fn parse_v2_user_playlists(api_resp: &serde_json::Value) -> Result<(Vec<Playlist>, u32)> {
+pub(super) fn parse_v2_user_playlists(
+    api_resp: &serde_json::Value,
+) -> Result<(Vec<Playlist>, u32)> {
     tracing::debug!("Parsing user playlists from JSON:API response");
 
     let mut playlist_ids = Vec::new();

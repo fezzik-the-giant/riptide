@@ -152,11 +152,10 @@ impl ApiClient {
     pub async fn get_mix_tracks(
         &self,
         mix_id: &str,
-        offset: u32,
     ) -> Result<(Vec<Track>, u32, Option<String>, Option<String>)> {
         let token = self.token.read().await.clone();
         let url = format!(
-            "{OPENAPI_BASE}/playlists/{mix_id}?countryCode=US&include=items.artists,coverArt&offset={offset}&limit=100"
+            "{OPENAPI_BASE}/playlists/{mix_id}?countryCode=US&include=items.artists,coverArt"
         );
 
         tracing::debug!(

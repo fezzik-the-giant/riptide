@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ryan Cohan
 
+use super::{App, StatusLevel};
 use crate::api::ApiRequest;
 use crate::api::models::Track;
 use crate::mpris::MprisState;
 use crate::player::PlayerCmd;
-use super::{App, StatusLevel};
 
 impl App {
     pub fn play_track(&mut self, track: Track) {
@@ -19,11 +19,15 @@ impl App {
         self.now_playing.original_queue = Vec::new();
         self.now_playing.source_playlist_uuid = None;
         self.now_playing.source_playlist_next_offset = 0;
-        let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl { track_id: id });
+        let _ = self
+            .api_tx
+            .send(ApiRequest::ResolveStreamUrl { track_id: id });
     }
 
     pub fn play_tracks(&mut self, tracks: Vec<Track>, start_index: usize) {
-        if tracks.is_empty() { return; }
+        if tracks.is_empty() {
+            return;
+        }
         if self.now_playing.shuffle {
             self.now_playing.original_queue = tracks.clone();
             let mut queue = tracks;
@@ -38,7 +42,9 @@ impl App {
             self.now_playing.active = false;
             self.now_playing.position = 0.0;
             if let Some(id) = track_id {
-                let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl { track_id: id });
+                let _ = self
+                    .api_tx
+                    .send(ApiRequest::ResolveStreamUrl { track_id: id });
             }
         } else {
             self.now_playing.original_queue = Vec::new();
@@ -51,7 +57,9 @@ impl App {
             self.now_playing.active = false;
             self.now_playing.position = 0.0;
             if let Some(id) = track_id {
-                let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl { track_id: id });
+                let _ = self
+                    .api_tx
+                    .send(ApiRequest::ResolveStreamUrl { track_id: id });
             }
         }
     }
@@ -83,7 +91,9 @@ impl App {
             self.now_playing.active = false;
             self.now_playing.position = 0.0;
             if let Some(track) = self.now_playing.queue.get(next_idx) {
-                let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl { track_id: track.id });
+                let _ = self
+                    .api_tx
+                    .send(ApiRequest::ResolveStreamUrl { track_id: track.id });
             }
         }
     }
@@ -96,13 +106,17 @@ impl App {
             self.now_playing.active = false;
             self.now_playing.position = 0.0;
             if let Some(track) = self.now_playing.queue.get(prev_idx) {
-                let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl { track_id: track.id });
+                let _ = self
+                    .api_tx
+                    .send(ApiRequest::ResolveStreamUrl { track_id: track.id });
             }
         }
     }
 
     pub fn toggle_shuffle(&mut self) {
-        if self.now_playing.queue.is_empty() { return; }
+        if self.now_playing.queue.is_empty() {
+            return;
+        }
         if self.now_playing.shuffle {
             self.now_playing.shuffle = false;
             if !self.now_playing.original_queue.is_empty() {
@@ -112,7 +126,9 @@ impl App {
                     if let Some(idx) = self.now_playing.queue.iter().position(|t| t.id == id) {
                         self.now_playing.queue_index = idx;
                         if let Some(next) = self.now_playing.queue.get(idx + 1) {
-                            let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl { track_id: next.id });
+                            let _ = self
+                                .api_tx
+                                .send(ApiRequest::ResolveStreamUrl { track_id: next.id });
                         }
                     }
                 }
@@ -131,7 +147,9 @@ impl App {
             self.now_playing.queue_index = 0;
             let _ = self.player_tx.send(PlayerCmd::RemoveNext);
             if let Some(next) = self.now_playing.queue.get(1) {
-                let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl { track_id: next.id });
+                let _ = self
+                    .api_tx
+                    .send(ApiRequest::ResolveStreamUrl { track_id: next.id });
             }
             self.set_status("Shuffle on".to_string(), StatusLevel::Info);
         }
@@ -139,20 +157,30 @@ impl App {
 
     pub fn move_queue_track_up(&mut self) {
         let idx = self.queue_cursor;
-        if idx == 0 { return; }
+        if idx == 0 {
+            return;
+        }
         let qi = self.now_playing.queue_index;
         let old_next_id = self.now_playing.queue.get(qi + 1).map(|t| t.id);
 
         self.now_playing.queue.swap(idx, idx - 1);
 
-        let new_qi = if idx == qi { qi - 1 } else if idx - 1 == qi { qi + 1 } else { qi };
+        let new_qi = if idx == qi {
+            qi - 1
+        } else if idx - 1 == qi {
+            qi + 1
+        } else {
+            qi
+        };
         self.now_playing.queue_index = new_qi;
 
         let new_next_id = self.now_playing.queue.get(new_qi + 1).map(|t| t.id);
         if new_next_id != old_next_id {
             let _ = self.player_tx.send(PlayerCmd::RemoveNext);
             if let Some(next) = self.now_playing.queue.get(new_qi + 1) {
-                let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl { track_id: next.id });
+                let _ = self
+                    .api_tx
+                    .send(ApiRequest::ResolveStreamUrl { track_id: next.id });
             }
         }
 
@@ -161,20 +189,30 @@ impl App {
 
     pub fn move_queue_track_down(&mut self) {
         let idx = self.queue_cursor;
-        if idx + 1 >= self.now_playing.queue.len() { return; }
+        if idx + 1 >= self.now_playing.queue.len() {
+            return;
+        }
         let qi = self.now_playing.queue_index;
         let old_next_id = self.now_playing.queue.get(qi + 1).map(|t| t.id);
 
         self.now_playing.queue.swap(idx, idx + 1);
 
-        let new_qi = if idx == qi { qi + 1 } else if idx + 1 == qi { qi - 1 } else { qi };
+        let new_qi = if idx == qi {
+            qi + 1
+        } else if idx + 1 == qi {
+            qi - 1
+        } else {
+            qi
+        };
         self.now_playing.queue_index = new_qi;
 
         let new_next_id = self.now_playing.queue.get(new_qi + 1).map(|t| t.id);
         if new_next_id != old_next_id {
             let _ = self.player_tx.send(PlayerCmd::RemoveNext);
             if let Some(next) = self.now_playing.queue.get(new_qi + 1) {
-                let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl { track_id: next.id });
+                let _ = self
+                    .api_tx
+                    .send(ApiRequest::ResolveStreamUrl { track_id: next.id });
             }
         }
 
@@ -192,7 +230,9 @@ impl App {
         let new_idx = self.now_playing.queue.len() - 1;
         if new_idx == qi + 1 {
             let id = self.now_playing.queue[new_idx].id;
-            let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl { track_id: id });
+            let _ = self
+                .api_tx
+                .send(ApiRequest::ResolveStreamUrl { track_id: id });
         }
         self.set_status(format!("Queued: {title}"), StatusLevel::Info);
     }
@@ -200,7 +240,9 @@ impl App {
     pub fn focus_queue(&mut self) {
         // Nothing to focus when the panel is collapsed — the cursor would land
         // in a pane the user cannot see.
-        if !self.queue_visible || self.now_playing.queue.is_empty() { return; }
+        if !self.queue_visible || self.now_playing.queue.is_empty() {
+            return;
+        }
         self.queue_focused = true;
         self.queue_cursor = self.now_playing.queue_index;
     }
@@ -210,13 +252,17 @@ impl App {
     }
 
     pub fn play_from_queue(&mut self, idx: usize) {
-        if idx >= self.now_playing.queue.len() { return; }
+        if idx >= self.now_playing.queue.len() {
+            return;
+        }
         self.now_playing.queue_index = idx;
         self.now_playing.track = self.now_playing.queue.get(idx).cloned();
         self.now_playing.active = false;
         self.now_playing.position = 0.0;
         if let Some(track) = self.now_playing.queue.get(idx) {
-            let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl { track_id: track.id });
+            let _ = self
+                .api_tx
+                .send(ApiRequest::ResolveStreamUrl { track_id: track.id });
         }
         self.fetch_now_playing_metadata();
         self.push_mpris_state();
@@ -224,7 +270,9 @@ impl App {
     }
 
     pub fn remove_from_queue(&mut self, idx: usize) {
-        if idx >= self.now_playing.queue.len() { return; }
+        if idx >= self.now_playing.queue.len() {
+            return;
+        }
         let qi = self.now_playing.queue_index;
 
         if idx == qi {
@@ -243,14 +291,18 @@ impl App {
             self.now_playing.track = self.now_playing.queue.get(new_idx).cloned();
             self.now_playing.position = 0.0;
             if let Some(track) = self.now_playing.queue.get(new_idx) {
-                let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl { track_id: track.id });
+                let _ = self
+                    .api_tx
+                    .send(ApiRequest::ResolveStreamUrl { track_id: track.id });
             }
             self.fetch_now_playing_metadata();
         } else if idx == qi + 1 {
             self.now_playing.queue.remove(idx);
             let _ = self.player_tx.send(PlayerCmd::RemoveNext);
             if let Some(next) = self.now_playing.queue.get(qi + 1) {
-                let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl { track_id: next.id });
+                let _ = self
+                    .api_tx
+                    .send(ApiRequest::ResolveStreamUrl { track_id: next.id });
             }
         } else {
             self.now_playing.queue.remove(idx);
@@ -273,11 +325,16 @@ impl App {
                 title: t.title.clone(),
                 artist: t.artist_name().to_owned(),
                 album: t.album.title.clone(),
-                art_url: t.album.cover.as_deref()
-                    .map(|id| format!(
-                        "https://resources.tidal.com/images/{}/320x320.jpg",
-                        id.replace('-', "/")
-                    ))
+                art_url: t
+                    .album
+                    .cover
+                    .as_deref()
+                    .map(|id| {
+                        format!(
+                            "https://resources.tidal.com/images/{}/320x320.jpg",
+                            id.replace('-', "/")
+                        )
+                    })
                     .unwrap_or_default(),
                 duration_us: t.duration as i64 * 1_000_000,
                 position_us: (self.now_playing.position * 1_000_000.0) as i64,
@@ -294,15 +351,17 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use crate::api::models::{Album, ArtistRef, Track};
     use super::App;
+    use crate::api::models::{Album, ArtistRef, Track};
 
     fn track(id: u64) -> Track {
         Track {
             id,
             title: format!("Track {id}"),
             duration: 180,
-            artist: Some(ArtistRef { name: "Artist".to_string() }),
+            artist: Some(ArtistRef {
+                name: "Artist".to_string(),
+            }),
             artists: vec![],
             album: Album {
                 id: 1,

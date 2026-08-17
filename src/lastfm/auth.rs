@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ryan Cohan
 
-use anyhow::Result;
-use crate::api::auth;
 use super::client::LastfmClient;
+use crate::api::auth;
+use anyhow::Result;
 
 /// Initiate Last.fm authentication flow
 pub async fn authenticate() -> Result<()> {
@@ -16,12 +16,14 @@ pub async fn authenticate() -> Result<()> {
         println!("To enable Last.fm scrobbling, you need API credentials.");
         println!("These are free to create at: https://www.last.fm/api/account/create\n");
         println!("After registering, add your credentials to ~/.config/riptide/config.json:");
-        println!(r#"
+        println!(
+            r#"
   "lastfm": {{
     "api_key": "your-api-key-here",
     "api_secret": "your-api-secret-here"
   }}
-"#);
+"#
+        );
         println!("Then run this command again.");
         return Ok(());
     }

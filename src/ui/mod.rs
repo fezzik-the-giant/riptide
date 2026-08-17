@@ -12,40 +12,40 @@ use ratatui::{
     layout::{Constraint, Layout},
 };
 
-use crate::app::{App, ArtistDetailFocus, StatusLevel, Tab, View, KeybindGroup};
-use crate::search::SearchPane;
-use crate::playlist::PlaylistDetailFocus;
 use crate::api::models::Track;
+use crate::app::{App, ArtistDetailFocus, KeybindGroup, StatusLevel, Tab, View};
+use crate::playlist::PlaylistDetailFocus;
+use crate::search::SearchPane;
 
-mod theme;
-mod image;
-mod tabs;
-mod queue;
-mod overlays;
-mod footer;
-mod art;
-mod home;
-mod now_playing;
-mod search;
-mod artist_detail;
 mod album_detail;
-mod playlist_detail;
+mod art;
+mod artist_detail;
+mod footer;
+mod home;
+mod image;
 mod lists;
+mod now_playing;
+mod overlays;
+mod playlist_detail;
+mod queue;
+mod search;
+mod tabs;
+mod theme;
 
-use theme::*;
-use image::*;
-use tabs::*;
-use queue::*;
-use overlays::*;
-use footer::*;
-use art::*;
-use home::*;
-use now_playing::*;
-use search::*;
-use artist_detail::*;
 use album_detail::*;
-use playlist_detail::*;
+use art::*;
+use artist_detail::*;
+use footer::*;
+use home::*;
+use image::*;
 use lists::*;
+use now_playing::*;
+use overlays::*;
+use playlist_detail::*;
+use queue::*;
+use search::*;
+use tabs::*;
+use theme::*;
 
 pub fn draw(f: &mut Frame, app: &App) {
     let area = f.area();
@@ -73,11 +73,8 @@ pub fn draw(f: &mut Frame, app: &App) {
     render_tab_bar(f, app, rows[0]);
 
     if app.queue_visible {
-        let cols = Layout::horizontal([
-            Constraint::Min(0),
-            Constraint::Length(QUEUE_W),
-        ])
-        .split(rows[1]);
+        let cols =
+            Layout::horizontal([Constraint::Min(0), Constraint::Length(QUEUE_W)]).split(rows[1]);
         render_content(f, app, cols[0]);
         render_queue(f, app, cols[1]);
     } else {

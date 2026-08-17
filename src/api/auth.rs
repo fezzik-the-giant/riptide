@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ryan Cohan
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::fs;
 use std::path::PathBuf;
 
@@ -18,7 +18,10 @@ fn client_id(config: &Config) -> &str {
 }
 
 fn client_secret(config: &Config) -> &str {
-    config.client_secret.as_deref().unwrap_or(DEFAULT_CLIENT_SECRET)
+    config
+        .client_secret
+        .as_deref()
+        .unwrap_or(DEFAULT_CLIENT_SECRET)
 }
 
 const AUTH_BASE: &str = "https://auth.tidal.com/v1/oauth2";

@@ -10,27 +10,25 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Wrap},
 };
 
-use crate::app::App;
 use super::*;
+use crate::app::App;
 
-pub(super) fn render_playlist_detail(f: &mut Frame, app: &App, detail: &crate::app::PlaylistDetail, area: Rect) {
+pub(super) fn render_playlist_detail(
+    f: &mut Frame,
+    app: &App,
+    detail: &crate::app::PlaylistDetail,
+    area: Rect,
+) {
     // Layout: left sidebar (art + metadata) | right (track list)
     let art_cols = (area.width / 4).max(10);
     let art_rows = (art_cols / 2).max(5).min(area.height.saturating_sub(7));
     let art_box_h = art_rows + 2;
     let left_col_w = art_cols + 2;
 
-    let cols = Layout::horizontal([
-        Constraint::Length(left_col_w),
-        Constraint::Min(0),
-    ])
-    .split(area);
+    let cols = Layout::horizontal([Constraint::Length(left_col_w), Constraint::Min(0)]).split(area);
 
-    let left_rows = Layout::vertical([
-        Constraint::Length(art_box_h),
-        Constraint::Min(0),
-    ])
-    .split(cols[0]);
+    let left_rows =
+        Layout::vertical([Constraint::Length(art_box_h), Constraint::Min(0)]).split(cols[0]);
 
     let header_cols = [left_rows[0], left_rows[1]];
 
@@ -60,7 +58,11 @@ pub(super) fn render_playlist_detail(f: &mut Frame, app: &App, detail: &crate::a
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(if focused { Style::default().fg(ACCENT) } else { Style::default().fg(DIM) });
+        .border_style(if focused {
+            Style::default().fg(ACCENT)
+        } else {
+            Style::default().fg(DIM)
+        });
     let inner = block.inner(meta_area);
     f.render_widget(block, meta_area);
 

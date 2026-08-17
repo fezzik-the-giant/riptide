@@ -3,7 +3,6 @@
 
 //! The keybind reference shown in the help modal.
 
-
 // ── Keybinds ──────────────────────────────────────────────────────────────────
 
 pub struct Keybind {
@@ -39,20 +38,62 @@ impl KeybindGroup {
         KeybindGroup {
             title: "Global",
             binds: &[
-                Keybind { key: "?", action: "Show this help" },
-                Keybind { key: "q", action: "Quit" },
-                Keybind { key: "/", action: "Command palette" },
-                Keybind { key: "Tab", action: "Next tab" },
-                Keybind { key: "Shift+Tab", action: "Previous tab" },
-                Keybind { key: "Shift+A", action: "Toggle fullscreen art" },
-                Keybind { key: "Space", action: "Play/Pause" },
-                Keybind { key: "n", action: "Next track" },
-                Keybind { key: "p", action: "Previous track" },
-                Keybind { key: "z", action: "Toggle shuffle" },
-                Keybind { key: "t", action: "Show/hide queue" },
-                Keybind { key: "+ or =", action: "Volume Up"},
-                Keybind { key: "-", action: "Volume Down"},
-                Keybind { key: "Esc", action: "Back/Go up" },
+                Keybind {
+                    key: "?",
+                    action: "Show this help",
+                },
+                Keybind {
+                    key: "q",
+                    action: "Quit",
+                },
+                Keybind {
+                    key: "/",
+                    action: "Command palette",
+                },
+                Keybind {
+                    key: "Tab",
+                    action: "Next tab",
+                },
+                Keybind {
+                    key: "Shift+Tab",
+                    action: "Previous tab",
+                },
+                Keybind {
+                    key: "Shift+A",
+                    action: "Toggle fullscreen art",
+                },
+                Keybind {
+                    key: "Space",
+                    action: "Play/Pause",
+                },
+                Keybind {
+                    key: "n",
+                    action: "Next track",
+                },
+                Keybind {
+                    key: "p",
+                    action: "Previous track",
+                },
+                Keybind {
+                    key: "z",
+                    action: "Toggle shuffle",
+                },
+                Keybind {
+                    key: "t",
+                    action: "Show/hide queue",
+                },
+                Keybind {
+                    key: "+ or =",
+                    action: "Volume Up",
+                },
+                Keybind {
+                    key: "-",
+                    action: "Volume Down",
+                },
+                Keybind {
+                    key: "Esc",
+                    action: "Back/Go up",
+                },
             ],
         }
     }
@@ -61,18 +102,54 @@ impl KeybindGroup {
         KeybindGroup {
             title: "Navigation",
             binds: &[
-                Keybind { key: "↑", action: "Up" },
-                Keybind { key: "↓", action: "Down" },
-                Keybind { key: "PgUp/PgDn", action: "Move one page" },
-                Keybind { key: "Enter", action: "Select/Open" },
-                Keybind { key: "a", action: "Add to queue" },
-                Keybind { key: "f", action: "Toggle favorite/follow/save" },
-                Keybind { key: "g", action: "Go to artist" },
-                Keybind { key: "s", action: "Sort" },
-                Keybind { key: "r", action: "Start radio" },
-                Keybind { key: "c", action: "Copy share link (song)" },
-                Keybind { key: "C", action: "Copy share link (album/playlist)" },
-                Keybind { key: "→", action: "Focus queue" },
+                Keybind {
+                    key: "↑",
+                    action: "Up",
+                },
+                Keybind {
+                    key: "↓",
+                    action: "Down",
+                },
+                Keybind {
+                    key: "PgUp/PgDn",
+                    action: "Move one page",
+                },
+                Keybind {
+                    key: "Enter",
+                    action: "Select/Open",
+                },
+                Keybind {
+                    key: "a",
+                    action: "Add to queue",
+                },
+                Keybind {
+                    key: "f",
+                    action: "Toggle favorite/follow/save",
+                },
+                Keybind {
+                    key: "g",
+                    action: "Go to artist",
+                },
+                Keybind {
+                    key: "s",
+                    action: "Sort",
+                },
+                Keybind {
+                    key: "r",
+                    action: "Start radio",
+                },
+                Keybind {
+                    key: "c",
+                    action: "Copy share link (song)",
+                },
+                Keybind {
+                    key: "C",
+                    action: "Copy share link (album/playlist)",
+                },
+                Keybind {
+                    key: "→",
+                    action: "Focus queue",
+                },
             ],
         }
     }
@@ -81,14 +158,38 @@ impl KeybindGroup {
         KeybindGroup {
             title: "Queue",
             binds: &[
-                Keybind { key: "↑", action: "Up" },
-                Keybind { key: "↓", action: "Down" },
-                Keybind { key: "d", action: "Remove track" },
-                Keybind { key: "c", action: "Copy share link (song)" },
-                Keybind { key: "C", action: "Copy share link (album)" },
-                Keybind { key: "Enter", action: "Play track" },
-                Keybind { key: "t", action: "Show/hide queue" },
-                Keybind { key: "Esc", action: "Close queue" },
+                Keybind {
+                    key: "↑",
+                    action: "Up",
+                },
+                Keybind {
+                    key: "↓",
+                    action: "Down",
+                },
+                Keybind {
+                    key: "d",
+                    action: "Remove track",
+                },
+                Keybind {
+                    key: "c",
+                    action: "Copy share link (song)",
+                },
+                Keybind {
+                    key: "C",
+                    action: "Copy share link (album)",
+                },
+                Keybind {
+                    key: "Enter",
+                    action: "Play track",
+                },
+                Keybind {
+                    key: "t",
+                    action: "Show/hide queue",
+                },
+                Keybind {
+                    key: "Esc",
+                    action: "Close queue",
+                },
             ],
         }
     }
@@ -97,12 +198,30 @@ impl KeybindGroup {
         KeybindGroup {
             title: "Search",
             binds: &[
-                Keybind { key: "↑", action: "Up" },
-                Keybind { key: "↓", action: "Down" },
-                Keybind { key: "Tab", action: "Next pane" },
-                Keybind { key: "Shift+Tab", action: "Prev pane" },
-                Keybind { key: "Enter", action: "Select/Open" },
-                Keybind { key: "Esc", action: "Close search" },
+                Keybind {
+                    key: "↑",
+                    action: "Up",
+                },
+                Keybind {
+                    key: "↓",
+                    action: "Down",
+                },
+                Keybind {
+                    key: "Tab",
+                    action: "Next pane",
+                },
+                Keybind {
+                    key: "Shift+Tab",
+                    action: "Prev pane",
+                },
+                Keybind {
+                    key: "Enter",
+                    action: "Select/Open",
+                },
+                Keybind {
+                    key: "Esc",
+                    action: "Close search",
+                },
             ],
         }
     }
@@ -111,10 +230,22 @@ impl KeybindGroup {
         KeybindGroup {
             title: "Command",
             binds: &[
-                Keybind { key: "↑", action: "Up" },
-                Keybind { key: "↓", action: "Down" },
-                Keybind { key: "Enter", action: "Execute" },
-                Keybind { key: "Esc", action: "Close" },
+                Keybind {
+                    key: "↑",
+                    action: "Up",
+                },
+                Keybind {
+                    key: "↓",
+                    action: "Down",
+                },
+                Keybind {
+                    key: "Enter",
+                    action: "Execute",
+                },
+                Keybind {
+                    key: "Esc",
+                    action: "Close",
+                },
             ],
         }
     }

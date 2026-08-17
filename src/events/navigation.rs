@@ -5,10 +5,10 @@
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::app::{App, ArtistDetailFocus, Tab, View};
-use crate::search::SearchPane;
-use crate::playlist::PlaylistDetailFocus;
 use super::*;
+use crate::app::{App, ArtistDetailFocus, Tab, View};
+use crate::playlist::PlaylistDetailFocus;
+use crate::search::SearchPane;
 
 pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
     // First pass: mutate the view's own list state (navigation within a detail view).
@@ -30,288 +30,306 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
 
     let action: Action = if let Some(view) = app.view_stack.last_mut() {
         match view {
-            View::ArtistDetail(detail) => {
-                match key.code {
-                    KeyCode::Up => {
-                        match detail.focus {
-                            ArtistDetailFocus::Tracks => detail.tracks.prev(),
-                            ArtistDetailFocus::Albums => detail.albums.prev(),
-                            ArtistDetailFocus::EPs => detail.eps.prev(),
-                            ArtistDetailFocus::Singles => detail.singles.prev(),
-                            ArtistDetailFocus::Bio => {
-                                detail.bio_scroll = detail.bio_scroll.saturating_sub(1);
-                            }
+            View::ArtistDetail(detail) => match key.code {
+                KeyCode::Up => {
+                    match detail.focus {
+                        ArtistDetailFocus::Tracks => detail.tracks.prev(),
+                        ArtistDetailFocus::Albums => detail.albums.prev(),
+                        ArtistDetailFocus::EPs => detail.eps.prev(),
+                        ArtistDetailFocus::Singles => detail.singles.prev(),
+                        ArtistDetailFocus::Bio => {
+                            detail.bio_scroll = detail.bio_scroll.saturating_sub(1);
                         }
-                        return;
                     }
-                    KeyCode::Down => {
-                        match detail.focus {
-                            ArtistDetailFocus::Tracks => detail.tracks.next(),
-                            ArtistDetailFocus::Albums => detail.albums.next(),
-                            ArtistDetailFocus::EPs => detail.eps.next(),
-                            ArtistDetailFocus::Singles => detail.singles.next(),
-                            ArtistDetailFocus::Bio => {
-                                detail.bio_scroll = detail.bio_scroll.saturating_add(1);
-                            }
+                    return;
+                }
+                KeyCode::Down => {
+                    match detail.focus {
+                        ArtistDetailFocus::Tracks => detail.tracks.next(),
+                        ArtistDetailFocus::Albums => detail.albums.next(),
+                        ArtistDetailFocus::EPs => detail.eps.next(),
+                        ArtistDetailFocus::Singles => detail.singles.next(),
+                        ArtistDetailFocus::Bio => {
+                            detail.bio_scroll = detail.bio_scroll.saturating_add(1);
                         }
-                        return;
                     }
-                    KeyCode::PageUp => {
-                        match detail.focus {
-                            ArtistDetailFocus::Tracks => detail.tracks.page_up(),
-                            ArtistDetailFocus::Albums => detail.albums.page_up(),
-                            ArtistDetailFocus::EPs => detail.eps.page_up(),
-                            ArtistDetailFocus::Singles => detail.singles.page_up(),
-                            ArtistDetailFocus::Bio => {}
-                        }
-                        return;
+                    return;
+                }
+                KeyCode::PageUp => {
+                    match detail.focus {
+                        ArtistDetailFocus::Tracks => detail.tracks.page_up(),
+                        ArtistDetailFocus::Albums => detail.albums.page_up(),
+                        ArtistDetailFocus::EPs => detail.eps.page_up(),
+                        ArtistDetailFocus::Singles => detail.singles.page_up(),
+                        ArtistDetailFocus::Bio => {}
                     }
-                    KeyCode::PageDown => {
-                        match detail.focus {
-                            ArtistDetailFocus::Tracks => detail.tracks.page_down(),
-                            ArtistDetailFocus::Albums => detail.albums.page_down(),
-                            ArtistDetailFocus::EPs => detail.eps.page_down(),
-                            ArtistDetailFocus::Singles => detail.singles.page_down(),
-                            ArtistDetailFocus::Bio => {}
-                        }
-                        return;
+                    return;
+                }
+                KeyCode::PageDown => {
+                    match detail.focus {
+                        ArtistDetailFocus::Tracks => detail.tracks.page_down(),
+                        ArtistDetailFocus::Albums => detail.albums.page_down(),
+                        ArtistDetailFocus::EPs => detail.eps.page_down(),
+                        ArtistDetailFocus::Singles => detail.singles.page_down(),
+                        ArtistDetailFocus::Bio => {}
                     }
-                    KeyCode::Left | KeyCode::Char('h') => {
+                    return;
+                }
+                KeyCode::Left | KeyCode::Char('h') => {
+                    detail.focus = match detail.focus {
+                        ArtistDetailFocus::Tracks => ArtistDetailFocus::Bio,
+                        ArtistDetailFocus::Albums => ArtistDetailFocus::Tracks,
+                        ArtistDetailFocus::EPs => ArtistDetailFocus::Albums,
+                        ArtistDetailFocus::Singles => ArtistDetailFocus::EPs,
+                        ArtistDetailFocus::Bio => ArtistDetailFocus::Singles,
+                    };
+                    return;
+                }
+                KeyCode::Right | KeyCode::Char('l') => {
+                    if detail.focus == ArtistDetailFocus::Singles {
+                        Action::FocusQueue
+                    } else {
                         detail.focus = match detail.focus {
-                            ArtistDetailFocus::Tracks => ArtistDetailFocus::Bio,
-                            ArtistDetailFocus::Albums => ArtistDetailFocus::Tracks,
-                            ArtistDetailFocus::EPs => ArtistDetailFocus::Albums,
-                            ArtistDetailFocus::Singles => ArtistDetailFocus::EPs,
-                            ArtistDetailFocus::Bio => ArtistDetailFocus::Singles,
+                            ArtistDetailFocus::Bio => ArtistDetailFocus::Tracks,
+                            ArtistDetailFocus::Tracks => ArtistDetailFocus::Albums,
+                            ArtistDetailFocus::Albums => ArtistDetailFocus::EPs,
+                            ArtistDetailFocus::EPs => ArtistDetailFocus::Singles,
+                            ArtistDetailFocus::Singles => unreachable!(),
                         };
                         return;
                     }
-                    KeyCode::Right | KeyCode::Char('l') => {
-                        if detail.focus == ArtistDetailFocus::Singles {
-                            Action::FocusQueue
-                        } else {
-                            detail.focus = match detail.focus {
-                                ArtistDetailFocus::Bio => ArtistDetailFocus::Tracks,
-                                ArtistDetailFocus::Tracks => ArtistDetailFocus::Albums,
-                                ArtistDetailFocus::Albums => ArtistDetailFocus::EPs,
-                                ArtistDetailFocus::EPs => ArtistDetailFocus::Singles,
-                                ArtistDetailFocus::Singles => unreachable!(),
-                            };
-                            return;
+                }
+                KeyCode::Enter => {
+                    if detail.focus == ArtistDetailFocus::Tracks {
+                        let idx = detail.tracks.selected;
+                        let tracks = detail.tracks.items.clone();
+                        Action::PlayTracks(tracks, idx)
+                    } else if detail.focus == ArtistDetailFocus::Albums
+                        || detail.focus == ArtistDetailFocus::EPs
+                        || detail.focus == ArtistDetailFocus::Singles
+                    {
+                        Action::OpenAlbum
+                    } else {
+                        return;
+                    }
+                }
+                KeyCode::Char('a') if detail.focus == ArtistDetailFocus::Tracks => {
+                    match detail.tracks.items.get(detail.tracks.selected).cloned() {
+                        Some(t) => Action::AddToQueue(t),
+                        None => return,
+                    }
+                }
+                KeyCode::Char('f') if detail.focus == ArtistDetailFocus::Tracks => {
+                    match detail.tracks.items.get(detail.tracks.selected).cloned() {
+                        Some(t) => Action::ToggleFavoriteTrack(t),
+                        None => return,
+                    }
+                }
+                KeyCode::Char('f') if detail.focus == ArtistDetailFocus::Albums => {
+                    match detail.albums.items.get(detail.albums.selected).cloned() {
+                        Some(a) => Action::ToggleFavoriteAlbum(a),
+                        None => return,
+                    }
+                }
+                KeyCode::Char('f') if detail.focus == ArtistDetailFocus::EPs => {
+                    match detail.eps.items.get(detail.eps.selected).cloned() {
+                        Some(a) => Action::ToggleFavoriteAlbum(a),
+                        None => return,
+                    }
+                }
+                KeyCode::Char('f') if detail.focus == ArtistDetailFocus::Singles => {
+                    match detail.singles.items.get(detail.singles.selected).cloned() {
+                        Some(a) => Action::ToggleFavoriteAlbum(a),
+                        None => return,
+                    }
+                }
+                KeyCode::Char('f') => Action::ToggleFollowArtist(detail.artist.clone()),
+                KeyCode::Char('r') if detail.focus == ArtistDetailFocus::Tracks => {
+                    match detail.tracks.items.get(detail.tracks.selected).cloned() {
+                        Some(t) => Action::TrackRadio(t),
+                        None => return,
+                    }
+                }
+                KeyCode::Char('r') => Action::ArtistRadio(detail.artist.clone()),
+                KeyCode::Char('c') if detail.focus == ArtistDetailFocus::Tracks => {
+                    match detail.tracks.items.get(detail.tracks.selected) {
+                        Some(t) => Action::CopyUrl(t.share_url()),
+                        None => return,
+                    }
+                }
+                KeyCode::Char('c') if detail.focus == ArtistDetailFocus::Albums => {
+                    match detail.albums.items.get(detail.albums.selected) {
+                        Some(a) => Action::CopyUrl(a.share_url()),
+                        None => return,
+                    }
+                }
+                KeyCode::Char('c') if detail.focus == ArtistDetailFocus::EPs => {
+                    match detail.eps.items.get(detail.eps.selected) {
+                        Some(a) => Action::CopyUrl(a.share_url()),
+                        None => return,
+                    }
+                }
+                KeyCode::Char('c') if detail.focus == ArtistDetailFocus::Singles => {
+                    match detail.singles.items.get(detail.singles.selected) {
+                        Some(a) => Action::CopyUrl(a.share_url()),
+                        None => return,
+                    }
+                }
+                KeyCode::Char('c') => Action::CopyUrl(detail.artist.share_url()),
+                KeyCode::Char('C') if detail.focus == ArtistDetailFocus::Tracks => {
+                    match detail.tracks.items.get(detail.tracks.selected) {
+                        Some(t) => Action::CopyUrl(t.album.share_url()),
+                        None => return,
+                    }
+                }
+                KeyCode::Char('C') if detail.focus == ArtistDetailFocus::Albums => {
+                    Action::CopyUrl(detail.artist.share_url())
+                }
+                KeyCode::Char('C') if detail.focus == ArtistDetailFocus::EPs => {
+                    Action::CopyUrl(detail.artist.share_url())
+                }
+                KeyCode::Char('C') if detail.focus == ArtistDetailFocus::Singles => {
+                    Action::CopyUrl(detail.artist.share_url())
+                }
+                _ => return,
+            },
+            View::PlaylistDetail(detail) => match key.code {
+                KeyCode::Up => {
+                    match detail.focus {
+                        PlaylistDetailFocus::Tracks => detail.tracks.prev(),
+                        PlaylistDetailFocus::Description => {
+                            detail.description_scroll = detail.description_scroll.saturating_sub(1);
                         }
                     }
-                    KeyCode::Enter => {
-                        if detail.focus == ArtistDetailFocus::Tracks {
-                            let idx = detail.tracks.selected;
-                            let tracks = detail.tracks.items.clone();
-                            Action::PlayTracks(tracks, idx)
-                        } else if detail.focus == ArtistDetailFocus::Albums
-                            || detail.focus == ArtistDetailFocus::EPs
-                            || detail.focus == ArtistDetailFocus::Singles {
-                            Action::OpenAlbum
-                        } else {
-                            return;
+                    return;
+                }
+                KeyCode::Down => {
+                    match detail.focus {
+                        PlaylistDetailFocus::Tracks => detail.tracks.next(),
+                        PlaylistDetailFocus::Description => {
+                            detail.description_scroll = detail.description_scroll.saturating_add(1);
                         }
                     }
-                    KeyCode::Char('a') if detail.focus == ArtistDetailFocus::Tracks => {
+                    return;
+                }
+                KeyCode::PageUp => {
+                    match detail.focus {
+                        PlaylistDetailFocus::Tracks => detail.tracks.page_up(),
+                        PlaylistDetailFocus::Description => {}
+                    }
+                    return;
+                }
+                KeyCode::PageDown => {
+                    match detail.focus {
+                        PlaylistDetailFocus::Tracks => detail.tracks.page_down(),
+                        PlaylistDetailFocus::Description => {}
+                    }
+                    return;
+                }
+                KeyCode::Left | KeyCode::Char('h') => {
+                    if detail
+                        .playlist
+                        .description
+                        .as_ref()
+                        .map_or(false, |d| !d.is_empty())
+                    {
+                        detail.focus = match detail.focus {
+                            PlaylistDetailFocus::Tracks => PlaylistDetailFocus::Description,
+                            PlaylistDetailFocus::Description => PlaylistDetailFocus::Tracks,
+                        };
+                    }
+                    return;
+                }
+                KeyCode::Right | KeyCode::Char('l') => {
+                    if detail.focus == PlaylistDetailFocus::Tracks {
+                        Action::FocusQueue
+                    } else {
+                        detail.focus = PlaylistDetailFocus::Tracks;
+                        return;
+                    }
+                }
+                KeyCode::Enter => {
+                    if detail.focus == PlaylistDetailFocus::Tracks {
+                        let idx = detail.tracks.selected;
+                        let tracks = detail.tracks.items.clone();
+                        let uuid = detail.playlist.uuid.clone();
+                        Action::PlayPlaylistTracks(tracks, idx, uuid)
+                    } else {
+                        return;
+                    }
+                }
+                KeyCode::Char('a') => {
+                    if detail.focus == PlaylistDetailFocus::Tracks {
                         match detail.tracks.items.get(detail.tracks.selected).cloned() {
                             Some(t) => Action::AddToQueue(t),
                             None => return,
                         }
+                    } else {
+                        return;
                     }
-                    KeyCode::Char('f') if detail.focus == ArtistDetailFocus::Tracks => {
+                }
+                KeyCode::Char('f') => {
+                    if detail.focus == PlaylistDetailFocus::Tracks {
                         match detail.tracks.items.get(detail.tracks.selected).cloned() {
                             Some(t) => Action::ToggleFavoriteTrack(t),
                             None => return,
                         }
+                    } else {
+                        return;
                     }
-                    KeyCode::Char('f') if detail.focus == ArtistDetailFocus::Albums => {
-                        match detail.albums.items.get(detail.albums.selected).cloned() {
-                            Some(a) => Action::ToggleFavoriteAlbum(a),
-                            None => return,
-                        }
-                    }
-                    KeyCode::Char('f') if detail.focus == ArtistDetailFocus::EPs => {
-                        match detail.eps.items.get(detail.eps.selected).cloned() {
-                            Some(a) => Action::ToggleFavoriteAlbum(a),
-                            None => return,
-                        }
-                    }
-                    KeyCode::Char('f') if detail.focus == ArtistDetailFocus::Singles => {
-                        match detail.singles.items.get(detail.singles.selected).cloned() {
-                            Some(a) => Action::ToggleFavoriteAlbum(a),
-                            None => return,
-                        }
-                    }
-                    KeyCode::Char('f') => Action::ToggleFollowArtist(detail.artist.clone()),
-                    KeyCode::Char('r') if detail.focus == ArtistDetailFocus::Tracks => {
+                }
+                KeyCode::Char('r') => {
+                    if detail.focus == PlaylistDetailFocus::Tracks {
                         match detail.tracks.items.get(detail.tracks.selected).cloned() {
                             Some(t) => Action::TrackRadio(t),
                             None => return,
                         }
+                    } else {
+                        return;
                     }
-                    KeyCode::Char('r') => Action::ArtistRadio(detail.artist.clone()),
-                    KeyCode::Char('c') if detail.focus == ArtistDetailFocus::Tracks => {
+                }
+                KeyCode::Char('c') => {
+                    if detail.focus == PlaylistDetailFocus::Tracks {
                         match detail.tracks.items.get(detail.tracks.selected) {
                             Some(t) => Action::CopyUrl(t.share_url()),
                             None => return,
                         }
+                    } else {
+                        return;
                     }
-                    KeyCode::Char('c') if detail.focus == ArtistDetailFocus::Albums => {
-                        match detail.albums.items.get(detail.albums.selected) {
-                            Some(a) => Action::CopyUrl(a.share_url()),
-                            None => return,
-                        }
-                    }
-                    KeyCode::Char('c') if detail.focus == ArtistDetailFocus::EPs => {
-                        match detail.eps.items.get(detail.eps.selected) {
-                            Some(a) => Action::CopyUrl(a.share_url()),
-                            None => return,
-                        }
-                    }
-                    KeyCode::Char('c') if detail.focus == ArtistDetailFocus::Singles => {
-                        match detail.singles.items.get(detail.singles.selected) {
-                            Some(a) => Action::CopyUrl(a.share_url()),
-                            None => return,
-                        }
-                    }
-                    KeyCode::Char('c') => Action::CopyUrl(detail.artist.share_url()),
-                    KeyCode::Char('C') if detail.focus == ArtistDetailFocus::Tracks => {
-                        match detail.tracks.items.get(detail.tracks.selected) {
-                            Some(t) => Action::CopyUrl(t.album.share_url()),
-                            None => return,
-                        }
-                    }
-                    KeyCode::Char('C') if detail.focus == ArtistDetailFocus::Albums => {
-                        Action::CopyUrl(detail.artist.share_url())
-                    }
-                    KeyCode::Char('C') if detail.focus == ArtistDetailFocus::EPs => {
-                        Action::CopyUrl(detail.artist.share_url())
-                    }
-                    KeyCode::Char('C') if detail.focus == ArtistDetailFocus::Singles => {
-                        Action::CopyUrl(detail.artist.share_url())
-                    }
-                    _ => return,
                 }
-            }
-            View::PlaylistDetail(detail) => {
+                KeyCode::Char('C') => Action::CopyUrl(detail.playlist.share_url()),
+                _ => return,
+            },
+            View::AlbumDetail(detail) => {
                 match key.code {
                     KeyCode::Up => {
-                        match detail.focus {
-                            PlaylistDetailFocus::Tracks => detail.tracks.prev(),
-                            PlaylistDetailFocus::Description => {
-                                detail.description_scroll = detail.description_scroll.saturating_sub(1);
-                            }
-                        }
+                        detail.tracks.prev();
                         return;
                     }
                     KeyCode::Down => {
-                        match detail.focus {
-                            PlaylistDetailFocus::Tracks => detail.tracks.next(),
-                            PlaylistDetailFocus::Description => {
-                                detail.description_scroll = detail.description_scroll.saturating_add(1);
-                            }
-                        }
+                        detail.tracks.next();
                         return;
                     }
                     KeyCode::PageUp => {
-                        match detail.focus {
-                            PlaylistDetailFocus::Tracks => detail.tracks.page_up(),
-                            PlaylistDetailFocus::Description => {}
-                        }
+                        detail.tracks.page_up();
                         return;
                     }
                     KeyCode::PageDown => {
-                        match detail.focus {
-                            PlaylistDetailFocus::Tracks => detail.tracks.page_down(),
-                            PlaylistDetailFocus::Description => {}
-                        }
+                        detail.tracks.page_down();
                         return;
                     }
-                    KeyCode::Left | KeyCode::Char('h') => {
-                        if detail.playlist.description.as_ref().map_or(false, |d| !d.is_empty()) {
-                            detail.focus = match detail.focus {
-                                PlaylistDetailFocus::Tracks => PlaylistDetailFocus::Description,
-                                PlaylistDetailFocus::Description => PlaylistDetailFocus::Tracks,
-                            };
-                        }
-                        return;
-                    }
-                    KeyCode::Right | KeyCode::Char('l') => {
-                        if detail.focus == PlaylistDetailFocus::Tracks {
-                            Action::FocusQueue
-                        } else {
-                            detail.focus = PlaylistDetailFocus::Tracks;
-                            return;
-                        }
-                    }
-                    KeyCode::Enter => {
-                        if detail.focus == PlaylistDetailFocus::Tracks {
-                            let idx = detail.tracks.selected;
-                            let tracks = detail.tracks.items.clone();
-                            let uuid = detail.playlist.uuid.clone();
-                            Action::PlayPlaylistTracks(tracks, idx, uuid)
-                        } else {
-                            return;
-                        }
-                    }
-                    KeyCode::Char('a') => {
-                        if detail.focus == PlaylistDetailFocus::Tracks {
-                            match detail.tracks.items.get(detail.tracks.selected).cloned() {
-                                Some(t) => Action::AddToQueue(t),
-                                None => return,
-                            }
-                        } else {
-                            return;
-                        }
-                    }
-                    KeyCode::Char('f') => {
-                        if detail.focus == PlaylistDetailFocus::Tracks {
-                            match detail.tracks.items.get(detail.tracks.selected).cloned() {
-                                Some(t) => Action::ToggleFavoriteTrack(t),
-                                None => return,
-                            }
-                        } else {
-                            return;
-                        }
-                    }
-                    KeyCode::Char('r') => {
-                        if detail.focus == PlaylistDetailFocus::Tracks {
-                            match detail.tracks.items.get(detail.tracks.selected).cloned() {
-                                Some(t) => Action::TrackRadio(t),
-                                None => return,
-                            }
-                        } else {
-                            return;
-                        }
-                    }
-                    KeyCode::Char('c') => {
-                        if detail.focus == PlaylistDetailFocus::Tracks {
-                            match detail.tracks.items.get(detail.tracks.selected) {
-                                Some(t) => Action::CopyUrl(t.share_url()),
-                                None => return,
-                            }
-                        } else {
-                            return;
-                        }
-                    }
-                    KeyCode::Char('C') => Action::CopyUrl(detail.playlist.share_url()),
-                    _ => return,
-                }
-            }
-            View::AlbumDetail(detail) => {
-                match key.code {
-                    KeyCode::Up => { detail.tracks.prev(); return; }
-                    KeyCode::Down => { detail.tracks.next(); return; }
-                    KeyCode::PageUp => { detail.tracks.page_up(); return; }
-                    KeyCode::PageDown => { detail.tracks.page_down(); return; }
                     KeyCode::Right | KeyCode::Char('l') => Action::FocusQueue,
                     KeyCode::Enter => {
                         let idx = detail.tracks.selected;
                         let mut tracks = detail.tracks.items.clone();
                         // Populate album cover from album detail
                         if let Some(cover) = &detail.album.cover {
-                            tracing::debug!("Album cover from detail ({}): {}", cover.starts_with("http"), cover);
+                            tracing::debug!(
+                                "Album cover from detail ({}): {}",
+                                cover.starts_with("http"),
+                                cover
+                            );
                             for track in &mut tracks {
                                 track.album.cover = Some(cover.clone());
                             }
@@ -336,12 +354,10 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
                             None => return,
                         }
                     }
-                    KeyCode::Char('c') => {
-                        match detail.tracks.items.get(detail.tracks.selected) {
-                            Some(t) => Action::CopyUrl(t.share_url()),
-                            None => return,
-                        }
-                    }
+                    KeyCode::Char('c') => match detail.tracks.items.get(detail.tracks.selected) {
+                        Some(t) => Action::CopyUrl(t.share_url()),
+                        None => return,
+                    },
                     KeyCode::Char('C') => Action::CopyUrl(detail.album.share_url()),
                     _ => return,
                 }
@@ -353,17 +369,52 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
 
     // Apply any collected action (borrow of view_stack has ended)
     match action {
-        Action::PlayTracks(tracks, idx) => { app.play_tracks(tracks, idx); return; }
-        Action::OpenAlbum => { kitty_delete_album_art(); kitty_delete_artist_art(); app.open_selected_album(); return; }
-        Action::AddToQueue(track) => { app.add_to_queue(track); return; }
-        Action::ToggleFavoriteTrack(track) => { app.toggle_favorite_track(&track); return; }
-        Action::ToggleFollowArtist(artist) => { app.toggle_follow_artist(&artist); return; }
-        Action::ToggleFavoriteAlbum(album) => { app.toggle_favorite_album(&album); return; }
-        Action::TrackRadio(track) => { app.start_track_radio(&track); return; }
-        Action::ArtistRadio(artist) => { app.start_artist_radio(&artist); return; }
-        Action::FocusQueue => { app.focus_queue(); return; }
-        Action::PlayPlaylistTracks(tracks, idx, uuid) => { app.play_playlist_tracks(tracks, idx, uuid); return; }
-        Action::CopyUrl(url) => { app.copy_url(url); return; }
+        Action::PlayTracks(tracks, idx) => {
+            app.play_tracks(tracks, idx);
+            return;
+        }
+        Action::OpenAlbum => {
+            kitty_delete_album_art();
+            kitty_delete_artist_art();
+            app.open_selected_album();
+            return;
+        }
+        Action::AddToQueue(track) => {
+            app.add_to_queue(track);
+            return;
+        }
+        Action::ToggleFavoriteTrack(track) => {
+            app.toggle_favorite_track(&track);
+            return;
+        }
+        Action::ToggleFollowArtist(artist) => {
+            app.toggle_follow_artist(&artist);
+            return;
+        }
+        Action::ToggleFavoriteAlbum(album) => {
+            app.toggle_favorite_album(&album);
+            return;
+        }
+        Action::TrackRadio(track) => {
+            app.start_track_radio(&track);
+            return;
+        }
+        Action::ArtistRadio(artist) => {
+            app.start_artist_radio(&artist);
+            return;
+        }
+        Action::FocusQueue => {
+            app.focus_queue();
+            return;
+        }
+        Action::PlayPlaylistTracks(tracks, idx, uuid) => {
+            app.play_playlist_tracks(tracks, idx, uuid);
+            return;
+        }
+        Action::CopyUrl(url) => {
+            app.copy_url(url);
+            return;
+        }
         Action::None => {}
     }
 
@@ -396,12 +447,7 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
             Tab::Artists => app.artists.next(),
             Tab::Albums => app.fav_albums.next(),
             Tab::Playlists => app.playlists.next(),
-            Tab::Favorites => {
-                app.favorites.next();
-                if app.favorites.should_load_more() {
-                    app.load_favorites();
-                }
-            }
+            Tab::Favorites => app.favorites.next(),
             Tab::Search => app.search.pane_next(),
         },
         KeyCode::PageUp => match app.current_tab {
@@ -443,7 +489,8 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
             app.search.next_pane();
         }
         KeyCode::Right | KeyCode::Char('l')
-            if !matches!(app.current_tab, Tab::Home | Tab::Search) => {
+            if !matches!(app.current_tab, Tab::Home | Tab::Search) =>
+        {
             app.focus_queue();
         }
         KeyCode::Enter => match app.current_tab {
@@ -458,28 +505,26 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
                     app.play_tracks(tracks, idx);
                 }
             }
-            Tab::Search => {
-                match app.search.pane {
-                    SearchPane::Tracks => {
-                        let idx = app.search.track_sel;
-                        if let Some(track) = app.search.tracks.get(idx).cloned() {
-                            app.play_track(track);
-                        }
-                    }
-                    SearchPane::Artists => {
-                        let idx = app.search.artist_sel;
-                        if let Some(artist) = app.search.artists.get(idx).cloned() {
-                            app.open_artist(artist);
-                        }
-                    }
-                    SearchPane::Playlists => {
-                        let idx = app.search.playlist_sel;
-                        if let Some(playlist) = app.search.playlists.get(idx).cloned() {
-                            app.open_playlist(playlist);
-                        }
+            Tab::Search => match app.search.pane {
+                SearchPane::Tracks => {
+                    let idx = app.search.track_sel;
+                    if let Some(track) = app.search.tracks.get(idx).cloned() {
+                        app.play_track(track);
                     }
                 }
-            }
+                SearchPane::Artists => {
+                    let idx = app.search.artist_sel;
+                    if let Some(artist) = app.search.artists.get(idx).cloned() {
+                        app.open_artist(artist);
+                    }
+                }
+                SearchPane::Playlists => {
+                    let idx = app.search.playlist_sel;
+                    if let Some(playlist) = app.search.playlists.get(idx).cloned() {
+                        app.open_playlist(playlist);
+                    }
+                }
+            },
         },
         KeyCode::Char('a') => match app.current_tab {
             Tab::Favorites => {
@@ -554,17 +599,32 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
                 }
             }
             Tab::Search if app.search.pane == SearchPane::Tracks => {
-                if let Some(url) = app.search.tracks.get(app.search.track_sel).map(|t| t.share_url()) {
+                if let Some(url) = app
+                    .search
+                    .tracks
+                    .get(app.search.track_sel)
+                    .map(|t| t.share_url())
+                {
                     app.copy_url(url);
                 }
             }
             Tab::Search if app.search.pane == SearchPane::Artists => {
-                if let Some(url) = app.search.artists.get(app.search.artist_sel).map(|a| a.share_url()) {
+                if let Some(url) = app
+                    .search
+                    .artists
+                    .get(app.search.artist_sel)
+                    .map(|a| a.share_url())
+                {
                     app.copy_url(url);
                 }
             }
             Tab::Search if app.search.pane == SearchPane::Playlists => {
-                if let Some(url) = app.search.playlists.get(app.search.playlist_sel).map(|p| p.share_url()) {
+                if let Some(url) = app
+                    .search
+                    .playlists
+                    .get(app.search.playlist_sel)
+                    .map(|p| p.share_url())
+                {
                     app.copy_url(url);
                 }
             }
@@ -580,7 +640,12 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
                 }
             }
             Tab::Search if app.search.pane == SearchPane::Tracks => {
-                if let Some(url) = app.search.tracks.get(app.search.track_sel).map(|t| t.album.share_url()) {
+                if let Some(url) = app
+                    .search
+                    .tracks
+                    .get(app.search.track_sel)
+                    .map(|t| t.album.share_url())
+                {
                     app.copy_url(url);
                 }
             }
@@ -635,69 +700,4 @@ pub(super) fn get_selected_track(app: &App) -> Option<crate::api::models::Track>
         return Some(app.now_playing.queue[app.now_playing.queue_index].clone());
     }
     None
-}
-
-pub(super) fn check_load_more(app: &mut App) {
-    // Detail view tracks — checked before tab-level lists so the guard below
-    // (`view_stack.is_empty()`) doesn't shadow it.
-    if let Some(View::PlaylistDetail(detail)) = app.view_stack.last() {
-        if detail.tracks.should_load_more() {
-            app.load_more_playlist_tracks();
-            return;
-        }
-    }
-    if let Some(View::ArtistDetail(detail)) = app.view_stack.last() {
-        match detail.focus {
-            ArtistDetailFocus::Tracks if detail.tracks.should_load_more() => {
-                app.load_more_artist_tracks();
-                return;
-            }
-            ArtistDetailFocus::Albums if detail.albums.should_load_more() => {
-                app.load_more_artist_albums();
-                return;
-            }
-            ArtistDetailFocus::EPs if detail.eps.should_load_more() => {
-                app.load_more_artist_eps();
-                return;
-            }
-            ArtistDetailFocus::Singles if detail.singles.should_load_more() => {
-                app.load_more_artist_singles();
-                return;
-            }
-            _ => {}
-        }
-    }
-
-    match app.current_tab {
-        Tab::Search if app.view_stack.is_empty() => {
-            if app.search.should_load_more_for_pane() {
-                match app.search.pane {
-                    SearchPane::Tracks => app.load_search_tracks_next(),
-                    SearchPane::Artists => app.load_search_artists_next(),
-                    SearchPane::Playlists => app.load_search_playlists_next(),
-                }
-            }
-        }
-        Tab::Artists if app.view_stack.is_empty() => {
-            if app.artists.should_load_more() {
-                app.load_artists();
-            }
-        }
-        Tab::Albums if app.view_stack.is_empty() => {
-            if app.fav_albums.should_load_more() {
-                app.load_fav_albums();
-            }
-        }
-        Tab::Playlists if app.view_stack.is_empty() => {
-            if app.playlists.should_load_more() {
-                app.load_playlists();
-            }
-        }
-        Tab::Favorites if app.view_stack.is_empty() => {
-            if app.favorites.should_load_more() {
-                app.load_favorites();
-            }
-        }
-        _ => {}
-    }
 }

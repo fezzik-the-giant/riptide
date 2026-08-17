@@ -11,8 +11,8 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
 };
 
-use crate::app::App;
 use super::*;
+use crate::app::App;
 
 pub(super) fn render_artist_detail(
     f: &mut Frame,
@@ -25,26 +25,24 @@ pub(super) fn render_artist_detail(
     let art_h = art_inner_w / 2;
     let art_box_h = art_h + 2;
 
-    let cols = Layout::horizontal([
-        Constraint::Length(art_col_w),
-        Constraint::Min(0),
-    ])
-    .split(area);
+    let cols = Layout::horizontal([Constraint::Length(art_col_w), Constraint::Min(0)]).split(area);
 
-    let left_rows = Layout::vertical([
-        Constraint::Length(art_box_h),
-        Constraint::Min(0),
-    ])
-    .split(cols[0]);
+    let left_rows =
+        Layout::vertical([Constraint::Length(art_box_h), Constraint::Min(0)]).split(cols[0]);
 
     render_artist_art(f, app, detail, left_rows[0]);
 
     render_artist_bio(f, app, detail, left_rows[1]);
-    //use Render carousel tabs to render 
+    //use Render carousel tabs to render
     render_carousel_tabs(f, app, detail, cols[1]);
 }
 
-pub(super) fn render_artist_art(f: &mut Frame, app: &App, detail: &crate::app::ArtistDetail, area: Rect) {
+pub(super) fn render_artist_art(
+    f: &mut Frame,
+    app: &App,
+    detail: &crate::app::ArtistDetail,
+    area: Rect,
+) {
     let art_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(DIM));
@@ -69,11 +67,20 @@ pub(super) fn render_artist_art(f: &mut Frame, app: &App, detail: &crate::app::A
     }
 }
 
-pub(super) fn render_artist_bio(f: &mut Frame, app: &App, detail: &crate::app::ArtistDetail, area: Rect) {
+pub(super) fn render_artist_bio(
+    f: &mut Frame,
+    app: &App,
+    detail: &crate::app::ArtistDetail,
+    area: Rect,
+) {
     let focused = detail.focus == ArtistDetailFocus::Bio;
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(if focused { Style::default().fg(ACCENT) } else { Style::default().fg(DIM) });
+        .border_style(if focused {
+            Style::default().fg(ACCENT)
+        } else {
+            Style::default().fg(DIM)
+        });
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -145,13 +152,25 @@ pub(super) fn render_carousel_tabs(
     }
 
     let tabs = vec![
-        (format!(" Top Tracks ({})", detail.tracks.items.len()), ArtistDetailFocus::Tracks),
-        (format!("Albums ({})", detail.albums.items.len()), ArtistDetailFocus::Albums),
-        (format!("EPs ({})", detail.eps.items.len()), ArtistDetailFocus::EPs),
-        (format!("Singles ({})", detail.singles.items.len()), ArtistDetailFocus::Singles),
+        (
+            format!(" Top Tracks ({})", detail.tracks.items.len()),
+            ArtistDetailFocus::Tracks,
+        ),
+        (
+            format!("Albums ({})", detail.albums.items.len()),
+            ArtistDetailFocus::Albums,
+        ),
+        (
+            format!("EPs ({})", detail.eps.items.len()),
+            ArtistDetailFocus::EPs,
+        ),
+        (
+            format!("Singles ({})", detail.singles.items.len()),
+            ArtistDetailFocus::Singles,
+        ),
     ];
 
-        // Spans + Line seperators. can be changed or removed completely.
+    // Spans + Line seperators. can be changed or removed completely.
     let mut line_spans = Vec::new();
     for (i, (name, focus)) in tabs.iter().enumerate() {
         if i > 0 {
@@ -209,7 +228,9 @@ pub(super) fn render_artist_tracks_full(
 
     let height = inner.height as usize;
     let offset = detail.tracks.scroll_offset(height);
-    let items: Vec<ListItem> = detail.tracks.items
+    let items: Vec<ListItem> = detail
+        .tracks
+        .items
         .iter()
         .enumerate()
         .skip(offset)
@@ -217,23 +238,41 @@ pub(super) fn render_artist_tracks_full(
         .map(|(i, track)| {
             let selected = i == detail.tracks.selected && focused;
             let style = if selected {
-                Style::default().bg(HIGHLIGHT_BG).fg(Color::White).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .bg(HIGHLIGHT_BG)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
             let prefix = if selected { "▶ " } else { "  " };
-            let playing = app.now_playing.track.as_ref().map(|t| t.id == track.id).unwrap_or(false);
+            let playing = app
+                .now_playing
+                .track
+                .as_ref()
+                .map(|t| t.id == track.id)
+                .unwrap_or(false);
             let indicator = if playing { "♪ " } else { "" };
             // `i` stays 0-based for selection; only the displayed ordinal is 1-based.
             let n = i + 1;
 
             let title_span = Span::styled(
-                format!("{prefix}{indicator}{n:>2}. {} ({})", track.title, track.duration_display()),
-                style
+                format!(
+                    "{prefix}{indicator}{n:>2}. {} ({})",
+                    track.title,
+                    track.duration_display()
+                ),
+                style,
             );
 
-            let badge = track.quality_badge().map(|b| format!(" [{b}]")).unwrap_or_default();
-            let badge_span = Span::styled(badge, Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
+            let badge = track
+                .quality_badge()
+                .map(|b| format!(" [{b}]"))
+                .unwrap_or_default();
+            let badge_span = Span::styled(
+                badge,
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            );
 
             let heart = if app.favorite_track_ids.contains(&track.id) {
                 Span::raw(" ❤")
@@ -271,7 +310,9 @@ pub(super) fn render_artist_albums(
 
     let height = inner.height as usize;
     let offset = detail.albums.scroll_offset(height);
-    let items: Vec<ListItem> = detail.albums.items
+    let items: Vec<ListItem> = detail
+        .albums
+        .items
         .iter()
         .enumerate()
         .skip(offset)
@@ -279,21 +320,34 @@ pub(super) fn render_artist_albums(
         .map(|(i, album)| {
             let selected = i == detail.albums.selected && focused;
             let style = if selected {
-                Style::default().bg(HIGHLIGHT_BG).fg(Color::White).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .bg(HIGHLIGHT_BG)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
             let prefix = if selected { "▶ " } else { "  " };
-            let year = album.release_date.as_deref().and_then(|d| d.get(..4)).unwrap_or("----");
+            let year = album
+                .release_date
+                .as_deref()
+                .and_then(|d| d.get(..4))
+                .unwrap_or("----");
             let n = album.number_of_tracks.unwrap_or(0);
 
             let title_span = Span::styled(
                 format!("{}{} ({}, {} tracks)", prefix, album.title, year, n),
-                style
+                style,
             );
 
-            let badge = album.quality_badge().map(|b| format!(" [{b}]")).unwrap_or_default();
-            let badge_span = Span::styled(badge, Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
+            let badge = album
+                .quality_badge()
+                .map(|b| format!(" [{b}]"))
+                .unwrap_or_default();
+            let badge_span = Span::styled(
+                badge,
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            );
 
             let heart = if app.favorite_album_ids.contains(&album.id) {
                 Span::raw(" ❤")
@@ -331,7 +385,9 @@ pub(super) fn render_artist_eps(
 
     let height = inner.height as usize;
     let offset = detail.eps.scroll_offset(height);
-    let items: Vec<ListItem> = detail.eps.items
+    let items: Vec<ListItem> = detail
+        .eps
+        .items
         .iter()
         .enumerate()
         .skip(offset)
@@ -339,21 +395,34 @@ pub(super) fn render_artist_eps(
         .map(|(i, album)| {
             let selected = i == detail.eps.selected && focused;
             let style = if selected {
-                Style::default().bg(HIGHLIGHT_BG).fg(Color::White).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .bg(HIGHLIGHT_BG)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
             let prefix = if selected { "▶ " } else { "  " };
-            let year = album.release_date.as_deref().and_then(|d| d.get(..4)).unwrap_or("----");
+            let year = album
+                .release_date
+                .as_deref()
+                .and_then(|d| d.get(..4))
+                .unwrap_or("----");
             let n = album.number_of_tracks.unwrap_or(0);
 
             let title_span = Span::styled(
                 format!("{}{} ({}, {} tracks)", prefix, album.title, year, n),
-                style
+                style,
             );
 
-            let badge = album.quality_badge().map(|b| format!(" [{b}]")).unwrap_or_default();
-            let badge_span = Span::styled(badge, Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
+            let badge = album
+                .quality_badge()
+                .map(|b| format!(" [{b}]"))
+                .unwrap_or_default();
+            let badge_span = Span::styled(
+                badge,
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            );
 
             let heart = if app.favorite_album_ids.contains(&album.id) {
                 Span::raw(" ❤")
@@ -391,7 +460,9 @@ pub(super) fn render_artist_singles(
 
     let height = inner.height as usize;
     let offset = detail.singles.scroll_offset(height);
-    let items: Vec<ListItem> = detail.singles.items
+    let items: Vec<ListItem> = detail
+        .singles
+        .items
         .iter()
         .enumerate()
         .skip(offset)
@@ -399,21 +470,34 @@ pub(super) fn render_artist_singles(
         .map(|(i, album)| {
             let selected = i == detail.singles.selected && focused;
             let style = if selected {
-                Style::default().bg(HIGHLIGHT_BG).fg(Color::White).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .bg(HIGHLIGHT_BG)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
             let prefix = if selected { "▶ " } else { "  " };
-            let year = album.release_date.as_deref().and_then(|d| d.get(..4)).unwrap_or("----");
+            let year = album
+                .release_date
+                .as_deref()
+                .and_then(|d| d.get(..4))
+                .unwrap_or("----");
             let n = album.number_of_tracks.unwrap_or(0);
 
             let title_span = Span::styled(
                 format!("{}{} ({}, {} tracks)", prefix, album.title, year, n),
-                style
+                style,
             );
 
-            let badge = album.quality_badge().map(|b| format!(" [{b}]")).unwrap_or_default();
-            let badge_span = Span::styled(badge, Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
+            let badge = album
+                .quality_badge()
+                .map(|b| format!(" [{b}]"))
+                .unwrap_or_default();
+            let badge_span = Span::styled(
+                badge,
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            );
 
             let heart = if app.favorite_album_ids.contains(&album.id) {
                 Span::raw(" ❤")

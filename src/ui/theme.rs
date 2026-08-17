@@ -11,10 +11,10 @@ pub(super) const DIM: Color = Color::DarkGray;
 
 pub(super) fn fmt_sample_rate(hz: u32) -> String {
     match hz {
-        44100  => "44.1 kHz".into(),
-        88200  => "88.2 kHz".into(),
+        44100 => "44.1 kHz".into(),
+        88200 => "88.2 kHz".into(),
         176400 => "176.4 kHz".into(),
-        _      => {
+        _ => {
             let khz = hz / 1000;
             format!("{khz} kHz")
         }

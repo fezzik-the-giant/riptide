@@ -67,7 +67,11 @@ pub struct Album {
 
 impl Album {
     pub fn quality_badge(&self) -> Option<&'static str> {
-        let tags = self.media_metadata.as_ref().map(|m| m.tags.as_slice()).unwrap_or(&[]);
+        let tags = self
+            .media_metadata
+            .as_ref()
+            .map(|m| m.tags.as_slice())
+            .unwrap_or(&[]);
         if tags.iter().any(|t| t == "HIRES_LOSSLESS") {
             return Some("MAX");
         }
@@ -76,14 +80,12 @@ impl Album {
         }
         match self.audio_quality.as_deref() {
             Some("HI_RES") => Some("MQA"),
-            Some("HIGH")   => Some("320"),
-            _              => None,
+            Some("HIGH") => Some("320"),
+            _ => None,
         }
     }
     pub fn artist_name(&self) -> &str {
-        self.artist.as_ref()
-            .map(|a| a.name.as_str())
-            .unwrap_or("")
+        self.artist.as_ref().map(|a| a.name.as_str()).unwrap_or("")
     }
 
     /// Public Tidal share URL, matching the "Copy link" output of the official apps.
@@ -120,7 +122,8 @@ impl Track {
     }
 
     pub fn artist_name(&self) -> &str {
-        self.artist.as_ref()
+        self.artist
+            .as_ref()
             .or_else(|| self.artists.first())
             .map(|a| a.name.as_str())
             .unwrap_or("")
@@ -128,7 +131,8 @@ impl Track {
 
     pub fn all_artist_names(&self) -> String {
         if !self.artists.is_empty() {
-            self.artists.iter()
+            self.artists
+                .iter()
                 .map(|a| a.name.as_str())
                 .collect::<Vec<_>>()
                 .join(", ")
@@ -138,7 +142,11 @@ impl Track {
     }
 
     pub fn quality_badge(&self) -> Option<&'static str> {
-        let tags = self.media_metadata.as_ref().map(|m| m.tags.as_slice()).unwrap_or(&[]);
+        let tags = self
+            .media_metadata
+            .as_ref()
+            .map(|m| m.tags.as_slice())
+            .unwrap_or(&[]);
         if tags.iter().any(|t| t == "HIRES_LOSSLESS") {
             return Some("MAX");
         }
@@ -147,20 +155,20 @@ impl Track {
         }
         match self.audio_quality.as_deref() {
             Some("HI_RES") => Some("MQA"),
-            Some("HIGH")   => Some("320"),
-            _              => None,
+            Some("HIGH") => Some("320"),
+            _ => None,
         }
     }
 
     pub fn quality_display(&self) -> &str {
         match self.audio_quality.as_deref() {
             Some("HI_RES_LOSSLESS") => "Hi-Res",
-            Some("HI_RES")          => "MQA",
-            Some("LOSSLESS")        => "FLAC",
-            Some("HIGH")            => "AAC 320",
-            Some("LOW")             => "AAC 96",
-            Some(other)             => other,
-            None                    => "",
+            Some("HI_RES") => "MQA",
+            Some("LOSSLESS") => "FLAC",
+            Some("HIGH") => "AAC 320",
+            Some("LOW") => "AAC 96",
+            Some(other) => other,
+            None => "",
         }
     }
 
@@ -213,7 +221,6 @@ pub struct LyricsResponse {
 
 // ── Stream URL ────────────────────────────────────────────────────────────────
 
-
 /// Response from /tracks/{id}/playbackinfopostpaywall
 #[derive(Debug, Deserialize)]
 pub struct PlaybackInfo {
@@ -260,7 +267,8 @@ impl BtsManifest {
     /// True when the manifest codec is an AAC variant.
     #[allow(dead_code)]
     pub fn is_aac(&self) -> bool {
-        self.codecs.as_deref()
+        self.codecs
+            .as_deref()
             .map(|c| c.starts_with("mp4a"))
             .unwrap_or(false)
     }
@@ -278,7 +286,6 @@ pub struct SessionInfo {
     #[serde(rename = "countryCode")]
     pub country_code: String,
 }
-
 
 // ── OAuth ─────────────────────────────────────────────────────────────────────
 

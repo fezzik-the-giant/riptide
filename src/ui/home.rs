@@ -11,8 +11,8 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
 
-use crate::app::App;
 use super::*;
+use crate::app::App;
 
 pub(super) fn render_home(f: &mut Frame, app: &App, area: Rect) {
     use crate::app::HomeSectionFocus;
@@ -55,12 +55,27 @@ pub(super) fn render_home(f: &mut Frame, app: &App, area: Rect) {
         ])
         .split(inner);
 
-    render_home_section(f, &app.home_new_releases, chunks[0], "New Releases",
-        app.home_section_focus == HomeSectionFocus::NewReleases);
-    render_home_section(f, &app.home_daily_mixes, chunks[1], "Daily Mixes",
-        app.home_section_focus == HomeSectionFocus::DailyMixes);
-    render_home_section(f, &app.home_discovery_mixes, chunks[2], "Daily Discovery",
-        app.home_section_focus == HomeSectionFocus::DiscoveryMixes);
+    render_home_section(
+        f,
+        &app.home_new_releases,
+        chunks[0],
+        "New Releases",
+        app.home_section_focus == HomeSectionFocus::NewReleases,
+    );
+    render_home_section(
+        f,
+        &app.home_daily_mixes,
+        chunks[1],
+        "Daily Mixes",
+        app.home_section_focus == HomeSectionFocus::DailyMixes,
+    );
+    render_home_section(
+        f,
+        &app.home_discovery_mixes,
+        chunks[2],
+        "Daily Discovery",
+        app.home_section_focus == HomeSectionFocus::DiscoveryMixes,
+    );
 }
 
 pub(super) fn render_home_section(
@@ -89,15 +104,14 @@ pub(super) fn render_home_section(
     }
 
     if let Some(ref error) = section.error {
-        let paragraph = Paragraph::new(format!("Error: {}", error))
-            .style(Style::default().fg(Color::Red));
+        let paragraph =
+            Paragraph::new(format!("Error: {}", error)).style(Style::default().fg(Color::Red));
         f.render_widget(paragraph, inner);
         return;
     }
 
     if section.items.is_empty() {
-        let paragraph = Paragraph::new("No items")
-            .style(Style::default().fg(Color::Gray));
+        let paragraph = Paragraph::new("No items").style(Style::default().fg(Color::Gray));
         f.render_widget(paragraph, inner);
         return;
     }
@@ -118,7 +132,10 @@ pub(super) fn render_home_section(
             let is_selected = idx == section.selected && focused;
 
             let title_style = if is_selected {
-                Style::default().fg(Color::White).bg(HIGHLIGHT_BG).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::White)
+                    .bg(HIGHLIGHT_BG)
+                    .add_modifier(Modifier::BOLD)
             } else if focused {
                 Style::default().fg(Color::White)
             } else {
@@ -126,7 +143,10 @@ pub(super) fn render_home_section(
             };
 
             let prefix = if is_selected { "▶ " } else { "  " };
-            let line = Line::from(Span::styled(format!("{}{}", prefix, item.title), title_style));
+            let line = Line::from(Span::styled(
+                format!("{}{}", prefix, item.title),
+                title_style,
+            ));
             ListItem::new(line)
         })
         .collect();

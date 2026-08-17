@@ -6,6 +6,21 @@ on:
   pull_request:
 
 jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # No system dependencies or cache: `cargo fmt` parses the source without
+      # building it, so nothing here needs to link against libssl/dbus.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
   test:
     name: Test
     runs-on: ubuntu-latest

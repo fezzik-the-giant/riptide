@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-08-14
+
+### Fixed
+- Favorite tracks could appear twice once you scrolled near the end of the Tracks tab. Reaching the end re-requested the collection, and because that request always fetches everything from the start, the whole list was appended a second time
+- Quality badges (MAX / HI-FI) were missing throughout the Tracks tab. The favorites parser still read `audioQuality`, a v1 field name the v2 API never sends; it now reads `mediaTags` like every other parser
+- The placeholder logo only appeared when running from a source checkout. It was loaded from `assets/` via a path relative to the working directory, so an installed binary silently showed nothing; it is now embedded in the binary
+
+### Internal
+- Removed scroll-triggered loading. Every list already loads in full before it reaches the UI, so `should_load_more()`, `check_load_more()` and the per-list `load_more_*` helpers were dead weight that could still fire and duplicate data
+- Dropped `offset` and `limit` from API requests and request types — the Tidal v2 API ignores both, and `offset=0`, `offset=20` and no offset all return identical pages
+- Formatted the codebase with rustfmt, added a CI lint job that fails on unformatted code, and bundled an opt-in pre-commit hook (`git config core.hooksPath .githooks`)
+- Bumped `softprops/action-gh-release` to v3 for the Node 24 Actions runtime
+
 ## [1.0.0] - 2026-08-13
 
 The Tidal API migration is complete: every endpoint that can use the v2 API now

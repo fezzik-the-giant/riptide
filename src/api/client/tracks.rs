@@ -124,10 +124,7 @@ fn parse_v2_user_collection_tracks(
                                     name: artist_name.clone(),
                                 })
                             },
-                            audio_quality: attrs
-                                .get("audioQuality")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string()),
+                            audio_quality: None,
                             media_metadata: None,
                             added_at: None,
                             album_type: None,
@@ -146,11 +143,8 @@ fn parse_v2_user_collection_tracks(
                             },
                             artists: Vec::new(),
                             album,
-                            audio_quality: attrs
-                                .get("audioQuality")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string()),
-                            media_metadata: None,
+                            audio_quality: None,
+                            media_metadata: extract_media_metadata(attrs),
                             added_at: added_at_map.get(&track_id).cloned(),
                         };
                         tracks.push(track);
@@ -489,5 +483,47 @@ impl ApiClient {
 
         let (track, cover_url) = parse_v2_track_details(&api_resp)?;
         Ok((track, cover_url))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Trimmed capture of `GET /userCollectionTracks/me?include=items,items.artists`.
+    fn collection_page() -> serde_json::Value {
+        serde_json::json!({
+            "data": {
+                "id": "Hn4cnTxVVZDk",
+                "type": "userCollectionTracks",
+                "attributes": { "numberOfItems": 2 },
+                "relationships": { "items": { "data": [
+                    { "id": "178390467", "type": "tracks", "meta": { "addedAt": "2026-08-13T16:40:12.607Z" } },
+                    { "id": "77712754",  "type": "tracks", "meta": { "addedAt": "2026-08-12T09:15:00.000Z" } }
+                ] } }
+            },
+            "included": [
+                { "id": "178390467", "type": "tracks", "attributes": {
+                    "title": "Lanterns", "duration": "PT3M58S",
+                    "mediaTags": ["HIRES_LOSSLESS", "LOSSLESS"] } },
+                { "id": "77712754", "type": "tracks", "attributes": {
+                    "title": "Hail to the King", "duration": "PT5M04S",
+                    "mediaTags": ["LOSSLESS"] } }
+            ]
+        })
+    }
+
+    #[test]
+    fn favorite_tracks_carry_quality_badges() {
+        let (tracks, _, _) = parse_v2_user_collection_tracks(&collection_page()).unwrap();
+        assert_eq!(tracks.len(), 2);
+        assert_eq!(tracks[0].quality_badge(), Some("MAX"));
+        assert_eq!(tracks[1].quality_badge(), Some("HI-FI"));
+    }
+
+    #[test]
+    fn favorite_tracks_report_the_collection_count() {
+        let (_, total, _) = parse_v2_user_collection_tracks(&collection_page()).unwrap();
+        assert_eq!(total, 2);
     }
 }

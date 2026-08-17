@@ -50,26 +50,23 @@ impl ApiWorker {
 async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse {
     match req {
         ApiRequest::LoadArtists => match client.get_favorite_artists_v2().await {
-            Ok((artists, total)) => {
-                ApiResponse::Artists(artists, total)
-            }
+            Ok((artists, total)) => ApiResponse::Artists(artists, total),
             Err(e) => ApiResponse::Error(e.to_string()),
         },
 
-        ApiRequest::LoadPlaylists { offset } => {
-            if offset != 0 {
-                // v2 API returns all playlists in a single request, so pagination is not supported.
-                return ApiResponse::Error("Playlist pagination not supported (v2 API returns all at once)".to_string());
-            }
-
+        ApiRequest::LoadPlaylists => {
             match client.get_favorite_playlists().await {
                 Err(e) => ApiResponse::Error(e.to_string()),
                 Ok(fav_page) => {
-                    let mut playlists: Vec<Playlist> = fav_page.items.into_iter().map(|entry| {
-                        let mut pl = entry.playlist;
-                        pl.added_at = entry.created;
-                        pl
-                    }).collect();
+                    let mut playlists: Vec<Playlist> = fav_page
+                        .items
+                        .into_iter()
+                        .map(|entry| {
+                            let mut pl = entry.playlist;
+                            pl.added_at = entry.created;
+                            pl
+                        })
+                        .collect();
 
                     // v2 collection — covers playlists saved via the Tidal web/mobile apps.
                     if let Ok((coll, _)) = client.get_user_collection_playlists(None).await {
@@ -86,12 +83,16 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
             }
         }
 
-        ApiRequest::LoadFavAlbums { next_url } => match client.get_favorite_albums(next_url).await {
-            Ok((albums, total, next_cursor)) => {
-                ApiResponse::FavAlbumsPage { albums, total, next_url: next_cursor }
+        ApiRequest::LoadFavAlbums { next_url } => {
+            match client.get_favorite_albums(next_url).await {
+                Ok((albums, total, next_cursor)) => ApiResponse::FavAlbumsPage {
+                    albums,
+                    total,
+                    next_url: next_cursor,
+                },
+                Err(e) => ApiResponse::Error(e.to_string()),
             }
-            Err(e) => ApiResponse::Error(e.to_string()),
-        },
+        }
 
         ApiRequest::LoadFavorites => match client.get_favorite_tracks().await {
             Ok((tracks, total)) => ApiResponse::Favorites(tracks, total),
@@ -100,28 +101,40 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
 
         ApiRequest::LoadArtistTopTracks { artist_id } => {
             match client.get_artist_top_tracks(artist_id, 20).await {
-                Ok(page) => ApiResponse::ArtistTopTracks { artist_id, tracks: page.items },
+                Ok(page) => ApiResponse::ArtistTopTracks {
+                    artist_id,
+                    tracks: page.items,
+                },
                 Err(e) => ApiResponse::Error(format!("top tracks: {e}")),
             }
         }
 
         ApiRequest::LoadArtistAlbums { artist_id } => {
             match client.get_artist_albums(artist_id, 30).await {
-                Ok(page) => ApiResponse::ArtistAlbums { artist_id, albums: page.items },
+                Ok(page) => ApiResponse::ArtistAlbums {
+                    artist_id,
+                    albums: page.items,
+                },
                 Err(e) => ApiResponse::Error(format!("albums: {e}")),
             }
         }
 
         ApiRequest::LoadArtistEPs { artist_id } => {
             match client.get_artist_eps(artist_id, 30).await {
-                Ok(page) => ApiResponse::ArtistEPs { artist_id, albums: page.items },
+                Ok(page) => ApiResponse::ArtistEPs {
+                    artist_id,
+                    albums: page.items,
+                },
                 Err(e) => ApiResponse::Error(format!("EPs: {e}")),
             }
         }
 
         ApiRequest::LoadArtistSingles { artist_id } => {
             match client.get_artist_singles(artist_id, 30).await {
-                Ok(page) => ApiResponse::ArtistSingles { artist_id, albums: page.items },
+                Ok(page) => ApiResponse::ArtistSingles {
+                    artist_id,
+                    albums: page.items,
+                },
                 Err(e) => ApiResponse::Error(format!("singles: {e}")),
             }
         }
@@ -138,32 +151,37 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
 
         ApiRequest::LoadArtistPicture { artist_id } => {
             match client.get_artist_picture(artist_id).await {
-                Ok(picture_url) => ApiResponse::ArtistPicture { artist_id, picture_url },
+                Ok(picture_url) => ApiResponse::ArtistPicture {
+                    artist_id,
+                    picture_url,
+                },
                 Err(e) => ApiResponse::Error(format!("artist picture: {e}")),
             }
         }
 
-        ApiRequest::LoadAlbum { album_id } => {
-            match client.get_album(album_id).await {
-                Ok((album, _cover_url)) => ApiResponse::AlbumLoaded { album },
-                Err(error) => ApiResponse::AlbumLoadFailed {
-                    album_id,
-                    error: error.to_string(),
-                },
-            }
-        }
+        ApiRequest::LoadAlbum { album_id } => match client.get_album(album_id).await {
+            Ok((album, _cover_url)) => ApiResponse::AlbumLoaded { album },
+            Err(error) => ApiResponse::AlbumLoadFailed {
+                album_id,
+                error: error.to_string(),
+            },
+        },
 
-        ApiRequest::LoadAlbumTracks { album_id } => {
-            match client.get_album_tracks(album_id).await {
-                Ok(page) => ApiResponse::AlbumTracks { album_id, tracks: page.items },
-                Err(e) => ApiResponse::Error(format!("album tracks: {e}")),
-            }
-        }
+        ApiRequest::LoadAlbumTracks { album_id } => match client.get_album_tracks(album_id).await {
+            Ok(page) => ApiResponse::AlbumTracks {
+                album_id,
+                tracks: page.items,
+            },
+            Err(e) => ApiResponse::Error(format!("album tracks: {e}")),
+        },
 
         ApiRequest::FetchAlbumArt { album_id, cover_id } => {
             let url = thumbnail_art_url(&cover_id);
             match client.fetch_bytes(&url).await {
-                Ok(data) => ApiResponse::AlbumArt { album_id, image_data: data },
+                Ok(data) => ApiResponse::AlbumArt {
+                    album_id,
+                    image_data: data,
+                },
                 Err(error) => ApiResponse::AlbumArtFailed {
                     album_id,
                     error: error.to_string(),
@@ -184,24 +202,40 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
                     None
                 }
             };
-            ApiResponse::PresentationArt { album_id, image_data }
+            ApiResponse::PresentationArt {
+                album_id,
+                image_data,
+            }
         }
 
-        ApiRequest::FetchArtistArt { artist_id, picture_id } => {
+        ApiRequest::FetchArtistArt {
+            artist_id,
+            picture_id,
+        } => {
             let url = thumbnail_art_url(&picture_id);
             tracing::debug!("FetchArtistArt for artist {}: {}", artist_id, url);
             match client.fetch_bytes(&url).await {
                 Ok(data) => {
-                    tracing::debug!("FetchArtistArt completed for artist {}: {} bytes", artist_id, data.len());
-                    ApiResponse::ArtistArt { artist_id, image_data: data }
-                },
+                    tracing::debug!(
+                        "FetchArtistArt completed for artist {}: {} bytes",
+                        artist_id,
+                        data.len()
+                    );
+                    ApiResponse::ArtistArt {
+                        artist_id,
+                        image_data: data,
+                    }
+                }
                 Err(e) => ApiResponse::Error(format!("artist art: {e}")),
             }
         }
 
         ApiRequest::FetchPlaylistArt { uuid, cover_url } => {
             match client.fetch_bytes(&cover_url).await {
-                Ok(data) => ApiResponse::PlaylistArt { uuid, image_data: data },
+                Ok(data) => ApiResponse::PlaylistArt {
+                    uuid,
+                    image_data: data,
+                },
                 Err(e) => ApiResponse::Error(format!("playlist art: {e}")),
             }
         }
@@ -223,32 +257,32 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
             } else {
                 // First page uses the playlist endpoint
                 match client.get_playlist_tracks(&uuid, None).await {
-                    Ok((tracks, total, next_url, description, cover)) => ApiResponse::PlaylistTracks {
-                        uuid,
-                        tracks,
-                        total,
-                        next_cursor: next_url,
-                        description,
-                        cover,
-                    },
+                    Ok((tracks, total, next_url, description, cover)) => {
+                        ApiResponse::PlaylistTracks {
+                            uuid,
+                            tracks,
+                            total,
+                            next_cursor: next_url,
+                            description,
+                            cover,
+                        }
+                    }
                     Err(e) => ApiResponse::Error(e.to_string()),
                 }
             }
         }
 
-        ApiRequest::LoadMixTracks { uuid, offset } => {
-            match client.get_mix_tracks(&uuid, offset).await {
-                Ok((tracks, total, cover, description)) => ApiResponse::PlaylistTracks {
-                    uuid,
-                    tracks,
-                    total,
-                    next_cursor: None,
-                    description,
-                    cover,
-                },
-                Err(e) => ApiResponse::Error(e.to_string()),
-            }
-        }
+        ApiRequest::LoadMixTracks { uuid } => match client.get_mix_tracks(&uuid).await {
+            Ok((tracks, total, cover, description)) => ApiResponse::PlaylistTracks {
+                uuid,
+                tracks,
+                total,
+                next_cursor: None,
+                description,
+                cover,
+            },
+            Err(e) => ApiResponse::Error(e.to_string()),
+        },
 
         ApiRequest::SearchTracks { query } => match client.search_tracks(&query).await {
             Ok(page) => ApiResponse::SearchTracks(page),
@@ -265,32 +299,36 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
             Err(e) => ApiResponse::Error(format!("search playlists: {e}")),
         },
 
-        ApiRequest::SearchTracksNext { next_url } => match client.search_tracks_next(&next_url).await {
-            Ok(page) => ApiResponse::SearchTracks(page),
-            Err(e) => ApiResponse::Error(format!("search tracks pagination: {e}")),
-        },
+        ApiRequest::SearchTracksNext { next_url } => {
+            match client.search_tracks_next(&next_url).await {
+                Ok(page) => ApiResponse::SearchTracks(page),
+                Err(e) => ApiResponse::Error(format!("search tracks pagination: {e}")),
+            }
+        }
 
-        ApiRequest::SearchArtistsNext { next_url } => match client.search_artists_next(&next_url).await {
-            Ok(page) => ApiResponse::SearchArtistsResults(page),
-            Err(e) => ApiResponse::Error(format!("search artists pagination: {e}")),
-        },
+        ApiRequest::SearchArtistsNext { next_url } => {
+            match client.search_artists_next(&next_url).await {
+                Ok(page) => ApiResponse::SearchArtistsResults(page),
+                Err(e) => ApiResponse::Error(format!("search artists pagination: {e}")),
+            }
+        }
 
-        ApiRequest::SearchPlaylistsNext { next_url } => match client.search_playlists_next(&next_url).await {
-            Ok(page) => ApiResponse::SearchPlaylistsResults(page),
-            Err(e) => ApiResponse::Error(format!("search playlists pagination: {e}")),
-        },
+        ApiRequest::SearchPlaylistsNext { next_url } => {
+            match client.search_playlists_next(&next_url).await {
+                Ok(page) => ApiResponse::SearchPlaylistsResults(page),
+                Err(e) => ApiResponse::Error(format!("search playlists pagination: {e}")),
+            }
+        }
 
         ApiRequest::SearchArtistByName { query } => match client.search_artists(&query).await {
             Ok(page) => ApiResponse::SearchedArtists(page.artists),
             Err(e) => ApiResponse::Error(format!("search artists: {e}")),
         },
 
-        ApiRequest::ResolveStreamUrl { track_id } => {
-            match client.get_stream_url(track_id).await {
-                Ok(url) => ApiResponse::StreamUrl { track_id, url },
-                Err(e) => ApiResponse::Error(e.to_string()),
-            }
-        }
+        ApiRequest::ResolveStreamUrl { track_id } => match client.get_stream_url(track_id).await {
+            Ok(url) => ApiResponse::StreamUrl { track_id, url },
+            Err(e) => ApiResponse::Error(e.to_string()),
+        },
 
         ApiRequest::FavoriteTrack { track_id } => match client.add_favorite_track(track_id).await {
             Ok(()) => ApiResponse::FavoriteAdded,
@@ -302,10 +340,12 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
             Err(e) => ApiResponse::Error(format!("follow: {e}")),
         },
 
-        ApiRequest::UnfavoriteTrack { track_id } => match client.remove_favorite_track(track_id).await {
-            Ok(()) => ApiResponse::FavoriteRemoved { track_id },
-            Err(e) => ApiResponse::Error(format!("unfavorite: {e}")),
-        },
+        ApiRequest::UnfavoriteTrack { track_id } => {
+            match client.remove_favorite_track(track_id).await {
+                Ok(()) => ApiResponse::FavoriteRemoved { track_id },
+                Err(e) => ApiResponse::Error(format!("unfavorite: {e}")),
+            }
+        }
 
         ApiRequest::UnfollowArtist { artist_id } => match client.unfollow_artist(artist_id).await {
             Ok(()) => ApiResponse::ArtistUnfollowed { artist_id },
@@ -317,10 +357,12 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
             Err(e) => ApiResponse::Error(format!("favorite album: {e}")),
         },
 
-        ApiRequest::UnfavoriteAlbum { album_id } => match client.remove_favorite_album(album_id).await {
-            Ok(()) => ApiResponse::AlbumUnfavorited { album_id },
-            Err(e) => ApiResponse::Error(format!("unfavorite album: {e}")),
-        },
+        ApiRequest::UnfavoriteAlbum { album_id } => {
+            match client.remove_favorite_album(album_id).await {
+                Ok(()) => ApiResponse::AlbumUnfavorited { album_id },
+                Err(e) => ApiResponse::Error(format!("unfavorite album: {e}")),
+            }
+        }
 
         ApiRequest::SavePlaylist { uuid } => match client.save_playlist(&uuid).await {
             Ok(()) => ApiResponse::PlaylistSaved,
@@ -359,31 +401,44 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
 
         ApiRequest::GetTrackDetails { track_id } => {
             match client.get_track_details(track_id).await {
-                Ok((track, cover_url)) => ApiResponse::TrackDetails { track_id, track, cover_url },
+                Ok((track, cover_url)) => ApiResponse::TrackDetails {
+                    track_id,
+                    track,
+                    cover_url,
+                },
                 Err(e) => ApiResponse::Error(format!("track details: {e}")),
             }
         }
 
-        ApiRequest::FetchTrackArt { track_id, cover_url } => {
-            match client.fetch_bytes(&cover_url).await {
-                Ok(data) => ApiResponse::TrackArt { track_id, image_data: data },
-                Err(error) => ApiResponse::TrackArtFailed {
-                    track_id,
-                    error: error.to_string(),
-                },
-            }
-        }
+        ApiRequest::FetchTrackArt {
+            track_id,
+            cover_url,
+        } => match client.fetch_bytes(&cover_url).await {
+            Ok(data) => ApiResponse::TrackArt {
+                track_id,
+                image_data: data,
+            },
+            Err(error) => ApiResponse::TrackArtFailed {
+                track_id,
+                error: error.to_string(),
+            },
+        },
 
         ApiRequest::FetchLyrics { track_id } => {
             // A 404 (no lyrics) or any other error → return empty; never emit Error.
             let (synced, plain) = match client.get_track_lyrics(track_id).await {
                 Ok(resp) => {
-                    let synced = resp.subtitles.as_deref()
+                    let synced = resp
+                        .subtitles
+                        .as_deref()
                         .filter(|s| !s.is_empty())
                         .map(parse_lrc)
                         .unwrap_or_default();
                     let plain = if synced.is_empty() {
-                        resp.lyrics.as_deref().unwrap_or("").lines()
+                        resp.lyrics
+                            .as_deref()
+                            .unwrap_or("")
+                            .lines()
                             .map(str::to_string)
                             .filter(|l| !l.is_empty())
                             .collect()
@@ -394,7 +449,11 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
                 }
                 Err(_) => (Vec::new(), Vec::new()),
             };
-            ApiResponse::Lyrics { track_id, synced, plain }
+            ApiResponse::Lyrics {
+                track_id,
+                synced,
+                plain,
+            }
         }
     }
 }

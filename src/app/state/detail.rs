@@ -67,12 +67,16 @@ impl<T> Default for HomeSection<T> {
 
 impl<T> HomeSection<T> {
     pub fn next(&mut self) {
-        if self.items.is_empty() { return; }
+        if self.items.is_empty() {
+            return;
+        }
         self.selected = (self.selected + 1).min(self.items.len() - 1);
     }
 
     pub fn prev(&mut self) {
-        if self.selected > 0 { self.selected -= 1; }
+        if self.selected > 0 {
+            self.selected -= 1;
+        }
     }
 
     pub fn selected_item(&self) -> Option<&T> {
@@ -81,7 +85,6 @@ impl<T> HomeSection<T> {
 }
 
 // ── Album detail / art payload ────────────────────────────────────────────────
-
 
 pub struct AlbumDetail {
     pub album: Album,
