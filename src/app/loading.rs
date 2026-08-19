@@ -62,6 +62,7 @@ impl App {
             None => return,
         };
         self.now_playing.art_bytes = None;
+        self.now_playing.art_url = cover_id.as_deref().map(crate::api::models::cover_art_url);
         if let Some(cover_id) = cover_id {
             self.now_playing.art_loading = true;
             let _ = self

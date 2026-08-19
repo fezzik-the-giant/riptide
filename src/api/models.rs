@@ -64,6 +64,19 @@ fn quality_badge_for(tags: &[String]) -> Option<&'static str> {
     }
 }
 
+/// Direct CDN URL for a cover image. Cover fields carry either a full URL
+/// (v2 endpoints) or a dashed resource id that maps onto the CDN path.
+pub fn cover_art_url(cover: &str) -> String {
+    if cover.starts_with("http") {
+        cover.to_owned()
+    } else {
+        format!(
+            "https://resources.tidal.com/images/{}/320x320.jpg",
+            cover.replace('-', "/")
+        )
+    }
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct Album {
     pub id: u64,

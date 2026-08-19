@@ -14,7 +14,7 @@ use tokio::sync::mpsc;
 use crate::api::ApiResponse;
 use crate::app::{App, Tab};
 use crate::mpris::MprisCmd;
-use crate::player::{PlayerCmd, PlayerEvent};
+use crate::player::PlayerEvent;
 
 mod filter;
 mod global;
@@ -57,11 +57,18 @@ pub fn run_app(
             match cmd {
                 MprisCmd::Next => app.next_track(),
                 MprisCmd::Previous => app.prev_track(),
-                MprisCmd::Play => app.set_paused(false),
+                MprisCmd::Play => app.mpris_play(),
                 MprisCmd::Pause => app.set_paused(true),
-                MprisCmd::PlayPause => app.toggle_pause(),
-                MprisCmd::Stop => {
-                    let _ = app.player_tx.send(PlayerCmd::Stop);
+                MprisCmd::PlayPause => app.mpris_play_pause(),
+                MprisCmd::Stop => app.stop_playback(),
+                MprisCmd::Quit => app.should_quit = true,
+                MprisCmd::SetVolume(v) => {
+                    app.set_volume_percent((v.clamp(0.0, 1.0) * 100.0).round() as u8)
+                }
+                MprisCmd::SetShuffle(on) => app.set_shuffle(on),
+                MprisCmd::Seek(offset_us) => app.seek_by_us(offset_us),
+                MprisCmd::SetPosition(track_id, position_us) => {
+                    app.set_position_us(track_id, position_us)
                 }
             }
         }

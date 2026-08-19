@@ -3,7 +3,7 @@
 
 use super::{App, StatusLevel};
 use crate::api::ApiRequest;
-use crate::api::models::Track;
+use crate::api::models::{Track, cover_art_url};
 use crate::mpris::MprisState;
 use crate::player::PlayerCmd;
 
@@ -21,6 +21,7 @@ impl App {
         let _ = self
             .api_tx
             .send(ApiRequest::ResolveStreamUrl { track_id: id });
+        self.push_mpris_state();
     }
 
     pub fn play_tracks(&mut self, tracks: Vec<Track>, start_index: usize) {
@@ -54,6 +55,7 @@ impl App {
                 .api_tx
                 .send(ApiRequest::ResolveStreamUrl { track_id: id });
         }
+        self.push_mpris_state();
     }
 
     /// Like `play_tracks`, but records the source playlist UUID so that pages that
@@ -87,6 +89,7 @@ impl App {
                     .api_tx
                     .send(ApiRequest::ResolveStreamUrl { track_id: track.id });
             }
+            self.push_mpris_state();
         }
     }
 
@@ -102,6 +105,7 @@ impl App {
                     .api_tx
                     .send(ApiRequest::ResolveStreamUrl { track_id: track.id });
             }
+            self.push_mpris_state();
         }
     }
 
@@ -149,6 +153,7 @@ impl App {
             self.replace_prefetched_next();
             self.set_status("Shuffle on".to_string(), StatusLevel::Info);
         }
+        self.push_mpris_state();
     }
 
     /// Point mpv at whatever now follows the current track. Call after any
@@ -199,6 +204,7 @@ impl App {
         }
 
         self.queue_cursor = idx - 1;
+        self.push_mpris_state();
     }
 
     pub fn move_queue_track_down(&mut self) {
@@ -226,6 +232,7 @@ impl App {
         }
 
         self.queue_cursor = idx + 1;
+        self.push_mpris_state();
     }
 
     pub fn add_to_queue(&mut self, track: Track) {
@@ -247,6 +254,7 @@ impl App {
                 .send(ApiRequest::ResolveStreamUrl { track_id: id });
         }
         self.set_status(format!("Queued: {title}"), StatusLevel::Info);
+        self.push_mpris_state();
     }
 
     pub fn focus_queue(&mut self) {
@@ -333,33 +341,139 @@ impl App {
         if self.now_playing.queue.is_empty() {
             self.queue_focused = false;
         }
+        self.push_mpris_state();
     }
 
     pub fn push_mpris_state(&self) {
-        let state = match &self.now_playing.track {
+        let np = &self.now_playing;
+        let can_next = np.queue_index + 1 < np.queue.len();
+        let can_prev = np.queue_index > 0 && !np.queue.is_empty();
+        let state = match &np.track {
             Some(t) => MprisState {
+                track_id: t.id,
                 title: t.title.clone(),
-                artist: t.artist_name().to_owned(),
+                artists: if t.artists.is_empty() {
+                    t.artist.iter().map(|a| a.name.clone()).collect()
+                } else {
+                    t.artists.iter().map(|a| a.name.clone()).collect()
+                },
                 album: t.album.title.clone(),
-                art_url: t
-                    .album
-                    .cover
-                    .as_deref()
-                    .map(|id| {
-                        format!(
-                            "https://resources.tidal.com/images/{}/320x320.jpg",
-                            id.replace('-', "/")
-                        )
-                    })
+                art_url: np
+                    .art_url
+                    .clone()
+                    .or_else(|| t.album.cover.as_deref().map(cover_art_url))
                     .unwrap_or_default(),
                 duration_us: t.duration as i64 * 1_000_000,
-                position_us: (self.now_playing.position * 1_000_000.0) as i64,
-                paused: self.now_playing.paused,
-                active: self.now_playing.active,
+                position_us: (np.position * 1_000_000.0) as i64,
+                position_epoch: np.position_epoch,
+                paused: np.paused,
+                active: np.active,
+                volume: np.volume,
+                shuffle: np.shuffle,
+                can_next,
+                can_prev,
+                has_track: true,
             },
-            None => MprisState::default(),
+            None => MprisState {
+                position_epoch: np.position_epoch,
+                volume: np.volume,
+                shuffle: np.shuffle,
+                can_next,
+                can_prev,
+                ..MprisState::default()
+            },
         };
         let _ = self.mpris_tx.send(state);
+    }
+
+    /// MPRIS Stop. mpv's `stop` clears its playlist, so nothing is prefetched
+    /// any more and the queue can only be resumed through a fresh `Play`.
+    pub fn stop_playback(&mut self) {
+        let _ = self.player_tx.send(PlayerCmd::Stop);
+        self.now_playing.active = false;
+        self.now_playing.position = 0.0;
+        self.now_playing.next_prefetched = None;
+        self.now_playing.mpv_exhausted = true;
+        self.now_playing.seek_pending = None;
+        self.push_mpris_state();
+    }
+
+    /// MPRIS Play: resume when paused, restart the current queue entry when
+    /// stopped (after Stop, or after the queue ran out).
+    pub fn mpris_play(&mut self) {
+        if self.stopped_with_queue() {
+            self.play_from_queue(self.now_playing.queue_index);
+        } else {
+            self.set_paused(false);
+        }
+    }
+
+    pub fn mpris_play_pause(&mut self) {
+        if self.stopped_with_queue() {
+            self.play_from_queue(self.now_playing.queue_index);
+        } else {
+            self.toggle_pause();
+        }
+    }
+
+    /// Distinguishes "stopped" from the transient not-yet-active window while a
+    /// stream URL resolves: only a stop or a run-out leaves mpv exhausted.
+    fn stopped_with_queue(&self) -> bool {
+        !self.now_playing.active
+            && self.now_playing.mpv_exhausted
+            && !self.now_playing.queue.is_empty()
+    }
+
+    pub fn set_volume_percent(&mut self, pct: u8) {
+        let pct = pct.min(100);
+        let _ = self.player_tx.send(PlayerCmd::SetVolume(pct));
+        self.now_playing.volume = pct;
+        self.push_mpris_state();
+    }
+
+    pub fn set_shuffle(&mut self, on: bool) {
+        if on != self.now_playing.shuffle {
+            self.toggle_shuffle();
+        }
+    }
+
+    pub fn seek_by_us(&mut self, offset_us: i64) {
+        if !self.now_playing.active {
+            return;
+        }
+        let target = self.now_playing.position + offset_us as f64 / 1_000_000.0;
+        if self.now_playing.duration > 0.0 && target >= self.now_playing.duration {
+            // The spec: seeking beyond the end of the track acts like Next.
+            self.next_track();
+            return;
+        }
+        self.seek_to_secs(target.max(0.0));
+    }
+
+    pub fn set_position_us(&mut self, track_id: u64, position_us: i64) {
+        // Stale-call protection required by the spec: the client's trackid must
+        // still be the current track, and an out-of-range position is ignored.
+        if self.now_playing.track.as_ref().map(|t| t.id) != Some(track_id) {
+            return;
+        }
+        if !self.now_playing.active || position_us < 0 {
+            return;
+        }
+        let target = position_us as f64 / 1_000_000.0;
+        if self.now_playing.duration > 0.0 && target > self.now_playing.duration {
+            return;
+        }
+        self.seek_to_secs(target);
+    }
+
+    fn seek_to_secs(&mut self, secs: f64) {
+        let _ = self.player_tx.send(PlayerCmd::SeekAbsolute(secs));
+        self.now_playing.position = secs;
+        self.now_playing.position_epoch += 1;
+        // mpv polls already in flight may still answer with the pre-seek
+        // position; let a few be dropped instead of snapping the bar back.
+        self.now_playing.seek_pending = Some((secs, 3));
+        self.push_mpris_state();
     }
 }
 
@@ -1095,5 +1209,198 @@ mod tests {
         assert_eq!(app.now_playing.queue[0].id, next_id);
         assert_eq!(app.now_playing.queue_index, 0);
         assert_eq!(app.now_playing.queue.len(), 2);
+    }
+
+    // ── MPRIS control ─────────────────────────────────────────────────────────
+
+    /// Keeps the MPRIS watch receiver alive: `watch::Sender::send` does not
+    /// update the channel once every receiver is gone, so asserting on pushed
+    /// state needs one held open.
+    #[allow(clippy::type_complexity)]
+    fn make_app_watching_mpris() -> (
+        App,
+        tokio::sync::watch::Receiver<MprisState>,
+        mpsc::UnboundedReceiver<ApiRequest>,
+        mpsc::UnboundedReceiver<PlayerCmd>,
+    ) {
+        let (api_tx, api_rx) = mpsc::unbounded_channel();
+        let (player_tx, player_rx) = mpsc::unbounded_channel();
+        let (mpris_tx, mpris_rx) = tokio::sync::watch::channel(MprisState::default());
+        let (lastfm_tx, _) = mpsc::unbounded_channel();
+        let app = App::new(
+            api_tx,
+            player_tx,
+            mpris_tx,
+            lastfm_tx,
+            crate::app::Preferences::default(),
+        );
+        (app, mpris_rx, api_rx, player_rx)
+    }
+
+    fn drain<T>(rx: &mut mpsc::UnboundedReceiver<T>) {
+        while rx.try_recv().is_ok() {}
+    }
+
+    #[test]
+    fn stop_reports_stopped_and_play_restarts_the_current_track() {
+        let (mut app, mpris_rx, mut api_rx, mut player_rx) = make_app_watching_mpris();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks((1..=3).map(track).collect(), 1);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        assert!(app.now_playing.active);
+
+        app.stop_playback();
+        assert!(!app.now_playing.active);
+        assert!(app.now_playing.mpv_exhausted);
+        assert!(!mpris_rx.borrow().active, "MPRIS must see Stopped");
+
+        drain(&mut api_rx);
+        app.mpris_play();
+        assert_eq!(resolved_track_ids(&mut api_rx), vec![2]);
+    }
+
+    #[test]
+    fn play_while_merely_paused_does_not_restart_the_track() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks((1..=3).map(track).collect(), 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        app.handle_player_event(PlayerEvent::Paused(true));
+
+        drain(&mut api_rx);
+        drain(&mut player_rx);
+        app.mpris_play();
+
+        assert!(resolved_track_ids(&mut api_rx).is_empty());
+        assert!(matches!(player_rx.try_recv(), Ok(PlayerCmd::TogglePause)));
+    }
+
+    #[test]
+    fn seek_within_the_track_moves_position_and_mpv() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks(vec![track(1)], 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        app.now_playing.duration = 180.0;
+        app.now_playing.position = 10.0;
+        let epoch = app.now_playing.position_epoch;
+
+        drain(&mut player_rx);
+        app.seek_by_us(30_000_000);
+
+        assert_eq!(app.now_playing.position, 40.0);
+        assert_eq!(app.now_playing.position_epoch, epoch + 1);
+        assert!(matches!(player_rx.try_recv(), Ok(PlayerCmd::SeekAbsolute(s)) if s == 40.0));
+    }
+
+    #[test]
+    fn seek_past_the_end_acts_like_next() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks((1..=2).map(track).collect(), 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        app.now_playing.duration = 180.0;
+        app.now_playing.position = 170.0;
+
+        drain(&mut api_rx);
+        drain(&mut player_rx);
+        app.seek_by_us(30_000_000);
+
+        assert_eq!(app.now_playing.queue_index, 1);
+        assert_eq!(resolved_track_ids(&mut api_rx), vec![2]);
+        assert!(
+            player_rx.try_recv().is_err(),
+            "no seek is sent when advancing"
+        );
+    }
+
+    #[test]
+    fn seek_before_the_start_clamps_to_zero() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks(vec![track(1)], 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        app.now_playing.duration = 180.0;
+        app.now_playing.position = 5.0;
+
+        drain(&mut player_rx);
+        app.seek_by_us(-60_000_000);
+
+        assert_eq!(app.now_playing.position, 0.0);
+        assert!(matches!(player_rx.try_recv(), Ok(PlayerCmd::SeekAbsolute(s)) if s == 0.0));
+    }
+
+    #[test]
+    fn set_position_for_a_stale_track_is_ignored() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks(vec![track(1)], 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        app.now_playing.duration = 180.0;
+
+        drain(&mut player_rx);
+        app.set_position_us(9999, 10_000_000);
+
+        assert!(player_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn stale_position_polls_after_a_seek_are_dropped() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks(vec![track(1)], 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        app.now_playing.duration = 180.0;
+        app.now_playing.position = 100.0;
+
+        app.seek_by_us(-90_000_000);
+        assert_eq!(app.now_playing.position, 10.0);
+
+        app.handle_player_event(PlayerEvent::Position(100.4));
+        assert_eq!(
+            app.now_playing.position, 10.0,
+            "pre-seek poll must be dropped"
+        );
+
+        app.handle_player_event(PlayerEvent::Position(10.5));
+        assert_eq!(app.now_playing.position, 10.5);
+    }
+
+    #[test]
+    fn mpris_volume_reaches_both_state_and_mpv() {
+        let (mut app, _api_rx, mut player_rx) = make_app_watching_all();
+        drain(&mut player_rx);
+
+        app.set_volume_percent(55);
+
+        assert_eq!(app.now_playing.volume, 55);
+        assert!(matches!(player_rx.try_recv(), Ok(PlayerCmd::SetVolume(55))));
+    }
+
+    /// The reported bug: v2 track details carry the artwork as a URL and leave
+    /// `album.cover` empty, and replacing `now_playing.track` with them made the
+    /// next position tick strip `mpris:artUrl` from the metadata.
+    #[test]
+    fn track_details_without_album_cover_keep_the_mpris_art_url() {
+        let (mut app, mpris_rx, mut api_rx, mut player_rx) = make_app_watching_mpris();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks(vec![track(1)], 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+
+        let art = "https://resources.tidal.com/images/a/b/320x320.jpg";
+        app.handle_api_response(crate::api::ApiResponse::TrackDetails {
+            track_id: 1,
+            track: track(1), // album.cover is None, as in real v2 details
+            cover_url: Some(art.to_string()),
+        });
+        assert_eq!(app.now_playing.art_url.as_deref(), Some(art));
+        assert_eq!(mpris_rx.borrow().art_url, art);
+
+        app.handle_player_event(PlayerEvent::Position(3.0));
+        assert_eq!(
+            mpris_rx.borrow().art_url,
+            art,
+            "a position tick must not strip the art URL"
+        );
     }
 }

@@ -18,6 +18,16 @@ pub struct NowPlaying {
     pub queue_index: usize,
     pub art_bytes: Option<Vec<u8>>,
     pub art_loading: bool,
+    /// Where the current track's cover lives, as handed to MPRIS clients. Kept
+    /// separately from `track.album.cover` because v2 track details deliver the
+    /// artwork as a URL while leaving `album.cover` empty.
+    pub art_url: Option<String>,
+    /// Bumped on every discontinuous position change so the MPRIS server knows
+    /// to emit `Seeked`; ordinary playback progress must not trigger it.
+    pub position_epoch: u64,
+    /// Target of an in-flight seek plus how many mpv position polls may still
+    /// report the pre-seek position and must be dropped.
+    pub seek_pending: Option<(f64, u8)>,
     pub lyrics_synced: Vec<(f64, String)>,
     pub lyrics_plain: Vec<String>,
     pub lyrics_loading: bool,
@@ -63,6 +73,9 @@ impl Default for NowPlaying {
             queue_index: 0,
             art_bytes: None,
             art_loading: false,
+            art_url: None,
+            position_epoch: 0,
+            seek_pending: None,
             lyrics_synced: Vec::new(),
             lyrics_plain: Vec::new(),
             lyrics_loading: false,

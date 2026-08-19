@@ -136,6 +136,9 @@ impl App {
         // mpv starts at its own default, so the restored level has to be pushed
         // across rather than just held in state.
         let _ = app.player_tx.send(PlayerCmd::SetVolume(prefs.volume));
+        // MPRIS clients otherwise read volume 0 / shuffle off until the first
+        // playback event pushes real state.
+        app.push_mpris_state();
 
         app.load_home();
         app.load_artists();

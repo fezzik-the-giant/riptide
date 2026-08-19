@@ -181,10 +181,13 @@ impl App {
                     if track.album.id == album_id {
                         if let Some(cover_url) = cover {
                             self.now_playing.art_loading = true;
+                            self.now_playing.art_url =
+                                Some(crate::api::models::cover_art_url(&cover_url));
                             let _ = self.api_tx.send(ApiRequest::FetchAlbumArt {
                                 album_id,
                                 cover_id: cover_url,
                             });
+                            self.push_mpris_state();
                         }
                     }
                 }
@@ -575,6 +578,7 @@ impl App {
                         {
                             self.now_playing.art_loading = true;
                             self.now_playing.art_bytes = None;
+                            self.now_playing.art_url = Some(url.clone());
                             let _ = self.api_tx.send(ApiRequest::FetchTrackArt {
                                 track_id,
                                 cover_url: url,
@@ -586,6 +590,10 @@ impl App {
                             );
                         }
                     }
+                    // The replacement track has no `album.cover` (v2 details put
+                    // the artwork in `cover_url`), so without a push here the
+                    // next position tick would strip artUrl from the metadata.
+                    self.push_mpris_state();
                 }
             }
 
@@ -698,6 +706,7 @@ impl App {
                 self.now_playing.duration = 0.0;
                 self.now_playing.active = true;
                 self.now_playing.paused = false;
+                self.now_playing.seek_pending = None;
                 self.now_playing.sample_rate = None;
                 self.now_playing.codec = None;
                 self.now_playing.lastfm_sent = false;
@@ -761,17 +770,39 @@ impl App {
                     self.now_playing.active = false;
                     self.now_playing.next_prefetched = None;
                     self.now_playing.mpv_exhausted = true;
-                    self.push_mpris_state();
                 }
                 self.now_playing.position = 0.0;
+                self.push_mpris_state();
             }
             PlayerEvent::Position(p) => {
                 if !self.now_playing.active {
                     return;
                 }
-                // Only accept position updates that move forward (with 10ms tolerance for jitter).
-                // This prevents the audio widget from showing position going backward.
-                if p >= self.now_playing.position - 0.01 {
+                // A poll answer that was already in flight when a seek was issued
+                // still carries the pre-seek position; dropping a few keeps the
+                // progress bar from snapping back and forth.
+                if let Some((target, polls_left)) = self.now_playing.seek_pending {
+                    if (p - target).abs() <= 3.0 {
+                        self.now_playing.seek_pending = None;
+                        self.now_playing.position = p;
+                        self.push_mpris_state();
+                        return;
+                    }
+                    if polls_left > 0 {
+                        self.now_playing.seek_pending = Some((target, polls_left - 1));
+                        return;
+                    }
+                    self.now_playing.seek_pending = None;
+                }
+                let delta = p - self.now_playing.position;
+                // Sub-poll backward jitter is dropped so the progress bar never
+                // wobbles, but a jump of more than a second either way is a real
+                // seek (e.g. through mpv's IPC socket) and must be taken — and
+                // signalled, which is what the epoch bump does.
+                if delta >= -0.01 || delta < -1.0 {
+                    if delta.abs() > 1.0 {
+                        self.now_playing.position_epoch += 1;
+                    }
                     self.now_playing.position = p;
                     self.push_mpris_state();
                 }
@@ -832,7 +863,12 @@ impl App {
             PlayerEvent::Error(e) => {
                 self.set_status(format!("Player: {e}"), StatusLevel::Error);
             }
-            PlayerEvent::CurrVolume(v) => self.now_playing.volume = v,
+            PlayerEvent::CurrVolume(v) => {
+                if self.now_playing.volume != v {
+                    self.now_playing.volume = v;
+                    self.push_mpris_state();
+                }
+            }
         }
     }
 }

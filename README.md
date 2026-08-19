@@ -15,6 +15,7 @@
 - [Configuration](#configuration)
 - [Last.fm Scrobbling](#lastfm-scrobbling)
 - [Keybindings](#keybindings)
+- [MPRIS](#mpris)
 - [Image Rendering](#image-rendering)
 - [Logging](#logging)
 - [License](#license)
@@ -38,6 +39,8 @@ A terminal UI music player for Tidal, built with Rust.
 - Sort any library list by name, artist, or date added — your choice is remembered between sessions and shown in the
   list header
 - Volume, shuffle, and queue visibility persist across restarts
+- MPRIS support — media keys, `playerctl`, and desktop widgets see track metadata and album art and can control
+  playback, volume, seeking, and shuffle
 
 ## Requirements
 
@@ -476,6 +479,25 @@ Open with `/` (on any tab except Search) and type the start of a destination (Ta
 - `albums` — Go to Albums
 - `playlists` — Go to Playlists
 - `search` — Open search
+
+## MPRIS
+
+Riptide serves the [MPRIS D-Bus interface](https://specifications.freedesktop.org/mpris-spec/latest/) as
+`org.mpris.MediaPlayer2.riptide`, so media keys, desktop environment widgets, and tools like
+[playerctl](https://github.com/altdesktop/playerctl) work out of the box:
+
+```bash
+playerctl -p riptide play-pause
+playerctl -p riptide next
+playerctl -p riptide position 30          # seek to 0:30
+playerctl -p riptide volume 0.5           # 50%
+playerctl -p riptide shuffle On
+playerctl -p riptide metadata mpris:artUrl
+```
+
+Track metadata (title, all artists, album, cover art URL, duration), playback status, position, volume, and shuffle
+are all live, and changes are signalled to clients only when something actually changed. If a second riptide instance
+is started it serves under `org.mpris.MediaPlayer2.riptide.instance<pid>` instead of taking the name over.
 
 ## Image Rendering
 

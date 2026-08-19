@@ -25,6 +25,8 @@ pub enum PlayerCmd {
     ChangeVolume(i8),
     /// Absolute level, used to restore the saved volume at startup.
     SetVolume(u8),
+    /// Absolute position in seconds within the current track.
+    SeekAbsolute(f64),
 }
 
 #[derive(Debug, Clone)]
@@ -149,6 +151,11 @@ impl PlayerWorker {
                         PlayerCmd::SetVolume(v) => {
                             let _ = ipc_tx.send(IpcRequest::Write(
                                 json!({"command": ["set_property", "volume", v]}).to_string()
+                            ));
+                        }
+                        PlayerCmd::SeekAbsolute(secs) => {
+                            let _ = ipc_tx.send(IpcRequest::Write(
+                                json!({"command": ["seek", secs, "absolute"]}).to_string()
                             ));
                         }
                     }
