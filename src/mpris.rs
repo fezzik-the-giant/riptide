@@ -17,7 +17,7 @@ const NO_TRACK_PATH: &str = "/org/mpris/MediaPlayer2/TrackList/NoTrack";
 
 // ── Shared state ──────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default)]
 pub struct MprisState {
     pub track_id: u64,
     pub title: String,

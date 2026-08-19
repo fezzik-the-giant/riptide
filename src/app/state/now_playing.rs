@@ -7,6 +7,21 @@ use super::*;
 
 // ── Now playing ───────────────────────────────────────────────────────────────
 
+/// A seek sent to mpv whose landing has not shown up in a position poll yet.
+/// Polls already in flight when the seek was issued still answer with the
+/// pre-seek position; a poll nearer `origin_secs` than `target_secs` is such a
+/// straggler and must be dropped, or the progress bar snaps back and a bogus
+/// `Seeked` fires. The budget bounds the damage if mpv never lands the seek.
+pub struct PendingSeek {
+    pub target_secs: f64,
+    pub origin_secs: f64,
+    pub polls_remaining: u8,
+}
+
+impl PendingSeek {
+    pub const POLL_BUDGET: u8 = 3;
+}
+
 pub struct NowPlaying {
     pub track: Option<Track>,
     /// True only after mpv fires TrackStarted; false on startup and after the queue empties.
@@ -25,9 +40,9 @@ pub struct NowPlaying {
     /// Bumped on every discontinuous position change so the MPRIS server knows
     /// to emit `Seeked`; ordinary playback progress must not trigger it.
     pub position_epoch: u64,
-    /// Target of an in-flight seek plus how many mpv position polls may still
-    /// report the pre-seek position and must be dropped.
-    pub seek_pending: Option<(f64, u8)>,
+    /// Seek issued to mpv whose landing has not been observed yet; see
+    /// [`PendingSeek`].
+    pub seek_pending: Option<PendingSeek>,
     pub lyrics_synced: Vec<(f64, String)>,
     pub lyrics_plain: Vec<String>,
     pub lyrics_loading: bool,

@@ -20,6 +20,8 @@ pub enum PlayerCmd {
     /// Drop whatever is queued behind the current track.
     ClearNext,
     TogglePause,
+    /// Absolute pause state; idempotent, unlike `TogglePause`.
+    SetPaused(bool),
     Stop,
     SetMediaTitle(String),
     ChangeVolume(i8),
@@ -131,6 +133,11 @@ impl PlayerWorker {
                         PlayerCmd::TogglePause => {
                             let _ = ipc_tx.send(IpcRequest::Write(
                                 json!({"command": ["cycle", "pause"]}).to_string()
+                            ));
+                        }
+                        PlayerCmd::SetPaused(p) => {
+                            let _ = ipc_tx.send(IpcRequest::Write(
+                                json!({"command": ["set_property", "pause", p]}).to_string()
                             ));
                         }
                         PlayerCmd::Stop => {

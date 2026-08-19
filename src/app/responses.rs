@@ -590,9 +590,9 @@ impl App {
                             );
                         }
                     }
-                    // The replacement track has no `album.cover` (v2 details put
-                    // the artwork in `cover_url`), so without a push here the
-                    // next position tick would strip artUrl from the metadata.
+                    // The replacement track may correct title, album, or art;
+                    // push now instead of letting the next 500 ms position tick
+                    // deliver it.
                     self.push_mpris_state();
                 }
             }
@@ -778,21 +778,18 @@ impl App {
                 if !self.now_playing.active {
                     return;
                 }
-                // A poll answer that was already in flight when a seek was issued
-                // still carries the pre-seek position; dropping a few keeps the
-                // progress bar from snapping back and forth.
-                if let Some((target, polls_left)) = self.now_playing.seek_pending {
-                    if (p - target).abs() <= 3.0 {
-                        self.now_playing.seek_pending = None;
+                if let Some(pending) = &mut self.now_playing.seek_pending {
+                    let stale = (p - pending.origin_secs).abs() < (p - pending.target_secs).abs();
+                    if stale && pending.polls_remaining > 0 {
+                        pending.polls_remaining -= 1;
+                        return;
+                    }
+                    self.now_playing.seek_pending = None;
+                    if !stale {
                         self.now_playing.position = p;
                         self.push_mpris_state();
                         return;
                     }
-                    if polls_left > 0 {
-                        self.now_playing.seek_pending = Some((target, polls_left - 1));
-                        return;
-                    }
-                    self.now_playing.seek_pending = None;
                 }
                 let delta = p - self.now_playing.position;
                 // Sub-poll backward jitter is dropped so the progress bar never

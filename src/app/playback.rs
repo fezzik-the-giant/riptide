@@ -21,7 +21,6 @@ impl App {
         let _ = self
             .api_tx
             .send(ApiRequest::ResolveStreamUrl { track_id: id });
-        self.push_mpris_state();
     }
 
     pub fn play_tracks(&mut self, tracks: Vec<Track>, start_index: usize) {
@@ -55,7 +54,6 @@ impl App {
                 .api_tx
                 .send(ApiRequest::ResolveStreamUrl { track_id: id });
         }
-        self.push_mpris_state();
     }
 
     /// Like `play_tracks`, but records the source playlist UUID so that pages that
@@ -72,9 +70,10 @@ impl App {
     }
 
     pub fn set_paused(&mut self, paused: bool) {
-        if self.now_playing.paused != paused {
-            let _ = self.player_tx.send(PlayerCmd::TogglePause);
-        }
+        // set_property is idempotent where `cycle` is not: DEs repeat MPRIS
+        // Pause/Play, and two toggles racing the 500 ms pause-state poll would
+        // undo each other.
+        let _ = self.player_tx.send(PlayerCmd::SetPaused(paused));
     }
 
     pub fn next_track(&mut self) {
@@ -89,7 +88,9 @@ impl App {
                     .api_tx
                     .send(ApiRequest::ResolveStreamUrl { track_id: track.id });
             }
-            self.push_mpris_state();
+            // No MPRIS push here: `active` is false until the stream URL
+            // resolves, and pushing would flash Stopped at clients on every
+            // skip. The StreamUrl handler pushes as soon as playback restarts.
         }
     }
 
@@ -105,7 +106,6 @@ impl App {
                     .api_tx
                     .send(ApiRequest::ResolveStreamUrl { track_id: track.id });
             }
-            self.push_mpris_state();
         }
     }
 
@@ -417,9 +417,12 @@ impl App {
     }
 
     /// Distinguishes "stopped" from the transient not-yet-active window while a
-    /// stream URL resolves: only a stop or a run-out leaves mpv exhausted.
+    /// stream URL resolves: only a stop or a run-out leaves mpv exhausted, and
+    /// `track` stays None until a fresh queue's very first URL resolves — the
+    /// one window where `mpv_exhausted` is still at its startup value.
     fn stopped_with_queue(&self) -> bool {
-        !self.now_playing.active
+        self.now_playing.track.is_some()
+            && !self.now_playing.active
             && self.now_playing.mpv_exhausted
             && !self.now_playing.queue.is_empty()
     }
@@ -468,11 +471,13 @@ impl App {
 
     fn seek_to_secs(&mut self, secs: f64) {
         let _ = self.player_tx.send(PlayerCmd::SeekAbsolute(secs));
+        self.now_playing.seek_pending = Some(crate::app::PendingSeek {
+            target_secs: secs,
+            origin_secs: self.now_playing.position,
+            polls_remaining: crate::app::PendingSeek::POLL_BUDGET,
+        });
         self.now_playing.position = secs;
         self.now_playing.position_epoch += 1;
-        // mpv polls already in flight may still answer with the pre-seek
-        // position; let a few be dropped instead of snapping the bar back.
-        self.now_playing.seek_pending = Some((secs, 3));
         self.push_mpris_state();
     }
 }
@@ -1272,7 +1277,35 @@ mod tests {
         app.mpris_play();
 
         assert!(resolved_track_ids(&mut api_rx).is_empty());
-        assert!(matches!(player_rx.try_recv(), Ok(PlayerCmd::TogglePause)));
+        assert!(matches!(
+            player_rx.try_recv(),
+            Ok(PlayerCmd::SetPaused(false))
+        ));
+    }
+
+    #[test]
+    fn play_during_the_initial_resolve_does_not_double_resolve() {
+        let (mut app, mut api_rx, _player_rx) = make_app_watching_all();
+        app.play_tracks((1..=3).map(track).collect(), 0);
+        drain(&mut api_rx); // the fresh queue's first resolve is in flight
+
+        app.mpris_play();
+
+        assert!(resolved_track_ids(&mut api_rx).is_empty());
+    }
+
+    #[test]
+    fn skipping_does_not_flash_stopped_at_mpris_clients() {
+        let (mut app, mpris_rx, mut api_rx, mut player_rx) = make_app_watching_mpris();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks((1..=3).map(track).collect(), 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        assert!(mpris_rx.borrow().active);
+
+        app.next_track();
+
+        // Mid-resolve, the last published state must still be the playing one.
+        assert!(mpris_rx.borrow().active);
     }
 
     #[test]
@@ -1364,6 +1397,79 @@ mod tests {
 
         app.handle_player_event(PlayerEvent::Position(10.5));
         assert_eq!(app.now_playing.position, 10.5);
+    }
+
+    /// A seek shorter than any fixed tolerance: the stale poll sits close to
+    /// the target, so staleness must be judged relative to the seek's origin,
+    /// not by absolute distance.
+    #[test]
+    fn a_small_seek_does_not_wobble_or_signal_twice() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks(vec![track(1)], 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        app.now_playing.duration = 180.0;
+        app.now_playing.position = 50.0;
+
+        app.seek_by_us(2_000_000);
+        let epoch = app.now_playing.position_epoch;
+        assert_eq!(app.now_playing.position, 52.0);
+
+        app.handle_player_event(PlayerEvent::Position(50.0)); // pre-seek straggler
+        assert_eq!(app.now_playing.position, 52.0, "must not snap back");
+
+        app.handle_player_event(PlayerEvent::Position(52.4)); // the landing
+        assert_eq!(app.now_playing.position, 52.4);
+        assert_eq!(
+            app.now_playing.position_epoch, epoch,
+            "the landing must not fire a second Seeked"
+        );
+    }
+
+    #[test]
+    fn seek_poll_budget_exhaustion_falls_back_to_what_mpv_reports() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks(vec![track(1)], 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        app.now_playing.duration = 180.0;
+        app.now_playing.position = 100.0;
+
+        app.seek_by_us(-90_000_000);
+        let epoch = app.now_playing.position_epoch;
+
+        for _ in 0..3 {
+            app.handle_player_event(PlayerEvent::Position(100.5));
+            assert_eq!(app.now_playing.position, 10.0);
+        }
+        // Budget spent: mpv evidently never landed the seek, so its position
+        // is reality again and the jump back is a signalled discontinuity.
+        app.handle_player_event(PlayerEvent::Position(100.5));
+        assert_eq!(app.now_playing.position, 100.5);
+        assert!(app.now_playing.seek_pending.is_none());
+        assert_eq!(app.now_playing.position_epoch, epoch + 1);
+    }
+
+    #[test]
+    fn set_position_accepts_in_range_and_rejects_out_of_range() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks(vec![track(1)], 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        app.now_playing.duration = 180.0;
+
+        drain(&mut player_rx);
+        app.set_position_us(1, 30_000_000);
+        assert_eq!(app.now_playing.position, 30.0);
+        assert!(matches!(
+            player_rx.try_recv(),
+            Ok(PlayerCmd::SeekAbsolute(s)) if s == 30.0
+        ));
+
+        app.set_position_us(1, -5);
+        app.set_position_us(1, 200_000_000);
+        assert!(player_rx.try_recv().is_err());
+        assert_eq!(app.now_playing.position, 30.0);
     }
 
     #[test]
