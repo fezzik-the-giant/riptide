@@ -172,7 +172,14 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
         },
 
         ApiRequest::FetchAlbumArt { album_id, cover_id } => {
-            let url = crate::api::models::cover_art_url(&cover_id);
+            let url = if cover_id.starts_with("http") {
+                cover_id.clone()
+            } else {
+                format!(
+                    "https://resources.tidal.com/images/{}/320x320.jpg",
+                    cover_id.replace('-', "/")
+                )
+            };
             match client.fetch_bytes(&url).await {
                 Ok(data) => ApiResponse::AlbumArt {
                     album_id,
@@ -186,7 +193,15 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
             artist_id,
             picture_id,
         } => {
-            let url = crate::api::models::cover_art_url(&picture_id);
+            // picture_id can be either a direct URL (from v2 search) or an ID to construct (from v1 API)
+            let url = if picture_id.starts_with("http") {
+                picture_id.clone()
+            } else {
+                format!(
+                    "https://resources.tidal.com/images/{}/320x320.jpg",
+                    picture_id.replace('-', "/")
+                )
+            };
             tracing::debug!("FetchArtistArt for artist {}: {}", artist_id, url);
             match client.fetch_bytes(&url).await {
                 Ok(data) => {
