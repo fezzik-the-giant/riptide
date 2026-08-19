@@ -72,6 +72,15 @@ pub struct NowPlaying {
     /// while this holds: mpv *plays* a file appended to an exhausted playlist
     /// instead of queueing it, which would move the audio without the app knowing.
     pub mpv_exhausted: bool,
+    /// Track whose stream URL a Play is waiting on.
+    ///
+    /// Play has to be idempotent in the stopped state as well as the paused one:
+    /// without this a second Play inside the resolve round trip fires a second
+    /// request, and both responses reach the handler with `active` still false,
+    /// so each issues `loadfile replace` and restarts the song. That is the
+    /// duplicate-resolve loop behind issue #43, reached by pressing a media key
+    /// twice or by a desktop that repeats it.
+    pub play_pending: Option<u64>,
     /// Whether this track has been sent to Last.fm for scrobbling
     pub lastfm_sent: bool,
 }
@@ -105,6 +114,7 @@ impl Default for NowPlaying {
             original_queue: Vec::new(),
             next_prefetched: None,
             mpv_exhausted: true,
+            play_pending: None,
             lastfm_sent: false,
         }
     }

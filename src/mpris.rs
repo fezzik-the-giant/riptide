@@ -169,7 +169,11 @@ impl PlayerIface {
         1.0
     }
 
-    #[zbus(property)]
+    // Set asynchronously: the command is queued and the value only lands once the
+    // app pushes it back. zbus's automatic post-setter signal would read the getter
+    // in the meantime and announce the *old* value, making a desktop volume slider
+    // snap back before correcting. The server loop's diff is the only honest source.
+    #[zbus(property(emits_changed_signal = "false"))]
     fn shuffle(&self) -> bool {
         self.state.lock().unwrap().shuffle
     }
@@ -184,7 +188,7 @@ impl PlayerIface {
         build_metadata(&self.state.lock().unwrap())
     }
 
-    #[zbus(property)]
+    #[zbus(property(emits_changed_signal = "false"))]
     fn volume(&self) -> f64 {
         self.state.lock().unwrap().volume as f64 / 100.0
     }

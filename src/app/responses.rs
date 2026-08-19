@@ -507,6 +507,7 @@ impl App {
                 if self.now_playing.queue.get(idx).map(|t| t.id) == Some(track_id)
                     && !already_playing
                 {
+                    self.now_playing.play_pending = None;
                     // Always update the track when we get a successful stream URL for the current track
                     let track_changed =
                         self.now_playing.track.as_ref().map(|t| t.id) != Some(track_id);
@@ -660,6 +661,9 @@ impl App {
 
             ApiResponse::Error(msg) => {
                 let display_msg = if msg.contains("no stream URL available for track") {
+                    // The URL a Play was waiting on is never coming; leaving it
+                    // pending would make Play a no-op from then on.
+                    self.now_playing.play_pending = None;
                     // Try to enhance the error message with track name
                     if let Some(track_id_str) = msg.split("track ").last() {
                         if let Ok(track_id) = track_id_str.parse::<u64>() {
@@ -707,6 +711,7 @@ impl App {
                 self.now_playing.active = true;
                 self.now_playing.paused = false;
                 self.now_playing.seek_pending = None;
+                self.now_playing.play_pending = None;
                 self.now_playing.sample_rate = None;
                 self.now_playing.codec = None;
                 self.now_playing.lastfm_sent = false;

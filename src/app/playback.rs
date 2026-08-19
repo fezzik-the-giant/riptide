@@ -280,6 +280,7 @@ impl App {
         self.now_playing.active = false;
         self.now_playing.position = 0.0;
         if let Some(track) = self.now_playing.queue.get(idx) {
+            self.now_playing.play_pending = Some(track.id);
             let _ = self
                 .api_tx
                 .send(ApiRequest::ResolveStreamUrl { track_id: track.id });
@@ -395,6 +396,7 @@ impl App {
         self.now_playing.next_prefetched = None;
         self.now_playing.mpv_exhausted = true;
         self.now_playing.seek_pending = None;
+        self.now_playing.play_pending = None;
         self.push_mpris_state();
     }
 
@@ -424,6 +426,7 @@ impl App {
         self.now_playing.track.is_some()
             && !self.now_playing.active
             && self.now_playing.mpv_exhausted
+            && self.now_playing.play_pending.is_none()
             && !self.now_playing.queue.is_empty()
     }
 
@@ -435,9 +438,18 @@ impl App {
     }
 
     pub fn set_shuffle(&mut self, on: bool) {
-        if on != self.now_playing.shuffle {
-            self.toggle_shuffle();
+        if on == self.now_playing.shuffle {
+            return;
         }
+        // `toggle_shuffle` bails on an empty queue because there is no order to
+        // rewrite, which silently dropped `playerctl shuffle` before anything was
+        // playing — and left a saved shuffle preference impossible to turn off.
+        if self.now_playing.queue.is_empty() {
+            self.now_playing.shuffle = on;
+            self.push_mpris_state();
+            return;
+        }
+        self.toggle_shuffle();
     }
 
     pub fn seek_by_us(&mut self, offset_us: i64) {
@@ -446,8 +458,14 @@ impl App {
         }
         let target = self.now_playing.position + offset_us as f64 / 1_000_000.0;
         if self.now_playing.duration > 0.0 && target >= self.now_playing.duration {
-            // The spec: seeking beyond the end of the track acts like Next.
-            self.next_track();
+            // The spec: seeking beyond the end acts like Next, and stops when
+            // there is no next track. `next_track` is a no-op on the last entry,
+            // which left the request doing nothing at all.
+            if self.now_playing.queue_index + 1 < self.now_playing.queue.len() {
+                self.next_track();
+            } else {
+                self.stop_playback();
+            }
             return;
         }
         self.seek_to_secs(target.max(0.0));
@@ -1292,6 +1310,78 @@ mod tests {
         app.mpris_play();
 
         assert!(resolved_track_ids(&mut api_rx).is_empty());
+    }
+
+    /// The stopped-state Play has to be idempotent too: a repeated media key, or
+    /// a desktop that sends Play twice, otherwise resolves the same track twice
+    /// and each response restarts it from the beginning.
+    #[test]
+    fn repeated_play_while_stopped_resolves_once() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks((1..=3).map(track).collect(), 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        app.stop_playback();
+        drain(&mut api_rx);
+
+        app.mpris_play();
+        let first = resolved_track_ids(&mut api_rx);
+        app.mpris_play();
+        let second = resolved_track_ids(&mut api_rx);
+
+        assert_eq!(first.len(), 1, "the first Play resolves the stopped track");
+        assert!(second.is_empty(), "the second must wait for that URL");
+    }
+
+    /// A stream URL that never arrives must not wedge Play for good.
+    #[test]
+    fn a_failed_resolve_lets_play_try_again() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks((1..=3).map(track).collect(), 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        app.stop_playback();
+        drain(&mut api_rx);
+
+        app.mpris_play();
+        drain(&mut api_rx);
+        app.handle_api_response(crate::api::ApiResponse::Error(
+            "no stream URL available for track 1".to_string(),
+        ));
+
+        app.mpris_play();
+        assert_eq!(resolved_track_ids(&mut api_rx).len(), 1);
+    }
+
+    /// `toggle_shuffle` bails on an empty queue, which used to swallow the
+    /// setting entirely over D-Bus.
+    #[test]
+    fn shuffle_can_be_set_before_anything_is_playing() {
+        let (mut app, _api_rx, _player_rx) = make_app_watching_all();
+        assert!(app.now_playing.queue.is_empty());
+
+        app.set_shuffle(true);
+        assert!(app.now_playing.shuffle);
+
+        app.set_shuffle(false);
+        assert!(!app.now_playing.shuffle);
+    }
+
+    /// Seeking past the end of the *last* track has nowhere to advance to, and
+    /// used to do nothing at all rather than stopping.
+    #[test]
+    fn seeking_past_the_end_of_the_last_track_stops() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks(vec![track(1)], 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        app.now_playing.duration = 100.0;
+        app.now_playing.position = 99.0;
+
+        app.seek_by_us(60_000_000);
+
+        assert!(!app.now_playing.active, "playback stopped");
+        assert!(app.now_playing.mpv_exhausted);
     }
 
     #[test]
