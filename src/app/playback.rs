@@ -390,12 +390,10 @@ mod tests {
                 release_date: None,
                 cover: None,
                 artist: None,
-                audio_quality: None,
                 media_metadata: None,
                 added_at: None,
                 album_type: None,
             },
-            audio_quality: None,
             media_metadata: None,
             added_at: None,
         }
@@ -596,6 +594,7 @@ mod tests {
                     app.handle_api_response(crate::api::ApiResponse::StreamUrl {
                         track_id,
                         url: format!("url-{track_id}"),
+                        delivered: Default::default(),
                     });
                 }
                 progressed = true;
@@ -708,6 +707,177 @@ mod tests {
             settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
             assert_in_sync(&app, &mpv, &format!("after toggling shuffle at {step}"));
         }
+    }
+
+    /// Issue #43: with the same track at `queue_index` and `queue_index + 1`, the
+    /// prefetch response satisfied the "current track" branch, re-issued `Play`,
+    /// and requested the URL again — restarting the song in a loop until Tidal
+    /// answered 429.
+    #[test]
+    fn a_duplicated_track_does_not_restart_playback_in_a_loop() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks(vec![track(7), track(7), track(9)], 0);
+
+        let mut plays = 0;
+        for _ in 0..12 {
+            while let Ok(cmd) = player_rx.try_recv() {
+                let was = mpv.playing();
+                if matches!(cmd, PlayerCmd::Play(_)) {
+                    plays += 1;
+                }
+                mpv.apply(cmd);
+                if mpv.playing().is_some() && mpv.playing() != was {
+                    app.handle_player_event(PlayerEvent::TrackStarted);
+                }
+            }
+            let reqs: Vec<ApiRequest> = std::iter::from_fn(|| api_rx.try_recv().ok()).collect();
+            if reqs.is_empty() {
+                break;
+            }
+            for req in reqs {
+                if let ApiRequest::ResolveStreamUrl { track_id } = req {
+                    app.handle_api_response(crate::api::ApiResponse::StreamUrl {
+                        track_id,
+                        url: format!("url-{track_id}"),
+                        delivered: Default::default(),
+                    });
+                }
+            }
+        }
+
+        assert_eq!(plays, 1, "the track must be loaded once, not restarted");
+        assert_eq!(mpv.playing(), Some(7));
+        assert_eq!(
+            mpv.playlist.len(),
+            2,
+            "the duplicate belongs in mpv's queue, not on top of what is playing"
+        );
+    }
+
+    #[test]
+    fn queueing_the_playing_track_again_does_not_restart_it() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks(vec![track(7)], 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        assert_eq!(mpv.playing(), Some(7));
+
+        app.add_to_queue(track(7));
+
+        let mut plays = 0;
+        for _ in 0..12 {
+            while let Ok(cmd) = player_rx.try_recv() {
+                if matches!(cmd, PlayerCmd::Play(_)) {
+                    plays += 1;
+                }
+                mpv.apply(cmd);
+            }
+            let reqs: Vec<ApiRequest> = std::iter::from_fn(|| api_rx.try_recv().ok()).collect();
+            if reqs.is_empty() {
+                break;
+            }
+            for req in reqs {
+                if let ApiRequest::ResolveStreamUrl { track_id } = req {
+                    app.handle_api_response(crate::api::ApiResponse::StreamUrl {
+                        track_id,
+                        url: format!("url-{track_id}"),
+                        delivered: Default::default(),
+                    });
+                }
+            }
+        }
+
+        assert_eq!(
+            plays, 0,
+            "queueing a track must never restart the current one"
+        );
+        assert_eq!(mpv.playing(), Some(7));
+    }
+
+    // ── Library removal and undo (#39) ────────────────────────────────────────
+
+    #[test]
+    fn undo_restores_the_last_removed_track() {
+        let (mut app, mut api_rx) = make_app_watching_api();
+        app.favorites.append(vec![track(1), track(2)], 2);
+        app.rebuild_favorite_track_ids();
+        let victim = app.favorites.items[0].clone();
+
+        app.unfavorite_track(&victim);
+        // The list itself shrinks when the API confirms; what matters here is that
+        // the removal was recorded and can be replayed.
+        assert!(app.last_removal.is_some());
+        while api_rx.try_recv().is_ok() {}
+
+        app.undo_last_removal();
+
+        assert!(app.last_removal.is_none(), "the slot is consumed");
+        let requested: Vec<u64> = std::iter::from_fn(|| api_rx.try_recv().ok())
+            .filter_map(|r| match r {
+                ApiRequest::FavoriteTrack { track_id } => Some(track_id),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            requested,
+            vec![victim.id],
+            "re-favorites exactly what was removed"
+        );
+    }
+
+    #[test]
+    fn undo_with_nothing_removed_is_harmless() {
+        let (mut app, mut api_rx) = make_app_watching_api();
+        while api_rx.try_recv().is_ok() {} // App::new queues the startup loads
+
+        app.undo_last_removal();
+
+        assert!(app.last_removal.is_none());
+        assert!(
+            api_rx.try_recv().is_err(),
+            "an idle undo must not call the API"
+        );
+    }
+
+    #[test]
+    fn a_second_undo_does_not_re_add_something_removed_on_purpose() {
+        let (mut app, mut api_rx) = make_app_watching_api();
+        app.favorites.append(vec![track(1)], 1);
+        let victim = app.favorites.items[0].clone();
+
+        app.unfavorite_track(&victim);
+        app.undo_last_removal();
+        while api_rx.try_recv().is_ok() {}
+
+        app.undo_last_removal();
+
+        assert!(
+            api_rx.try_recv().is_err(),
+            "the slot was already spent; a second undo must do nothing"
+        );
+    }
+
+    #[test]
+    fn only_the_most_recent_removal_is_undoable() {
+        let (mut app, mut api_rx) = make_app_watching_api();
+        app.favorites.append(vec![track(1), track(2)], 2);
+        let first = app.favorites.items[0].clone();
+        let second = app.favorites.items[1].clone();
+
+        app.unfavorite_track(&first);
+        app.unfavorite_track(&second);
+        while api_rx.try_recv().is_ok() {}
+
+        app.undo_last_removal();
+
+        let requested: Vec<u64> = std::iter::from_fn(|| api_rx.try_recv().ok())
+            .filter_map(|r| match r {
+                ApiRequest::FavoriteTrack { track_id } => Some(track_id),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(requested, vec![second.id]);
     }
 
     #[test]

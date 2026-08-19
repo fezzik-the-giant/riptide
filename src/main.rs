@@ -69,7 +69,16 @@ fn main() -> Result<()> {
         let log_level = std::env::var("RIPTIDE_LOG_LEVEL")
             .or_else(|_| std::env::var("RUST_LOG"))
             .unwrap_or_else(|_| "warn".to_string());
-        let env_filter = tracing_subscriber::EnvFilter::new(&log_level);
+        // A bare level applies to riptide only. Left global it also turns on
+        // hyper's per-connection chatter, which drowned real events: connection
+        // pooling alone was a quarter of the lines in a user's debug log. A full
+        // directive ("riptide=debug,hyper=info") is still honoured as written.
+        let directive = if log_level.contains('=') {
+            log_level.clone()
+        } else {
+            format!("riptide={log_level}")
+        };
+        let env_filter = tracing_subscriber::EnvFilter::new(&directive);
 
         let _ = tracing_subscriber::fmt()
             .with_writer(file_appender)
@@ -83,13 +92,13 @@ fn main() -> Result<()> {
             .init();
     }
 
-    tracing::info!("╔══════════════════════════════════════════════════════════════╗");
-    tracing::info!("║                      🎵 RIPTIDE STARTING 🎵                  ║");
-    tracing::info!("╚══════════════════════════════════════════════════════════════╝");
-    tracing::info!("Loading configuration...");
+    tracing::info!("riptide {} starting", env!("CARGO_PKG_VERSION"));
     let mut config = api::auth::load_config()?;
     api::auth::ensure_auth(&mut config)?;
-    tracing::info!("Authentication successful (v{})", env!("CARGO_PKG_VERSION"));
+    tracing::info!(
+        "authenticated as user {}",
+        config.user_id.unwrap_or_default()
+    );
 
     // Channels: TUI → ApiWorker and TUI → PlayerWorker
     let (api_req_tx, api_req_rx) = mpsc::unbounded_channel();

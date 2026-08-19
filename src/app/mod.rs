@@ -65,6 +65,9 @@ pub struct App {
     pub queue_cursor: usize,
     queue_viewport: ListViewport,
 
+    /// Most recent library removal, restorable with `u` until the next one.
+    pub last_removal: Option<Removal>,
+
     pub help_active: bool,
     pub help_scroll: u16,
 
@@ -122,6 +125,7 @@ impl App {
             queue_visible: prefs.queue_visible,
             queue_cursor: 0,
             queue_viewport: ListViewport::default(),
+            last_removal: None,
             help_active: false,
             help_scroll: 0,
             tick: 0,

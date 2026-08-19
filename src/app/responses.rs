@@ -16,23 +16,14 @@ impl App {
                 self.rebuild_favorite_artist_ids();
             }
 
-            ApiResponse::FavAlbumsPage {
-                albums,
-                total,
-                next_url,
-            } => {
+            ApiResponse::FavAlbumsPage { albums, next_url } => {
                 let existing_ids: std::collections::HashSet<u64> =
                     self.fav_albums.items.iter().map(|a| a.id).collect();
                 let unique: Vec<Album> = albums
                     .into_iter()
                     .filter(|a| !existing_ids.contains(&a.id))
                     .collect();
-                self.fav_albums.append(unique, total);
-                let has_next = next_url.is_some();
-                self.fav_albums.pagination_cursor = next_url;
-                if !has_next {
-                    self.fav_albums.exhausted = true;
-                }
+                self.fav_albums.append_page(unique, next_url);
                 self.sort_fav_albums();
                 self.rebuild_favorite_album_ids();
                 if !self.fav_albums.exhausted {
@@ -64,7 +55,24 @@ impl App {
                 self.sort_playlists();
             }
 
-            ApiResponse::Favorites(items, total) => {
+            ApiResponse::Favorites(items, _total) => {
+                // Tidal can hand back the same track more than once — reported by
+                // users whose library was imported from another service. Showing
+                // both is confusing on its own, and adjacent duplicates used to
+                // send playback into a restart loop. The albums path already
+                // collapses its collection the same way.
+                let received = items.len();
+                let mut seen = std::collections::HashSet::new();
+                let items: Vec<Track> = items.into_iter().filter(|t| seen.insert(t.id)).collect();
+                if items.len() < received {
+                    tracing::warn!(
+                        "Tidal returned {} duplicate favourite track entries ({} unique of {})",
+                        received - items.len(),
+                        items.len(),
+                        received
+                    );
+                }
+                let total = items.len() as u32;
                 self.favorites.append(items, total);
                 self.favorites.exhausted = true;
                 self.sort_favorites();
@@ -226,9 +234,7 @@ impl App {
                     image_data.len()
                 );
                 let is_now_playing = self.now_playing.is_current_album(album_id);
-                tracing::debug!("is_now_playing={}", is_now_playing);
                 if is_now_playing {
-                    tracing::debug!("Setting now_playing.art_bytes");
                     self.now_playing.set_art_bytes(Some(image_data.clone()));
                     self.now_playing.art_loading = false;
                 }
@@ -334,7 +340,6 @@ impl App {
                             total
                         );
                         if let Some(desc) = description {
-                            tracing::debug!("Setting description: {}", desc);
                             detail.playlist.description = Some(desc);
                         }
                         // Only the initial /playlists/{uuid} request carries the
@@ -345,7 +350,6 @@ impl App {
                             detail.playlist.number_of_tracks = Some(total);
                         }
                         if let Some(cov_url) = cover {
-                            tracing::debug!("Setting cover: {}", cov_url);
                             detail.playlist.cover = Some(cov_url.clone());
                             detail.art_loading = true;
                             let _ = self.api_tx.send(ApiRequest::FetchPlaylistArt {
@@ -532,9 +536,26 @@ impl App {
                 self.search.playlists_next_url = page.next_url;
             }
 
-            ApiResponse::StreamUrl { track_id, url } => {
+            ApiResponse::StreamUrl {
+                track_id,
+                url,
+                delivered,
+            } => {
                 let idx = self.now_playing.queue_index;
-                if self.now_playing.queue.get(idx).map(|t| t.id) == Some(track_id) {
+                // A queue can hold the same track twice in a row — a duplicated
+                // favourite, or just pressing `a` on what is already playing — and
+                // the response carries only an id, so "this is the current track"
+                // and "this is the prefetch" look identical. Every path that
+                // genuinely wants playback to start clears `active` first, so an id
+                // match while that track is still playing must be the prefetch.
+                // Treating it as the current track re-issues `Play`, which restarts
+                // the song and requests the URL again, looping until Tidal answers
+                // 429.
+                let already_playing = self.now_playing.active
+                    && self.now_playing.track.as_ref().map(|t| t.id) == Some(track_id);
+                if self.now_playing.queue.get(idx).map(|t| t.id) == Some(track_id)
+                    && !already_playing
+                {
                     // Always update the track when we get a successful stream URL for the current track
                     let track_changed =
                         self.now_playing.track.as_ref().map(|t| t.id) != Some(track_id);
@@ -542,7 +563,6 @@ impl App {
 
                     if track_changed {
                         // Clear old art and lyrics so we don't show the previous track's content
-                        tracing::debug!("Clearing old art and lyrics for new track");
                         self.now_playing.set_art_bytes(None);
                         self.now_playing.art_loading = true;
                         self.now_playing.lyrics_synced.clear();
@@ -558,6 +578,7 @@ impl App {
                     // `loadfile replace` wipes mpv's playlist and always loads media,
                     // so anything prefetched into it is gone and mpv is no longer dry.
                     let _ = self.player_tx.send(PlayerCmd::Play(url));
+                    self.now_playing.delivered = delivered;
                     self.now_playing.next_prefetched = None;
                     self.now_playing.mpv_exhausted = false;
                     if let Some(next) = self.now_playing.queue.get(idx + 1) {
@@ -604,7 +625,6 @@ impl App {
                     if let Some(url) = cover_url {
                         if url.ends_with(".jpg") || url.ends_with(".png") || url.ends_with(".jpeg")
                         {
-                            tracing::debug!("TrackDetails has valid image cover_url, fetching");
                             self.now_playing.art_source = Some(url.clone());
                             self.now_playing.art_loading = true;
                             self.now_playing.set_art_bytes(None);
@@ -745,6 +765,14 @@ impl App {
                 self.now_playing.codec = None;
                 self.now_playing.lastfm_sent = false;
                 if let Some(track) = &self.now_playing.track {
+                    tracing::info!(
+                        "playing [{}/{}] {} — {} (track {})",
+                        self.now_playing.queue_index + 1,
+                        self.now_playing.queue.len(),
+                        track.artist_name(),
+                        track.title,
+                        track.id
+                    );
                     let title = format!("{} — {}", track.artist_name(), track.title);
                     let _ = self.player_tx.send(PlayerCmd::SetMediaTitle(title));
                 }
@@ -758,8 +786,8 @@ impl App {
                     // it is not, the two sides have diverged — re-resolve the track so
                     // the StreamUrl handler issues a fresh `Play` and puts them back in
                     // step, instead of narrating a track that is not being played.
-                    let diverged = self.now_playing.next_prefetched
-                        != self.now_playing.queue.get(next_idx).map(|t| t.id);
+                    let prefetched = self.now_playing.next_prefetched;
+                    let diverged = prefetched != self.now_playing.queue.get(next_idx).map(|t| t.id);
 
                     self.now_playing.queue_index = next_idx;
                     self.now_playing.track = self.now_playing.queue.get(next_idx).cloned();
@@ -769,9 +797,10 @@ impl App {
                     self.now_playing.next_prefetched = None;
 
                     if diverged {
-                        tracing::debug!(
-                            "mpv did not advance to queue[{}]; replaying it to resync",
-                            next_idx
+                        tracing::warn!(
+                            "mpv did not advance to queue[{next_idx}] (expected track {:?}, had {:?}); replaying to resync",
+                            self.now_playing.queue.get(next_idx).map(|t| t.id),
+                            prefetched
                         );
                         self.now_playing.active = false;
                         if let Some(current) = self.now_playing.queue.get(next_idx) {
@@ -890,12 +919,10 @@ mod tests {
                 release_date: None,
                 cover: None,
                 artist: None,
-                audio_quality: None,
                 media_metadata: None,
                 added_at: None,
                 album_type: None,
             },
-            audio_quality: None,
             media_metadata: None,
             added_at: None,
         }

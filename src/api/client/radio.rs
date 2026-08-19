@@ -11,8 +11,6 @@ use super::{ApiClient, OPENAPI_BASE};
 use crate::api::models::*;
 
 fn parse_radio_response(api_resp: &serde_json::Value) -> Result<Vec<Track>> {
-    tracing::debug!("Parsing radio response");
-
     // Radio endpoint returns a playlist in data, with tracks in playlist.relationships.items.data
     let mut track_ids = Vec::new();
 
@@ -32,7 +30,6 @@ fn parse_radio_response(api_resp: &serde_json::Value) -> Result<Vec<Track>> {
             .and_then(|v| v.get("data"))
             .and_then(|v| v.as_array())
         {
-            tracing::debug!("Found {} track references in playlist", track_refs.len());
             for track_ref in track_refs.iter() {
                 if let Some(track_id) = track_ref.get("id").and_then(|v| v.as_str()) {
                     track_ids.push(track_id.to_string());
@@ -58,7 +55,6 @@ fn parse_radio_response(api_resp: &serde_json::Value) -> Result<Vec<Track>> {
                 }
             }
         }
-        tracing::debug!("Built track_map with {} tracks", track_map.len());
     }
 
     let artist_map = build_artist_map(api_resp);
@@ -111,12 +107,10 @@ fn parse_radio_response(api_resp: &serde_json::Value) -> Result<Vec<Track>> {
                                 release_date: None,
                                 cover: None,
                                 artist: None,
-                                audio_quality: None,
                                 media_metadata: None,
                                 added_at: None,
                                 album_type: None,
                             },
-                            audio_quality: None,
                             media_metadata,
                             added_at: None,
                         });
@@ -125,8 +119,6 @@ fn parse_radio_response(api_resp: &serde_json::Value) -> Result<Vec<Track>> {
             }
         }
     }
-
-    tracing::debug!("Parsed {} radio tracks total", tracks.len());
     Ok(tracks)
 }
 
@@ -137,8 +129,6 @@ impl ApiClient {
         let url = format!(
             "{OPENAPI_BASE}/tracks/{track_id}/relationships/radio?locale=en-US&include=radio.items.albums,radio.items.artists"
         );
-
-        tracing::debug!("Radio URL: {}", url);
         let resp = self
             .http
             .get(&url)
@@ -176,8 +166,6 @@ impl ApiClient {
         let url = format!(
             "{OPENAPI_BASE}/artists/{artist_id}/relationships/radio?locale=en-US&include=radio.items.albums,radio.items.artists"
         );
-
-        tracing::debug!("Radio URL: {}", url);
         let resp = self
             .http
             .get(&url)

@@ -231,7 +231,7 @@ impl ApiClient {
     ///
     /// Consequence: `BASE`, `dash_to_hls`, `build_flac_m3u8` and the localhost
     /// manifest server in `src/manifest.rs` are all load-bearing and must stay.
-    pub async fn get_stream_url(&self, track_id: u64) -> Result<String> {
+    pub async fn get_stream_url(&self, track_id: u64) -> Result<(String, DeliveredQuality)> {
         // Quality fallback chain for streaming.
         //
         // | Quality          | Manifest MIME type         | Container   | Actual codec  |
@@ -300,6 +300,10 @@ impl ApiClient {
             let info: PlaybackInfo =
                 serde_json::from_str(&body).context("parse playback info response")?;
 
+            let delivered = DeliveredQuality {
+                bit_depth: info.bit_depth,
+                sample_rate: info.sample_rate,
+            };
             let mime = info.manifest_mime_type.clone();
             if debug {
                 let aq = info.audio_quality.as_deref().unwrap_or("?");
@@ -345,10 +349,10 @@ impl ApiClient {
                             );
                         }
                         if manifest.urls.len() == 1 {
-                            return Ok(manifest.urls.into_iter().next().unwrap());
+                            return Ok((manifest.urls.into_iter().next().unwrap(), delivered));
                         }
                         let m3u8 = build_flac_m3u8(track_id, &manifest.urls);
-                        return Ok(m3u8);
+                        return Ok((m3u8, delivered));
                     }
 
                     // BTS with non-FLAC codec.
@@ -359,7 +363,7 @@ impl ApiClient {
                             eprintln!("[quality] track {track_id}: accepting AAC stream (HIGH)");
                         }
                         if let Some(url) = manifest.urls.into_iter().next() {
-                            return Ok(url);
+                            return Ok((url, delivered));
                         }
                     } else {
                         if debug {
@@ -402,7 +406,7 @@ impl ApiClient {
                     }
                     let hls =
                         dash_to_hls(track_id, &xml).context("convert DASH manifest to HLS")?;
-                    return Ok(hls);
+                    return Ok((hls, delivered));
                 }
                 _ => {
                     if debug {

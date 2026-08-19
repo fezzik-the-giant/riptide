@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ryan Cohan
 
-use super::{App, SortField, SortPalette, StatusLevel, Tab};
+use super::{App, Removal, SortField, SortPalette, StatusLevel, Tab};
 use crate::api::ApiRequest;
 use crate::api::models::{Album, Artist, Playlist, Track};
 
@@ -36,12 +36,13 @@ impl App {
         );
     }
 
-    fn unfavorite_track(&mut self, track: &Track) {
+    pub(crate) fn unfavorite_track(&mut self, track: &Track) {
         let _ = self
             .api_tx
             .send(ApiRequest::UnfavoriteTrack { track_id: track.id });
+        self.last_removal = Some(Removal::Track(Box::new(track.clone())));
         self.set_status(
-            format!("Removed '{}' from favorites", track.title),
+            format!("Removed '{}' from favorites · u to undo", track.title),
             StatusLevel::Info,
         );
     }
@@ -75,11 +76,15 @@ impl App {
         self.set_status(format!("Following {}", artist.name), StatusLevel::Info);
     }
 
-    fn unfollow_artist(&mut self, artist: &Artist) {
+    pub(crate) fn unfollow_artist(&mut self, artist: &Artist) {
         let _ = self.api_tx.send(ApiRequest::UnfollowArtist {
             artist_id: artist.id,
         });
-        self.set_status(format!("Unfollowed {}", artist.name), StatusLevel::Info);
+        self.last_removal = Some(Removal::Artist(Box::new(artist.clone())));
+        self.set_status(
+            format!("Unfollowed {} · u to undo", artist.name),
+            StatusLevel::Info,
+        );
     }
 
     pub fn toggle_follow_artist(&mut self, artist: &Artist) {
@@ -100,6 +105,7 @@ impl App {
             self.fav_albums.items.insert(0, album.clone());
             self.fav_albums.total = self.fav_albums.total.saturating_add(1);
             self.fav_albums.selected = self.fav_albums.selected.saturating_add(1);
+            self.fav_albums.refilter();
         }
         self.set_status(
             format!("Added '{}' to albums", album.title),
@@ -107,12 +113,13 @@ impl App {
         );
     }
 
-    fn unfavorite_album(&mut self, album: &Album) {
+    pub(crate) fn unfavorite_album(&mut self, album: &Album) {
         let _ = self
             .api_tx
             .send(ApiRequest::UnfavoriteAlbum { album_id: album.id });
+        self.last_removal = Some(Removal::Album(Box::new(album.clone())));
         self.set_status(
-            format!("Removed '{}' from albums", album.title),
+            format!("Removed '{}' from albums · u to undo", album.title),
             StatusLevel::Info,
         );
     }
@@ -142,12 +149,13 @@ impl App {
         );
     }
 
-    fn remove_playlist(&mut self, playlist: &Playlist) {
+    pub(crate) fn remove_playlist(&mut self, playlist: &Playlist) {
         let _ = self.api_tx.send(ApiRequest::RemovePlaylist {
             uuid: playlist.uuid.clone(),
         });
+        self.last_removal = Some(Removal::Playlist(Box::new(playlist.clone())));
         self.set_status(
-            format!("Removed '{}' from playlists", playlist.title),
+            format!("Removed '{}' from playlists · u to undo", playlist.title),
             StatusLevel::Info,
         );
     }
@@ -158,6 +166,30 @@ impl App {
         } else {
             self.save_playlist(playlist);
         }
+    }
+
+    // ── Undo ──────────────────────────────────────────────────────────────────
+
+    /// Put back whatever was last removed from the library.
+    ///
+    /// The add paths already handle the API call and the local list, so this only
+    /// needs to route to the right one and say what happened. Note that Tidal
+    /// stamps a fresh `addedAt` on the way back in, so a restored item sorts as
+    /// newly added rather than returning to where it was.
+    pub fn undo_last_removal(&mut self) {
+        let Some(removal) = self.last_removal.take() else {
+            self.set_status("Nothing to undo".to_string(), StatusLevel::Info);
+            return;
+        };
+
+        let what = removal.title().to_string();
+        match removal {
+            Removal::Track(track) => self.favorite_track(&track),
+            Removal::Artist(artist) => self.follow_artist(&artist),
+            Removal::Album(album) => self.favorite_album(&album),
+            Removal::Playlist(playlist) => self.save_playlist(&playlist),
+        }
+        self.set_status(format!("Restored '{what}'"), StatusLevel::Info);
     }
 
     // ── Radio ─────────────────────────────────────────────────────────────────

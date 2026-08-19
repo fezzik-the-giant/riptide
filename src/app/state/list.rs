@@ -214,6 +214,22 @@ impl<T: Filterable> StatefulList<T> {
         self.refilter();
     }
 
+    /// Append a page from a cursor-paginated collection.
+    ///
+    /// The v2 collection endpoints report no total at all — the response carries
+    /// `data`, `included` and `links` only — so the cursor is the one thing that
+    /// can say whether more pages exist, and `total` can only ever mean "what has
+    /// arrived so far". Deriving `exhausted` from a total instead stops paging
+    /// after the first page, because a page-sized total always satisfies it.
+    pub fn append_page(&mut self, new_items: Vec<T>, next_cursor: Option<String>) {
+        self.items.extend(new_items);
+        self.total = self.items.len() as u32;
+        self.exhausted = next_cursor.is_none();
+        self.pagination_cursor = next_cursor;
+        self.loading = false;
+        self.refilter();
+    }
+
     /// Edit the query and re-narrow. Selection returns to the top because the
     /// row it pointed at is unlikely to still be there.
     pub fn edit_filter(&mut self, edit: impl FnOnce(&mut String)) {
@@ -557,6 +573,40 @@ mod tests {
         }
     }
 
+    // ── Cursor pagination ─────────────────────────────────────────────────────
+
+    #[test]
+    fn a_page_sized_batch_does_not_end_pagination() {
+        // The regression: these endpoints report no total, so a total was
+        // synthesised from the page length and `items.len() >= total` marked the
+        // list finished after page one — capping Albums at 20.
+        let mut list: StatefulList<u32> = StatefulList::default();
+        list.append_page((0..20).collect(), Some("cursor-1".to_string()));
+
+        assert!(!list.exhausted, "a full page means more may follow");
+        assert_eq!(list.pagination_cursor.as_deref(), Some("cursor-1"));
+    }
+
+    #[test]
+    fn only_a_missing_cursor_ends_pagination() {
+        let mut list: StatefulList<u32> = StatefulList::default();
+        list.append_page((0..20).collect(), Some("c".to_string()));
+        list.append_page((20..40).collect(), None);
+
+        assert!(list.exhausted);
+        assert!(list.pagination_cursor.is_none());
+        assert_eq!(list.items.len(), 40);
+    }
+
+    #[test]
+    fn total_counts_what_has_arrived_across_pages() {
+        let mut list: StatefulList<u32> = StatefulList::default();
+        list.append_page((0..20).collect(), Some("c".to_string()));
+        assert_eq!(list.total, 20);
+        list.append_page((20..50).collect(), None);
+        assert_eq!(list.total, 50, "the header must not report one page");
+    }
+
     #[test]
     fn a_track_matches_on_its_artist_as_well_as_its_title() {
         let track = Track {
@@ -574,12 +624,10 @@ mod tests {
                 release_date: None,
                 cover: None,
                 artist: None,
-                audio_quality: None,
                 media_metadata: None,
                 added_at: None,
                 album_type: None,
             },
-            audio_quality: None,
             media_metadata: None,
             added_at: None,
         };

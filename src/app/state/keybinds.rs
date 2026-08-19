@@ -128,7 +128,15 @@ impl KeybindGroup {
                 },
                 Keybind {
                     key: "f",
-                    action: "Toggle favorite/follow/save",
+                    action: "Favorite/follow/save",
+                },
+                Keybind {
+                    key: "d",
+                    action: "Remove from library",
+                },
+                Keybind {
+                    key: "u",
+                    action: "Undo the last removal",
                 },
                 Keybind {
                     key: "g",

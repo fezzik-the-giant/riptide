@@ -40,32 +40,14 @@ impl App {
 
     pub fn load_more_playlist_tracks(&mut self) {
         if let Some(View::PlaylistDetail(detail)) = self.view_stack.last_mut() {
-            tracing::debug!(
-                "load_more_playlist_tracks check: loading={}, exhausted={}",
-                detail.tracks.loading,
-                detail.tracks.exhausted
-            );
             if !detail.tracks.loading && !detail.tracks.exhausted {
                 let uuid = detail.playlist.uuid.clone();
                 let next_url = detail.tracks.pagination_cursor.clone();
                 detail.tracks.loading = true;
-                match &next_url {
-                    Some(_) => tracing::debug!("Sending request for next page"),
-                    None => tracing::debug!("Sending request for initial page"),
-                }
                 let _ = self
                     .api_tx
                     .send(ApiRequest::LoadPlaylistTracks { uuid, next_url });
-            } else {
-                if detail.tracks.loading {
-                    tracing::debug!("Skipping load - already loading");
-                }
-                if detail.tracks.exhausted {
-                    tracing::debug!("Skipping load - exhausted");
-                }
             }
-        } else {
-            tracing::debug!("load_more_playlist_tracks: no detail view open");
         }
     }
 
@@ -86,11 +68,6 @@ impl App {
         self.now_playing.art_source = cover_id.clone();
         self.now_playing.set_presentation_art_bytes(None);
         self.now_playing.finish_presentation_art_load();
-        tracing::debug!(
-            "fetch_now_playing_art: album_id={}, cover={:?}",
-            album_id,
-            cover_id
-        );
         if let Some(cover_id) = cover_id {
             self.now_playing.art_loading = true;
             let _ = self
@@ -98,7 +75,6 @@ impl App {
                 .send(ApiRequest::FetchAlbumArt { album_id, cover_id });
         } else if album_id > 0 {
             // Album cover not available; fetch album to get cover art
-            tracing::debug!("No cover available, fetching album to get cover");
             self.now_playing.art_loading = true;
             let _ = self.api_tx.send(ApiRequest::LoadAlbum { album_id });
         } else {
@@ -169,12 +145,10 @@ mod tests {
                 release_date: None,
                 cover: cover.map(str::to_string),
                 artist: None,
-                audio_quality: None,
                 media_metadata: None,
                 added_at: None,
                 album_type: None,
             },
-            audio_quality: None,
             media_metadata: None,
             added_at: None,
         }

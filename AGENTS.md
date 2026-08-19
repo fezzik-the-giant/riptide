@@ -68,6 +68,38 @@ localhost manifest server in `src/manifest.rs` are load-bearing. Do not remove
 them as "dead v1 code." Full write-up is in the doc comment on
 `get_stream_url` in `src/api/client.rs`.
 
+### Hi-Res Playback Is Unreachable — Do Not Re-Attempt
+
+A `MAX` badge means the release exists in hi-res in Tidal's catalogue. It does not
+mean riptide can be served it. Three walls, each verified against the live API:
+
+1. **The account is not the limit.** `/users/{id}/subscription` reports
+   `highestSoundQuality: HI_RES` on a subscriber account, yet requesting
+   `audioquality=HI_RES_LOSSLESS` for a `HIRES_LOSSLESS` track returns
+   `audioQuality=LOSSLESS, bitDepth=16, sampleRate=44100`. The built-in client is
+   capped at lossless.
+2. **Developer-portal credentials cannot log in.** `device_authorization` answers
+   `400 {"error_description":"Client is not a Limited Input Device client"}`. That
+   grant is restricted to TV/console/automotive clients, which is why the default
+   client id is an extracted Android Automotive one.
+3. **Portal tokens cannot stream even so.** A user token obtained through the
+   portal's authorization-code flow (as the Swagger console does) gets `401` from
+   `/tracks/{id}/playbackinfopostpaywall`. Implementing that flow would buy a login
+   and no audio.
+
+`config.client_id` / `client_secret` remain useful: swapping in a *different
+extracted Limited Input Device* client works, and is the only route if a hi-res
+entitled one is ever found. They are not for portal credentials — `auth_error` in
+`src/api/auth.rs` detects that case and says so.
+
+The `QUALITIES` order in `streaming.rs` (`LOSSLESS` first, so `HI_RES_LOSSLESS` is
+never reached) is therefore moot, not a bug: reaching it returns the same 16/44.1.
+
+`now_playing.delivered` carries the `bitDepth`/`sampleRate` the server actually
+returned, and the now-playing bar shows them. That is the honest counterpart to
+the badge — do not infer bit depth from mpv, which reports the decoder's output
+format (24-bit FLAC decodes to `s32`).
+
 ### Do NOT Attempt Large Refactors on Long-Lived Branches
 
 **Why:** Previous attempt to migrate multiple endpoints on a feature branch that diverged from master resulted in cascading conflicts during rebase/merge attempts. Structural changes to shared types (StatefulList, Config) on different branches are nearly impossible to reconcile.
@@ -115,13 +147,21 @@ Lists are fetched in full before they reach the UI. Two mechanisms do this:
 
 1. **Client drains internally** — `while let Some(url) = next_url` inside the
    client method, returning the whole collection in one `ApiResponse`. Used by
-   favourites, artists, artist detail (top tracks/albums/EPs/singles), album
-   tracks. These requests carry no cursor, so **a second request refetches
+   favourites, artists, playlists, artist detail (top tracks/albums/EPs/singles),
+   album tracks. These requests carry no cursor, so **a second request refetches
    everything from the start** — the response handler must set
    `exhausted = true`.
 2. **Handler re-fires the next page** — `ApiResponse` handlers for fav albums,
    playlist detail and search immediately request the next cursor page until
    exhausted, without waiting for the user to scroll.
+
+**The v2 collection endpoints report no total.** A response carries `data`,
+`included` and `links` only — verified live against `/userCollectionAlbums/me`
+and `/userCollectionPlaylists/me`. So `links.next` is the *only* end-of-collection
+signal, and `total` can only ever mean "what has arrived so far". Use
+`StatefulList::append_page`, never `append` with a total synthesised from the page
+length: `items.len() >= total` is then true immediately and paging stops after one
+page. `links.next` is also a **path, not a URL** — resolve it with `absolute_url`.
 
 Scroll-triggered loading was removed: `should_load_more()`, `check_load_more()`
 and `StatefulList::next_offset` no longer exist. Do not reintroduce them.
@@ -143,6 +183,19 @@ and `StatefulList::next_offset` no longer exist. Do not reintroduce them.
 - For bug fixes / small changes: work on feature branch, test, then present for commit
 - For large features: use incremental approach (see API Modernization section above)
 - Always sync with master before major work via rebase or merge
+
+### Staging a Release
+One commit (`chore: release vX.Y.Z`) bumps `Cargo.toml`, `Cargo.lock` and adds the
+`CHANGELOG.md` section. Then run **`./scripts/sync-spec.sh`**, which derives
+`riptide.spec`'s `Version` and `%changelog` from those two files, and include it
+in the same commit.
+
+The spec must be correct *before* the tag: COPR builds it as committed in git, not
+from the tag payload, so a spec updated during the release workflow would ship the
+wrong version. CI fails the lint job if the spec and `Cargo.toml` disagree.
+
+Do not tag or push — a `v*` tag fires the public release workflow, and that is the
+maintainer's call.
 
 ### File a PR
 Before filling, check whether a PR for this branch already exists. Review diff locally against 'origin/master' to make sure its contents mach the goal.
@@ -178,11 +231,30 @@ GOOD
 - Add debug logs at API boundaries for troubleshooting
 
 ### Logging
-- Always add debug logs for:
-  - API parsing (especially JSON:API responses)
-  - Pagination cursor changes
-  - Data extraction from responses
-- Use `tracing::debug!()` macro
+
+The default level is `warn`; `RIPTIDE_LOG_LEVEL` (or `RUST_LOG`) raises it. A bare
+level is scoped to the crate (`riptide=debug`) so dependencies stay quiet — hyper's
+connection-pool chatter was a quarter of the lines in a real bug report. A full
+directive (`riptide=debug,hyper=info`) is honoured as written.
+
+Choose the level by who needs the line:
+
+- `info!` — session lifecycle, readable on its own: startup, auth, what loaded and
+  how many, and each track as it starts playing.
+- `debug!` — one line per API request or parsed page, carrying counts and ids.
+- `warn!` — anomalies that would explain a bug report: duplicate entries,
+  references missing from a response body, mpv disagreeing with the queue.
+- `error!` — failed requests, with status and a body snippet.
+
+**Never log inside a per-item loop.** `Included object type: {}` fired once per
+JSON object and was 36% of one user's log. Aggregate into a single summary line,
+and `warn!` with a count when items were dropped. Do not pair "sending request"
+with "got response", and never dump a whole `Vec` of ids — one line stating the
+outcome and its counts replaces all of it.
+
+The point is a log someone can actually read: issue #43 went undiagnosed for days
+because the evidence (one track fetched 88 times) was buried in noise and no
+message named the anomaly.
 
 ### Pagination in Lists
 - Use `StatefulList<T>` with `pagination_cursor: Option<String>` field

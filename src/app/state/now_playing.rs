@@ -25,6 +25,10 @@ pub struct NowPlaying {
     pub lyrics_plain: Vec<String>,
     pub lyrics_loading: bool,
     pub sample_rate: Option<u32>,
+    /// What Tidal served for the current track. The quality badge describes the
+    /// catalogue; this describes what is actually playing, and the two differ
+    /// whenever the client is not entitled to the advertised tier.
+    pub delivered: DeliveredQuality,
     pub codec: Option<String>,
     pub volume: u8,
     pub shuffle: bool,
@@ -69,6 +73,7 @@ impl Default for NowPlaying {
             lyrics_plain: Vec::new(),
             lyrics_loading: false,
             sample_rate: None,
+            delivered: DeliveredQuality::default(),
             codec: None,
             volume: 100,
             shuffle: false,

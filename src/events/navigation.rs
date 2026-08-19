@@ -544,26 +544,16 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
             }
             _ => {}
         },
+        // Every row in a library tab is already saved, so `f` there could only ever
+        // remove — a destructive action on a home-row key that people kept firing
+        // by accident (#39). Removal moved to `d`, which already means "remove" in
+        // the queue; `f` now says so rather than silently doing nothing.
         KeyCode::Char('f') => match app.current_tab {
-            Tab::Artists => {
-                if let Some(artist) = app.artists.selected_item().cloned() {
-                    app.toggle_follow_artist(&artist);
-                }
-            }
-            Tab::Playlists => {
-                if let Some(playlist) = app.playlists.selected_item().cloned() {
-                    app.toggle_save_playlist(&playlist);
-                }
-            }
-            Tab::Albums => {
-                if let Some(album) = app.fav_albums.selected_item().cloned() {
-                    app.toggle_favorite_album(&album);
-                }
-            }
-            Tab::Favorites => {
-                if let Some(track) = app.favorites.selected_item().cloned() {
-                    app.toggle_favorite_track(&track);
-                }
+            Tab::Artists | Tab::Albums | Tab::Playlists | Tab::Favorites => {
+                app.set_status(
+                    "Already in your library — press d to remove".to_string(),
+                    crate::app::StatusLevel::Info,
+                );
             }
             Tab::Search if app.search.pane == SearchPane::Tracks => {
                 if let Some(track) = app.search.tracks.get(app.search.track_sel).cloned() {
@@ -578,6 +568,29 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
             Tab::Search if app.search.pane == SearchPane::Playlists => {
                 if let Some(playlist) = app.search.playlists.get(app.search.playlist_sel).cloned() {
                     app.toggle_save_playlist(&playlist);
+                }
+            }
+            _ => {}
+        },
+        KeyCode::Char('d') => match app.current_tab {
+            Tab::Artists => {
+                if let Some(artist) = app.artists.selected_item().cloned() {
+                    app.unfollow_artist(&artist);
+                }
+            }
+            Tab::Playlists => {
+                if let Some(playlist) = app.playlists.selected_item().cloned() {
+                    app.remove_playlist(&playlist);
+                }
+            }
+            Tab::Albums => {
+                if let Some(album) = app.fav_albums.selected_item().cloned() {
+                    app.unfavorite_album(&album);
+                }
+            }
+            Tab::Favorites => {
+                if let Some(track) = app.favorites.selected_item().cloned() {
+                    app.unfavorite_track(&track);
                 }
             }
             _ => {}

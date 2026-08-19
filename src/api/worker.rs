@@ -69,7 +69,7 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
                         .collect();
 
                     // v2 collection — covers playlists saved via the Tidal web/mobile apps.
-                    if let Ok((coll, _)) = client.get_user_collection_playlists(None).await {
+                    if let Ok(coll) = client.get_user_collection_playlists().await {
                         for pl in coll {
                             if !playlists.iter().any(|p| p.uuid == pl.uuid) {
                                 playlists.push(pl);
@@ -85,9 +85,8 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
 
         ApiRequest::LoadFavAlbums { next_url } => {
             match client.get_favorite_albums(next_url).await {
-                Ok((albums, total, next_cursor)) => ApiResponse::FavAlbumsPage {
+                Ok((albums, next_cursor)) => ApiResponse::FavAlbumsPage {
                     albums,
-                    total,
                     next_url: next_cursor,
                 },
                 Err(e) => ApiResponse::Error(e.to_string()),
@@ -326,7 +325,11 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
         },
 
         ApiRequest::ResolveStreamUrl { track_id } => match client.get_stream_url(track_id).await {
-            Ok(url) => ApiResponse::StreamUrl { track_id, url },
+            Ok((url, delivered)) => ApiResponse::StreamUrl {
+                track_id,
+                url,
+                delivered,
+            },
             Err(e) => ApiResponse::Error(e.to_string()),
         },
 

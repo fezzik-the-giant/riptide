@@ -8,6 +8,7 @@
     - [Automated Install](#automated-install)
     - [Manual Install](#manual-install)
     - [Arch (AUR)](#arch-aur)
+    - [Fedora (COPR)](#fedora-copr)
     - [Build from Source](#build-from-source)
     - [Nix](#nix)
 - [Setup](#setup)
@@ -124,6 +125,29 @@ paru -S riptide
 yay -S riptide
 ```
 
+### Fedora (COPR)
+
+Riptide is available from a [COPR](https://copr.fedorainfracloud.org/) user
+repository, built for Fedora 43, 44 and 45 on x86_64:
+
+```bash
+sudo dnf copr enable fezzikthegiant/riptide
+sudo dnf install riptide
+```
+
+`mpv` is pulled in automatically as a dependency. Updates arrive through
+`dnf upgrade` like any other package.
+
+To remove the repository again:
+
+```bash
+sudo dnf copr disable fezzikthegiant/riptide
+```
+
+> [!NOTE]
+> COPR is Fedora's user-repository service, not the official Fedora
+> repositories — packages there are built and signed by the project maintainer.
+
 ### Build from Source
 
 Requires Rust 1.85+ and Cargo:
@@ -233,6 +257,28 @@ It is created automatically on first run. Example:
   }
 }
 ```
+
+### Client credentials
+
+`client_id` and `client_secret` are `null` by default, which uses Riptide's
+built-in client. You only need to set them to use a different one.
+
+> [!IMPORTANT]
+> They must belong to a **Limited Input Device** client — the kind Tidal registers
+> for TVs, consoles and car systems. Riptide signs in with OAuth's device flow
+> (it prints a code you approve in a browser), and Tidal only permits that flow
+> for those clients.
+>
+> Credentials from the [Tidal developer portal](https://developer.tidal.com) are
+> **not** of that kind. They are issued for the authorization-code and
+> client-credentials flows, so `device_authorization` rejects them with
+> *"Client is not a Limited Input Device client"* — and their tokens are refused
+> by the endpoint Riptide streams through, so a browser login would not help
+> either.
+
+Note that the built-in client is limited to lossless (16-bit/44.1 kHz). A `MAX`
+badge means the release exists in hi-res in Tidal's catalogue, not that it can be
+streamed here; the now-playing bar shows what was actually delivered.
 
 ### Preferences
 
@@ -375,7 +421,9 @@ It stays applied when you switch tabs, and `Esc` clears it from anywhere on the 
 | `↓`     | Down                             |
 | `Enter` | Select/Open                      |
 | `a`     | Add to queue                     |
-| `f`     | Toggle favorite/follow/save      |
+| `f`     | Favorite/follow/save             |
+| `d`     | Remove from library              |
+| `u`     | Undo the last removal            |
 | `g`     | Go to artist                     |
 | `s`     | Sort (opens on the current sort) |
 | `r`     | Start radio                      |
@@ -454,16 +502,22 @@ characters as a universal fallback.
 
 ## Logging
 
-Logs are written to `~/.local/share/riptide/riptide.log.<date>` and roll on a daily basis. By default, the logging level
-is set to `INFO` providing only errors and important events.
+Logs are written to `~/.local/share/riptide/riptide.log.<date>` and roll daily. By
+default only warnings and errors are recorded.
 
-To adjust logging verbosity for debugging, use the `RIPTIDE_LOG_LEVEL` environment variable:
+To adjust verbosity, use the `RIPTIDE_LOG_LEVEL` environment variable:
 
 ```bash
-RIPTIDE_LOG_LEVEL=debug riptide  # Verbose logging (includes all API requests)
-RIPTIDE_LOG_LEVEL=info riptide   # Standard logging (errors and important events)
+RIPTIDE_LOG_LEVEL=info riptide   # What loaded, and every track as it starts playing
+RIPTIDE_LOG_LEVEL=debug riptide  # Adds one line per API request and parsed page
 RIPTIDE_LOG_LEVEL=error riptide  # Errors only
 ```
+
+A plain level applies to riptide alone. To include a dependency's own logging, pass
+a full directive: `RIPTIDE_LOG_LEVEL=riptide=debug,hyper=debug riptide`.
+
+If you are attaching a log to a bug report, `info` is usually enough to show what
+happened, and `debug` adds the API detail.
 
 ## License
 

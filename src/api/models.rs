@@ -45,6 +45,25 @@ pub struct MediaMetadata {
     pub tags: Vec<String>,
 }
 
+/// Badge for a `mediaTags` set.
+///
+/// Precedence is by how much the tag tells you: Hi-Res is the rarest claim,
+/// spatial audio the next most distinguishing, then plain lossless. `DOLBY_ATMOS`
+/// frequently arrives *without* `LOSSLESS` alongside it, so before it had its own
+/// branch an Atmos release rendered no badge at all.
+fn quality_badge_for(tags: &[String]) -> Option<&'static str> {
+    let has = |tag: &str| tags.iter().any(|t| t == tag);
+    if has("HIRES_LOSSLESS") {
+        Some("MAX")
+    } else if has("DOLBY_ATMOS") {
+        Some("ATMOS")
+    } else if has("LOSSLESS") {
+        Some("HI-FI")
+    } else {
+        None
+    }
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct Album {
     pub id: u64,
@@ -55,8 +74,6 @@ pub struct Album {
     pub release_date: Option<String>,
     pub cover: Option<String>,
     pub artist: Option<ArtistRef>,
-    #[serde(rename = "audioQuality", default)]
-    pub audio_quality: Option<String>,
     #[serde(rename = "mediaMetadata", default)]
     pub media_metadata: Option<MediaMetadata>,
     #[serde(default, skip_deserializing)]
@@ -67,22 +84,12 @@ pub struct Album {
 
 impl Album {
     pub fn quality_badge(&self) -> Option<&'static str> {
-        let tags = self
-            .media_metadata
-            .as_ref()
-            .map(|m| m.tags.as_slice())
-            .unwrap_or(&[]);
-        if tags.iter().any(|t| t == "HIRES_LOSSLESS") {
-            return Some("MAX");
-        }
-        if tags.iter().any(|t| t == "LOSSLESS") {
-            return Some("HI-FI");
-        }
-        match self.audio_quality.as_deref() {
-            Some("HI_RES") => Some("MQA"),
-            Some("HIGH") => Some("320"),
-            _ => None,
-        }
+        quality_badge_for(
+            self.media_metadata
+                .as_ref()
+                .map(|m| m.tags.as_slice())
+                .unwrap_or(&[]),
+        )
     }
     pub fn artist_name(&self) -> &str {
         self.artist.as_ref().map(|a| a.name.as_str()).unwrap_or("")
@@ -106,8 +113,6 @@ pub struct Track {
     #[serde(default)]
     pub artists: Vec<ArtistRef>,
     pub album: Album,
-    #[serde(rename = "audioQuality")]
-    pub audio_quality: Option<String>,
     #[serde(rename = "mediaMetadata", default)]
     pub media_metadata: Option<MediaMetadata>,
     #[serde(default, skip_deserializing)]
@@ -142,34 +147,12 @@ impl Track {
     }
 
     pub fn quality_badge(&self) -> Option<&'static str> {
-        let tags = self
-            .media_metadata
-            .as_ref()
-            .map(|m| m.tags.as_slice())
-            .unwrap_or(&[]);
-        if tags.iter().any(|t| t == "HIRES_LOSSLESS") {
-            return Some("MAX");
-        }
-        if tags.iter().any(|t| t == "LOSSLESS") {
-            return Some("HI-FI");
-        }
-        match self.audio_quality.as_deref() {
-            Some("HI_RES") => Some("MQA"),
-            Some("HIGH") => Some("320"),
-            _ => None,
-        }
-    }
-
-    pub fn quality_display(&self) -> &str {
-        match self.audio_quality.as_deref() {
-            Some("HI_RES_LOSSLESS") => "Hi-Res",
-            Some("HI_RES") => "MQA",
-            Some("LOSSLESS") => "FLAC",
-            Some("HIGH") => "AAC 320",
-            Some("LOW") => "AAC 96",
-            Some(other) => other,
-            None => "",
-        }
+        quality_badge_for(
+            self.media_metadata
+                .as_ref()
+                .map(|m| m.tags.as_slice())
+                .unwrap_or(&[]),
+        )
     }
 
     /// Public Tidal share URL, matching the "Copy link" output of the official apps.
@@ -221,6 +204,15 @@ pub struct LyricsResponse {
 
 // ── Stream URL ────────────────────────────────────────────────────────────────
 
+/// What Tidal actually delivered for a stream, as opposed to what the catalogue
+/// advertises. A `MAX` badge means the release exists in hi-res; it does not mean
+/// this client is entitled to be served it, so these are the numbers to show.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DeliveredQuality {
+    pub bit_depth: Option<i32>,
+    pub sample_rate: Option<i32>,
+}
+
 /// Response from /tracks/{id}/playbackinfopostpaywall
 #[derive(Debug, Deserialize)]
 pub struct PlaybackInfo {
@@ -233,10 +225,8 @@ pub struct PlaybackInfo {
     #[allow(dead_code)]
     #[serde(rename = "audioMode", default)]
     pub audio_mode: Option<String>,
-    #[allow(dead_code)]
     #[serde(rename = "bitDepth", default)]
     pub bit_depth: Option<i32>,
-    #[allow(dead_code)]
     #[serde(rename = "sampleRate", default)]
     pub sample_rate: Option<i32>,
 }
@@ -344,4 +334,54 @@ pub struct Config {
     /// Bumped to force re-auth when credentials or auth method change.
     #[serde(default)]
     pub auth_generation: u32,
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::quality_badge_for;
+
+    fn tags(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn hi_res_outranks_everything() {
+        assert_eq!(
+            quality_badge_for(&tags(&["HIRES_LOSSLESS", "LOSSLESS"])),
+            Some("MAX")
+        );
+        assert_eq!(
+            quality_badge_for(&tags(&["HIRES_LOSSLESS", "DOLBY_ATMOS"])),
+            Some("MAX")
+        );
+    }
+
+    #[test]
+    fn atmos_outranks_plain_lossless() {
+        // Tidal ships both shapes; verified live against the search endpoint.
+        assert_eq!(
+            quality_badge_for(&tags(&["DOLBY_ATMOS", "LOSSLESS"])),
+            Some("ATMOS")
+        );
+    }
+
+    #[test]
+    fn atmos_alone_is_badged() {
+        // This set rendered no badge at all before ATMOS had its own branch —
+        // Atmos releases often carry no LOSSLESS tag beside it.
+        assert_eq!(quality_badge_for(&tags(&["DOLBY_ATMOS"])), Some("ATMOS"));
+    }
+
+    #[test]
+    fn lossless_alone_is_hi_fi() {
+        assert_eq!(quality_badge_for(&tags(&["LOSSLESS"])), Some("HI-FI"));
+    }
+
+    #[test]
+    fn no_tags_means_no_badge() {
+        assert_eq!(quality_badge_for(&[]), None);
+        assert_eq!(quality_badge_for(&tags(&["SOMETHING_NEW"])), None);
+    }
 }

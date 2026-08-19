@@ -189,6 +189,38 @@ impl ApiClient {
     }
 }
 
+/// Resolve a JSON:API `links.next` value against the v2 base.
+///
+/// These endpoints return `next` as a path (`/userCollectionAlbums/...`), not an
+/// absolute URL, so following it verbatim produces an unusable request.
+pub(super) fn absolute_url(url: &str) -> String {
+    if url.starts_with("http") {
+        url.to_string()
+    } else {
+        format!("{OPENAPI_BASE}{url}")
+    }
+}
+
 // ── Multi-segment FLAC playlist ────────────────────────────────────────────────
 
 // ── DASH → HLS conversion ─────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod url_tests {
+    use super::absolute_url;
+
+    #[test]
+    fn a_relative_next_link_is_resolved_against_the_v2_base() {
+        // links.next comes back as a path; following it verbatim is not a URL.
+        assert_eq!(
+            absolute_url("/userCollectionAlbums/me/relationships/items?page%5Bcursor%5D=abc"),
+            "https://openapi.tidal.com/v2/userCollectionAlbums/me/relationships/items?page%5Bcursor%5D=abc"
+        );
+    }
+
+    #[test]
+    fn an_absolute_next_link_is_left_alone() {
+        let url = "https://openapi.tidal.com/v2/userCollectionAlbums/me?page=2";
+        assert_eq!(absolute_url(url), url);
+    }
+}

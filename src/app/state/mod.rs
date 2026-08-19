@@ -61,6 +61,32 @@ pub enum View {
     AlbumDetail(AlbumDetail),
 }
 
+// ── Undo ──────────────────────────────────────────────────────────────────────
+
+/// The last thing removed from the library, kept so `u` can put it back.
+///
+/// Deliberately a single slot that outlives its toast: the point is to rescue an
+/// accidental keypress, and the user may not look up until well after the message
+/// has gone. Taking the slot on undo prevents a second `u` re-adding something the
+/// user has since removed on purpose.
+pub enum Removal {
+    Track(Box<Track>),
+    Artist(Box<Artist>),
+    Album(Box<Album>),
+    Playlist(Box<Playlist>),
+}
+
+impl Removal {
+    pub fn title(&self) -> &str {
+        match self {
+            Removal::Track(t) => &t.title,
+            Removal::Artist(a) => &a.name,
+            Removal::Album(a) => &a.title,
+            Removal::Playlist(p) => &p.title,
+        }
+    }
+}
+
 // ── Status level ──────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

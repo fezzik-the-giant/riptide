@@ -206,6 +206,8 @@ pub enum ApiResponse {
     StreamUrl {
         track_id: u64,
         url: String,
+        /// What the server actually served, which a `MAX` badge does not promise.
+        delivered: DeliveredQuality,
     },
     Lyrics {
         track_id: u64,
@@ -224,7 +226,8 @@ pub enum ApiResponse {
     },
     FavAlbumsPage {
         albums: Vec<Album>,
-        total: u32,
+        /// Cursor for the following page; None means the collection is complete.
+        /// These endpoints report no total, so this is the only end signal.
         next_url: Option<String>,
     },
     AlbumFavorited {

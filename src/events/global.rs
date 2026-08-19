@@ -97,6 +97,7 @@ pub(super) fn handle_global_key(app: &mut App, key: KeyEvent) -> bool {
         KeyCode::Char('n') => app.next_track(),
         KeyCode::Char('p') => app.prev_track(),
         KeyCode::Char('z') => app.toggle_shuffle(),
+        KeyCode::Char('u') => app.undo_last_removal(),
         KeyCode::Esc => {
             // A filter left applied after the box closed would otherwise have no
             // quick way out; clearing it takes priority over navigating back.
