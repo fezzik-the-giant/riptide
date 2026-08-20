@@ -53,12 +53,13 @@ use theme::*;
 
 pub fn draw(f: &mut Frame, app: &App) {
     let area = f.area();
-    let overlay_active = app.command.active
-        || app.sort_palette.active
-        || app.artist_selection.active
-        || app.help_active
-        || app.status.is_some();
-    prepare_image_frame(app.art_fullscreen, overlay_active);
+    let overlays = Overlays::none()
+        .with(Overlays::COMMAND, app.command.active)
+        .with(Overlays::SORT, app.sort_palette.active)
+        .with(Overlays::ARTIST_PICKER, app.artist_selection.active)
+        .with(Overlays::HELP, app.help_active)
+        .with(Overlays::STATUS, app.status.is_some());
+    prepare_image_frame(app.art_fullscreen, overlays);
 
     if app.art_fullscreen {
         render_art_view(f, app, area);

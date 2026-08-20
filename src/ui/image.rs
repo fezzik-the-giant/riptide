@@ -26,10 +26,36 @@ struct ProtocolCacheKey {
     resize: ImageResize,
 }
 
+/// Which overlays are painted over the frame, one bit each. A single bool
+/// cannot distinguish "help closed" from "help closed while a toast is still
+/// up", and only the first exposes the cells underneath.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct Overlays(u8);
+
+impl Overlays {
+    pub(super) const COMMAND: Self = Self(1 << 0);
+    pub(super) const SORT: Self = Self(1 << 1);
+    pub(super) const ARTIST_PICKER: Self = Self(1 << 2);
+    pub(super) const HELP: Self = Self(1 << 3);
+    pub(super) const STATUS: Self = Self(1 << 4);
+
+    pub(super) const fn none() -> Self {
+        Self(0)
+    }
+
+    pub(super) const fn with(self, other: Self, active: bool) -> Self {
+        if active { Self(self.0 | other.0) } else { self }
+    }
+
+    const fn any_closed_since(self, previous: Self) -> bool {
+        previous.0 & !self.0 != 0
+    }
+}
+
 #[derive(Clone, Copy, Default)]
 struct ImageFrameState {
     fullscreen_art: bool,
-    overlay_active: bool,
+    overlays: Overlays,
 }
 
 thread_local! {
@@ -57,7 +83,7 @@ thread_local! {
     static IMAGE_FRAME_STATE: std::cell::Cell<ImageFrameState> =
         const { std::cell::Cell::new(ImageFrameState {
             fullscreen_art: false,
-            overlay_active: false,
+            overlays: Overlays::none(),
         }) };
 }
 
@@ -88,6 +114,13 @@ pub(super) fn get_picker() -> &'static Picker {
 /// with a wholesale clear is enough to bound growth as the user browses.
 pub(super) const PROTOCOL_CACHE_CAP: usize = 8;
 
+/// Dropping a cached `Protocol` resets its transmit latch, so the next frame
+/// re-sends the whole image — for the fullscreen canvas that is 640x640 RGBA,
+/// ~2.2 MB of base64, under a fresh `rand::random()` image id. Nothing frees the
+/// previous id either: ratatui-image v11 has no `Drop` for `Kitty`, and this
+/// crate's `kitty_delete_album_art` names ids that no longer exist. Repainting
+/// the cells the overlay covered is worth it, but only on a transition that
+/// actually exposed some — hence the `Overlays` bookkeeping above.
 fn release_scaled_protocols() {
     PROTOCOL_CACHE.with(|cache| {
         cache
@@ -96,10 +129,10 @@ fn release_scaled_protocols() {
     });
 }
 
-pub(super) fn prepare_image_frame(fullscreen_art: bool, overlay_active: bool) {
+pub(super) fn prepare_image_frame(fullscreen_art: bool, overlays: Overlays) {
     let next = ImageFrameState {
         fullscreen_art,
-        overlay_active,
+        overlays,
     };
     let release_scaled = IMAGE_FRAME_STATE.with(|state| {
         let previous = state.replace(next);
@@ -115,7 +148,7 @@ fn should_release_scaled_protocol(previous: ImageFrameState, next: ImageFrameSta
     // Closing an overlay exposes cells that the overlay overwrote. Rebuilding
     // the virtual placement makes the terminal paint those cells again.
     (previous.fullscreen_art && !next.fullscreen_art)
-        || (next.fullscreen_art && previous.overlay_active && !next.overlay_active)
+        || (next.fullscreen_art && next.overlays.any_closed_since(previous.overlays))
 }
 
 /// The terminal's cell size in pixels, queried once at startup.
@@ -322,20 +355,25 @@ mod tests {
 
     #[test]
     fn scaled_protocol_is_released_after_overlay_or_fullscreen_closes() {
+        let art = |overlays| ImageFrameState {
+            fullscreen_art: true,
+            overlays,
+        };
         let normal = ImageFrameState::default();
-        let art = ImageFrameState {
-            fullscreen_art: true,
-            overlay_active: false,
-        };
-        let art_with_overlay = ImageFrameState {
-            fullscreen_art: true,
-            overlay_active: true,
-        };
+        let bare = art(Overlays::none());
+        let help = art(Overlays::none().with(Overlays::HELP, true));
+        let toast = art(Overlays::none().with(Overlays::STATUS, true));
+        let both = art(Overlays::none()
+            .with(Overlays::HELP, true)
+            .with(Overlays::STATUS, true));
 
-        assert!(!should_release_scaled_protocol(normal, art));
-        assert!(!should_release_scaled_protocol(art, art_with_overlay));
-        assert!(should_release_scaled_protocol(art_with_overlay, art));
-        assert!(should_release_scaled_protocol(art, normal));
+        assert!(!should_release_scaled_protocol(normal, bare));
+        assert!(!should_release_scaled_protocol(bare, help));
+        assert!(should_release_scaled_protocol(help, bare));
+        assert!(should_release_scaled_protocol(bare, normal));
+        // The toast outliving the modal is what a single bool could not see.
+        assert!(should_release_scaled_protocol(both, toast));
+        assert!(!should_release_scaled_protocol(toast, both));
     }
 
     #[test]
