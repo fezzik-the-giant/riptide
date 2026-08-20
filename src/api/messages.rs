@@ -174,6 +174,7 @@ pub enum ApiResponse {
     },
     PresentationArt {
         album_id: u64,
+        cover_id: String,
         image_data: Option<Vec<u8>>,
     },
     ArtistArt {

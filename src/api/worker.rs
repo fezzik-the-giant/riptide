@@ -182,6 +182,7 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
             };
             ApiResponse::PresentationArt {
                 album_id,
+                cover_id,
                 image_data,
             }
         }

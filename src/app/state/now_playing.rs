@@ -173,6 +173,27 @@ impl NowPlaying {
         self.track.as_ref().map(|track| track.album.id) == Some(album_id)
     }
 
+    /// Point now-playing artwork at `source`, dropping anything fetched for a
+    /// different one. Reports whether the source actually changed, so callers
+    /// can skip refetching a cover consecutive tracks share.
+    pub(crate) fn set_art_source(&mut self, source: Option<String>) -> bool {
+        if self.art_source == source {
+            return false;
+        }
+        self.art_source = source;
+        self.set_art_bytes(None);
+        self.set_presentation_art_bytes(None);
+        self.finish_presentation_art_load();
+        true
+    }
+
+    /// Whether artwork fetched for `source` is still the artwork being asked
+    /// for. Album id cannot answer this: tracks from `/userCollectionTracks/me`
+    /// all carry `album.id == 0`, so every in-flight response would match.
+    pub(crate) fn wants_art_source(&self, source: &str) -> bool {
+        self.art_source.as_deref() == Some(source)
+    }
+
     /// Detach the queue from the playlist it came from, so pages still in flight
     /// for that playlist are not appended to a queue the user has since replaced.
     pub fn clear_source_playlist(&mut self) {

@@ -1583,6 +1583,7 @@ mod tests {
         });
         app.handle_api_response(crate::api::ApiResponse::PresentationArt {
             album_id: 20,
+            cover_id: "cover-2".into(),
             image_data: Some(vec![9, 8, 7]),
         });
         assert_eq!(app.now_playing.art_bytes(), Some([3, 2, 1].as_slice()));

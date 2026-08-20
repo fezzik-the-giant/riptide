@@ -64,10 +64,15 @@ impl App {
             Some(t) => (t.album.id, t.album.cover.clone()),
             None => return,
         };
-        self.now_playing.set_art_bytes(None);
-        self.now_playing.art_source = cover_id.clone();
-        self.now_playing.set_presentation_art_bytes(None);
-        self.now_playing.finish_presentation_art_load();
+        // Consecutive tracks from one album share a cover, and re-fetching it
+        // rebuilds the image protocol — which for the fullscreen canvas means
+        // re-transmitting the whole 640x640 image to the terminal.
+        let source_changed = self.now_playing.set_art_source(cover_id.clone());
+        if !source_changed
+            && (self.now_playing.art_bytes().is_some() || self.now_playing.art_loading)
+        {
+            return;
+        }
         if let Some(cover_id) = cover_id {
             self.now_playing.art_loading = true;
             let _ = self
@@ -151,6 +156,41 @@ mod tests {
             },
             media_metadata: None,
             added_at: None,
+        }
+    }
+
+    #[test]
+    fn a_cover_shared_with_the_previous_track_is_not_refetched() {
+        let mut t = test_app();
+        t.app.art_fullscreen = true;
+        t.app.now_playing.track = Some(track(Some("cover-id")));
+        t.app.fetch_now_playing_metadata();
+        t.app.now_playing.set_art_bytes(Some(vec![1, 2, 3]));
+        t.app
+            .now_playing
+            .set_presentation_art_bytes(Some(vec![4, 5, 6]));
+        t.app.now_playing.art_loading = false;
+        t.app.now_playing.finish_presentation_art_load();
+        t.drain_api();
+
+        let mut next = track(Some("cover-id"));
+        next.id = 7;
+        t.app.now_playing.track = Some(next);
+        t.app.fetch_now_playing_metadata();
+
+        assert_eq!(t.app.now_playing.art_bytes(), Some([1, 2, 3].as_slice()));
+        assert_eq!(
+            t.app.now_playing.presentation_art_bytes(),
+            Some([4, 5, 6].as_slice())
+        );
+        while let Ok(req) = t.api_rx.try_recv() {
+            assert!(
+                !matches!(
+                    req,
+                    ApiRequest::FetchAlbumArt { .. } | ApiRequest::FetchPresentationArt { .. }
+                ),
+                "artwork the previous track already loaded must not be fetched again"
+            );
         }
     }
 

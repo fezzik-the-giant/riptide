@@ -184,7 +184,7 @@ impl App {
                         if self.now_playing.presentation_art_discovering_cover() {
                             self.now_playing.finish_presentation_art_load();
                         }
-                        self.now_playing.art_source = Some(cover_url.clone());
+                        self.now_playing.set_art_source(Some(cover_url.clone()));
                         self.now_playing.art_loading = true;
                         let _ = self.api_tx.send(ApiRequest::FetchAlbumArt {
                             album_id,
@@ -262,9 +262,10 @@ impl App {
 
             ApiResponse::PresentationArt {
                 album_id,
+                cover_id,
                 image_data,
             } => {
-                let is_now_playing = self.now_playing.is_current_album(album_id);
+                let is_now_playing = self.now_playing.wants_art_source(&cover_id);
                 tracing::debug!(
                     album_id,
                     bytes = image_data.as_ref().map_or(0, Vec::len),
@@ -636,9 +637,8 @@ impl App {
                     if let Some(url) = cover_url {
                         if url.ends_with(".jpg") || url.ends_with(".png") || url.ends_with(".jpeg")
                         {
-                            self.now_playing.art_source = Some(url.clone());
+                            self.now_playing.set_art_source(Some(url.clone()));
                             self.now_playing.art_loading = true;
-                            self.now_playing.set_art_bytes(None);
                             let _ = self.api_tx.send(ApiRequest::FetchTrackArt {
                                 track_id,
                                 cover_url: url,
@@ -979,10 +979,16 @@ mod tests {
     fn stale_presentation_art_does_not_replace_the_current_request() {
         let mut t = test_app();
         t.app.now_playing.track = Some(track(2));
+        // Favourite tracks all carry album.id == 0, so only the cover tells two
+        // in-flight responses apart.
+        t.app
+            .now_playing
+            .set_art_source(Some("wanted-cover".to_string()));
         t.app.now_playing.begin_presentation_art_fetch();
 
         t.app.handle_api_response(ApiResponse::PresentationArt {
-            album_id: 99,
+            album_id: 0,
+            cover_id: "previous-cover".to_string(),
             image_data: Some(vec![9, 9, 9]),
         });
 
@@ -990,7 +996,8 @@ mod tests {
         assert!(t.app.now_playing.presentation_art_bytes().is_none());
 
         t.app.handle_api_response(ApiResponse::PresentationArt {
-            album_id: 2,
+            album_id: 0,
+            cover_id: "wanted-cover".to_string(),
             image_data: Some(vec![1, 2, 3]),
         });
         assert!(!t.app.now_playing.presentation_art_loading());
@@ -1075,14 +1082,52 @@ mod tests {
         ));
     }
 
+    /// v2 track details can carry artwork the album does not, and the fullscreen
+    /// canvas kept showing the album cover because its cached bytes made
+    /// `fetch_presentation_art` early-return.
+    #[test]
+    fn a_track_level_cover_replaces_the_fullscreen_canvas() {
+        let mut t = test_app();
+        t.app.art_fullscreen = true;
+        t.app.now_playing.track = Some(track(2));
+        t.app
+            .now_playing
+            .set_art_source(Some("album-cover".to_string()));
+        t.app
+            .now_playing
+            .set_presentation_art_bytes(Some(vec![9, 9, 9]));
+        t.drain_api();
+
+        let cover_url = "https://resources.tidal.com/images/a/b/320x320.jpg";
+        t.app.handle_api_response(ApiResponse::TrackDetails {
+            track_id: 1,
+            track: track(2),
+            cover_url: Some(cover_url.to_string()),
+        });
+
+        assert!(t.app.now_playing.presentation_art_bytes().is_none());
+        let mut requested = false;
+        while let Ok(req) = t.api_rx.try_recv() {
+            if matches!(req, ApiRequest::FetchPresentationArt { ref cover_id, .. } if cover_id == cover_url)
+            {
+                requested = true;
+            }
+        }
+        assert!(requested, "the track cover must be fetched for fullscreen");
+    }
+
     #[test]
     fn unavailable_presentation_art_finishes_loading() {
         let mut t = test_app();
         t.app.now_playing.track = Some(track(2));
+        t.app
+            .now_playing
+            .set_art_source(Some("cover-id".to_string()));
         t.app.now_playing.begin_presentation_art_fetch();
 
         t.app.handle_api_response(ApiResponse::PresentationArt {
             album_id: 2,
+            cover_id: "cover-id".to_string(),
             image_data: None,
         });
 
