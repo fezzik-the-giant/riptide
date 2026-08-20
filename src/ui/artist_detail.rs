@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025 Ryan Cohan
+// Copyright (C) 2025 Fezzik the Giant
 
 //! Artist detail view: art, biography and the carousel of catalogue tabs.
 
@@ -7,7 +7,6 @@ use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
 };
 
@@ -147,62 +146,35 @@ pub(super) fn render_carousel_tabs(
     detail: &crate::app::ArtistDetail,
     area: Rect,
 ) {
-    if area.height < 2 {
-        return;
-    }
-
-    let tabs = vec![
+    let labels = [
         (
-            format!(" Top Tracks ({})", detail.tracks.items.len()),
-            ArtistDetailFocus::Tracks,
+            format!("Top Tracks ({})", detail.tracks.items.len()),
+            detail.focus == ArtistDetailFocus::Tracks,
         ),
         (
             format!("Albums ({})", detail.albums.items.len()),
-            ArtistDetailFocus::Albums,
+            detail.focus == ArtistDetailFocus::Albums,
         ),
         (
             format!("EPs ({})", detail.eps.items.len()),
-            ArtistDetailFocus::EPs,
+            detail.focus == ArtistDetailFocus::EPs,
         ),
         (
             format!("Singles ({})", detail.singles.items.len()),
-            ArtistDetailFocus::Singles,
+            detail.focus == ArtistDetailFocus::Singles,
         ),
     ];
 
-    // Spans + Line seperators. can be changed or removed completely.
-    let mut line_spans = Vec::new();
-    for (i, (name, focus)) in tabs.iter().enumerate() {
-        if i > 0 {
-            line_spans.push(Span::styled(" - ", Style::default().fg(DIM)));
-        }
+    let Some(inner) = render_carousel(f, area, &labels) else {
+        return;
+    };
 
-        let selected = detail.focus == *focus;
-        let style = if selected {
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(DIM)
-        };
-
-        line_spans.push(Span::styled(name.clone(), style));
-    }
-    //block styling (made it dim cuz that fit better with the surrounding UI)
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(DIM))
-        .title(Line::from(line_spans));
-
-    let inner = block.inner(area);
-    f.render_widget(block, area);
-
-    if inner.height > 0 {
-        match detail.focus {
-            ArtistDetailFocus::Tracks => render_artist_tracks_full(f, app, detail, inner),
-            ArtistDetailFocus::Albums => render_artist_albums(f, app, detail, inner),
-            ArtistDetailFocus::EPs => render_artist_eps(f, app, detail, inner),
-            ArtistDetailFocus::Singles => render_artist_singles(f, app, detail, inner),
-            ArtistDetailFocus::Bio => {}
-        }
+    match detail.focus {
+        ArtistDetailFocus::Tracks => render_artist_tracks_full(f, app, detail, inner),
+        ArtistDetailFocus::Albums => render_artist_albums(f, app, detail, inner),
+        ArtistDetailFocus::EPs => render_artist_eps(f, app, detail, inner),
+        ArtistDetailFocus::Singles => render_artist_singles(f, app, detail, inner),
+        ArtistDetailFocus::Bio => {}
     }
 }
 
@@ -245,42 +217,23 @@ pub(super) fn render_artist_tracks_full(
             } else {
                 Style::default().fg(Color::White)
             };
-            let prefix = if selected { "▶ " } else { "  " };
             let playing = app
                 .now_playing
                 .track
                 .as_ref()
                 .map(|t| t.id == track.id)
                 .unwrap_or(false);
-            let indicator = if playing { "♪ " } else { "" };
             // `i` stays 0-based for selection; only the displayed ordinal is 1-based.
-            let n = i + 1;
-
-            let title_span = Span::styled(
-                format!(
-                    "{prefix}{indicator}{n:>2}. {} ({})",
-                    track.title,
-                    track.duration_display()
-                ),
+            let ordinal = format!("{:>3}. ", i + 1);
+            ListItem::new(track_row(
+                app,
+                track,
+                area.width,
+                Some(ordinal),
+                selected,
+                playing,
                 style,
-            );
-
-            let badge = track
-                .quality_badge()
-                .map(|b| format!(" [{b}]"))
-                .unwrap_or_default();
-            let badge_span = Span::styled(
-                badge,
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-            );
-
-            let heart = if app.favorite_track_ids.contains(&track.id) {
-                Span::raw(" ❤")
-            } else {
-                Span::raw("")
-            };
-
-            ListItem::new(Line::from(vec![title_span, badge_span, heart]))
+            ))
         })
         .collect();
 
@@ -327,35 +280,15 @@ pub(super) fn render_artist_albums(
             } else {
                 Style::default().fg(Color::White)
             };
-            let prefix = if selected { "▶ " } else { "  " };
-            let year = album
-                .release_date
-                .as_deref()
-                .and_then(|d| d.get(..4))
-                .unwrap_or("----");
-            let n = album.number_of_tracks.unwrap_or(0);
-
-            let title_span = Span::styled(
-                format!("{}{} ({}, {} tracks)", prefix, album.title, year, n),
+            ListItem::new(album_row(
+                app,
+                album,
+                area.width,
+                selected,
+                false,
                 style,
-            );
-
-            let badge = album
-                .quality_badge()
-                .map(|b| format!(" [{b}]"))
-                .unwrap_or_default();
-            let badge_span = Span::styled(
-                badge,
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-            );
-
-            let heart = if app.favorite_album_ids.contains(&album.id) {
-                Span::raw(" ❤")
-            } else {
-                Span::raw("")
-            };
-
-            ListItem::new(Line::from(vec![title_span, badge_span, heart]))
+                Style::default().fg(DIM),
+            ))
         })
         .collect();
 
@@ -402,35 +335,15 @@ pub(super) fn render_artist_eps(
             } else {
                 Style::default().fg(Color::White)
             };
-            let prefix = if selected { "▶ " } else { "  " };
-            let year = album
-                .release_date
-                .as_deref()
-                .and_then(|d| d.get(..4))
-                .unwrap_or("----");
-            let n = album.number_of_tracks.unwrap_or(0);
-
-            let title_span = Span::styled(
-                format!("{}{} ({}, {} tracks)", prefix, album.title, year, n),
+            ListItem::new(album_row(
+                app,
+                album,
+                area.width,
+                selected,
+                false,
                 style,
-            );
-
-            let badge = album
-                .quality_badge()
-                .map(|b| format!(" [{b}]"))
-                .unwrap_or_default();
-            let badge_span = Span::styled(
-                badge,
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-            );
-
-            let heart = if app.favorite_album_ids.contains(&album.id) {
-                Span::raw(" ❤")
-            } else {
-                Span::raw("")
-            };
-
-            ListItem::new(Line::from(vec![title_span, badge_span, heart]))
+                Style::default().fg(DIM),
+            ))
         })
         .collect();
 
@@ -477,35 +390,15 @@ pub(super) fn render_artist_singles(
             } else {
                 Style::default().fg(Color::White)
             };
-            let prefix = if selected { "▶ " } else { "  " };
-            let year = album
-                .release_date
-                .as_deref()
-                .and_then(|d| d.get(..4))
-                .unwrap_or("----");
-            let n = album.number_of_tracks.unwrap_or(0);
-
-            let title_span = Span::styled(
-                format!("{}{} ({}, {} tracks)", prefix, album.title, year, n),
+            ListItem::new(album_row(
+                app,
+                album,
+                area.width,
+                selected,
+                false,
                 style,
-            );
-
-            let badge = album
-                .quality_badge()
-                .map(|b| format!(" [{b}]"))
-                .unwrap_or_default();
-            let badge_span = Span::styled(
-                badge,
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-            );
-
-            let heart = if app.favorite_album_ids.contains(&album.id) {
-                Span::raw(" ❤")
-            } else {
-                Span::raw("")
-            };
-
-            ListItem::new(Line::from(vec![title_span, badge_span, heart]))
+                Style::default().fg(DIM),
+            ))
         })
         .collect();
 

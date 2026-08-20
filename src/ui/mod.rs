@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025 Ryan Cohan
+// Copyright (C) 2025 Fezzik the Giant
 
 //! Terminal rendering.
 //!
@@ -20,6 +20,7 @@ use crate::search::SearchPane;
 mod album_detail;
 mod art;
 mod artist_detail;
+mod carousel;
 mod footer;
 mod home;
 mod image;
@@ -28,6 +29,7 @@ mod now_playing;
 mod overlays;
 mod playlist_detail;
 mod queue;
+mod row;
 mod search;
 mod tabs;
 mod theme;
@@ -35,6 +37,7 @@ mod theme;
 use album_detail::*;
 use art::*;
 use artist_detail::*;
+use carousel::*;
 use footer::*;
 use home::*;
 use image::*;
@@ -43,6 +46,7 @@ use now_playing::*;
 use overlays::*;
 use playlist_detail::*;
 use queue::*;
+use row::*;
 use search::*;
 use tabs::*;
 use theme::*;

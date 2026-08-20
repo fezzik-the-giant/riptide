@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025 Ryan Cohan
+// Copyright (C) 2025 Fezzik the Giant
 
 //! Bindings that apply in every context: transport, volume, tabs, help.
 
@@ -140,52 +140,53 @@ pub(super) fn handle_global_key(app: &mut App, key: KeyEvent) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::{Tab, test_app};
+    use crate::app::Tab;
+    use crate::app::test_support::test_app;
 
     #[test]
     fn shift_a_toggles_fullscreen_without_changing_tabs() {
-        let mut app = test_app().0;
-        app.current_tab = Tab::Albums;
-        app.queue_focused = true;
+        let mut t = test_app();
+        t.app.current_tab = Tab::Albums;
+        t.app.queue_focused = true;
         let key = KeyEvent::new(KeyCode::Char('A'), KeyModifiers::SHIFT);
 
-        assert!(handle_global_key(&mut app, key));
-        assert!(app.art_fullscreen);
-        assert_eq!(app.current_tab, Tab::Albums);
-        assert!(app.queue_focused);
+        assert!(handle_global_key(&mut t.app, key));
+        assert!(t.app.art_fullscreen);
+        assert_eq!(t.app.current_tab, Tab::Albums);
+        assert!(t.app.queue_focused);
 
-        assert!(handle_global_key(&mut app, key));
-        assert!(!app.art_fullscreen);
-        assert_eq!(app.current_tab, Tab::Albums);
-        assert!(app.queue_focused);
+        assert!(handle_global_key(&mut t.app, key));
+        assert!(!t.app.art_fullscreen);
+        assert_eq!(t.app.current_tab, Tab::Albums);
+        assert!(t.app.queue_focused);
     }
 
     #[test]
     fn tab_leaves_fullscreen_without_advancing_the_hidden_tab() {
-        let mut app = test_app().0;
-        app.current_tab = Tab::Albums;
-        app.art_fullscreen = true;
+        let mut t = test_app();
+        t.app.current_tab = Tab::Albums;
+        t.app.art_fullscreen = true;
 
         assert!(handle_global_key(
-            &mut app,
+            &mut t.app,
             KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
         ));
-        assert!(!app.art_fullscreen);
-        assert_eq!(app.current_tab, Tab::Albums);
+        assert!(!t.app.art_fullscreen);
+        assert_eq!(t.app.current_tab, Tab::Albums);
     }
 
     #[test]
     fn slash_does_not_open_the_hidden_filter_in_fullscreen_art() {
-        let mut app = test_app().0;
-        app.current_tab = Tab::Albums;
-        app.art_fullscreen = true;
-        assert!(app.filterable_tab());
+        let mut t = test_app();
+        t.app.current_tab = Tab::Albums;
+        t.app.art_fullscreen = true;
+        assert!(t.app.filterable_tab());
 
         handle_global_key(
-            &mut app,
+            &mut t.app,
             KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE),
         );
 
-        assert!(!app.filter_active);
+        assert!(!t.app.filter_active);
     }
 }

@@ -179,11 +179,13 @@ fn centered_square_art_area(area: Rect, font_size: FontSize) -> Rect {
     let edge = available_width
         .min(available_height)
         .min(MAX_ART_EDGE_PIXELS);
-    let width = edge
-        .div_ceil(u32::from(font_size.width))
+    // Floor so the cell-rounded surface cannot exceed the pixel cap when the
+    // font size does not divide it. Keep at least one cell on a nonempty area.
+    let width = (edge / u32::from(font_size.width))
+        .max(1)
         .min(u32::from(area.width)) as u16;
-    let height = edge
-        .div_ceil(u32::from(font_size.height))
+    let height = (edge / u32::from(font_size.height))
+        .max(1)
         .min(u32::from(area.height)) as u16;
 
     centered_protocol_area(area, Size::new(width, height))
@@ -193,12 +195,12 @@ fn centered_square_art_area(area: Rect, font_size: FontSize) -> Rect {
 mod tests {
     use super::*;
     use crate::api::models::{Album, ArtistRef, Track};
-    use crate::app::test_app;
+    use crate::app::test_support::{TestApp, test_app};
     use ratatui::{Terminal, backend::TestBackend};
 
-    fn app_with_track() -> App {
-        let mut app = test_app().0;
-        app.now_playing.track = Some(Track {
+    fn app_with_track() -> TestApp {
+        let mut t = test_app();
+        t.app.now_playing.track = Some(Track {
             id: 1,
             title: "HUD Track".to_string(),
             duration: 240,
@@ -220,10 +222,10 @@ mod tests {
             media_metadata: None,
             added_at: None,
         });
-        app.now_playing.position = 60.0;
-        app.now_playing.duration = 240.0;
-        app.now_playing.volume = 73;
-        app
+        t.app.now_playing.position = 60.0;
+        t.app.now_playing.duration = 240.0;
+        t.app.now_playing.volume = 73;
+        t
     }
 
     #[test]
@@ -235,17 +237,18 @@ mod tests {
 
     #[test]
     fn presentation_art_takes_priority_over_the_thumbnail() {
-        let mut app = app_with_track();
-        app.now_playing.set_art_bytes(Some(vec![3, 2, 0]));
+        let mut t = app_with_track();
+        t.app.now_playing.set_art_bytes(Some(vec![3, 2, 0]));
         assert_eq!(
-            art_images(&app).map(|image| image.map(CachedImage::bytes)),
+            art_images(&t.app).map(|image| image.map(CachedImage::bytes)),
             [None, Some([3, 2, 0].as_slice())]
         );
 
-        app.now_playing
+        t.app
+            .now_playing
             .set_presentation_art_bytes(Some(vec![12, 8, 0]));
         assert_eq!(
-            art_images(&app).map(|image| image.map(CachedImage::bytes)),
+            art_images(&t.app).map(|image| image.map(CachedImage::bytes)),
             [Some([12, 8, 0].as_slice()), Some([3, 2, 0].as_slice())]
         );
     }
@@ -275,6 +278,15 @@ mod tests {
     }
 
     #[test]
+    fn art_surface_never_exceeds_the_pixel_cap_when_cells_do_not_divide_it() {
+        let font_size = FontSize::new(7, 15);
+        let area = centered_square_art_area(Rect::new(0, 0, 300, 100), font_size);
+        assert!(area.width > 0 && area.height > 0);
+        assert!(u32::from(area.width) * u32::from(font_size.width) <= MAX_ART_EDGE_PIXELS);
+        assert!(u32::from(area.height) * u32::from(font_size.height) <= MAX_ART_EDGE_PIXELS);
+    }
+
+    #[test]
     fn art_layout_handles_empty_and_single_column_areas() {
         let font_size = FontSize::new(8, 16);
         assert!(centered_square_art_area(Rect::new(0, 0, 0, 10), font_size).is_empty());
@@ -295,10 +307,10 @@ mod tests {
 
     #[test]
     fn hud_contains_track_metadata_time_and_volume() {
-        let app = app_with_track();
+        let t = app_with_track();
         let mut terminal = Terminal::new(TestBackend::new(80, ART_HUD_HEIGHT)).unwrap();
         terminal
-            .draw(|f| render_art_hud(f, &app, f.area()))
+            .draw(|f| render_art_hud(f, &t.app, f.area()))
             .unwrap();
 
         let rendered: String = terminal
@@ -316,11 +328,11 @@ mod tests {
 
     #[test]
     fn art_view_omits_the_generic_footer() {
-        let mut app = app_with_track();
-        app.art_fullscreen = true;
-        app.now_playing.set_art_bytes(None);
+        let mut t = app_with_track();
+        t.app.art_fullscreen = true;
+        t.app.now_playing.set_art_bytes(None);
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
-        terminal.draw(|f| crate::ui::draw(f, &app)).unwrap();
+        terminal.draw(|f| crate::ui::draw(f, &t.app)).unwrap();
 
         let rendered: String = terminal
             .backend()

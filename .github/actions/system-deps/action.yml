@@ -1,0 +1,26 @@
+name: System dependencies
+description: Install the Linux libraries riptide links against.
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        # The runner's mirrorlist puts azure.archive.ubuntu.com first, and that
+        # mirror is intermittently unreachable. apt then spends its full connect
+        # timeout on every suite, retries, and only falls back to
+        # archive.ubuntu.com afterwards — a 20-second step becomes a 15-minute
+        # one, with nothing but "Ign:" lines to show for it. Point apt straight
+        # at the canonical mirror and bound what a slow one can cost.
+        if [ -f /etc/apt/apt-mirrors.txt ]; then
+          sudo sed -i 's|http://azure.archive.ubuntu.com|http://archive.ubuntu.com|g' \
+            /etc/apt/apt-mirrors.txt
+        fi
+        sudo apt-get \
+          -o Acquire::Retries=2 \
+          -o Acquire::http::Timeout=15 \
+          -o Acquire::https::Timeout=15 \
+          update
+        sudo apt-get install -y \
+          pkg-config libssl-dev libdbus-1-dev libglib2.0-dev libchafa-dev

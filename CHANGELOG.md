@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Fullscreen album-art mode with `Shift+A`, on-demand high-resolution covers, and a compact playback HUD
+
+## [1.3.0] - 2026-08-19
+
+### Added
+- `j` and `k` move down and up in every list — the tabs, the detail views, the queue, the help modal and the pickers. `h` and `l` already moved between panes, so the same hand now moves within one (#37). They stay ordinary letters inside the search box, the filter box and the command palette
+- Volume, seek, shuffle and stop now work from desktop media widgets and `playerctl`, alongside the play/pause and skip controls that already did. Thanks to @dghelm (#49)
+- The now-playing bar reports the bit depth and sample rate Tidal actually delivered, next to the quality badge. The badge describes the catalogue; the two differ whenever the client is not entitled to the advertised tier, which is why a `MAX` release can still arrive as 16-bit/44.1 kHz
+
+### Changed
+- The Home tab is a carousel. Its three sections used to split the tab in thirds regardless of content, so "New Releases" and "Daily Discovery" — one mix each — each owned a third of the screen while the eight daily mixes were squeezed into what was left. One section now fills the tab, the strip along the top names all three with their counts, and `←`/`→` switches between them, which is what the layout implied all along. Each section also shows its own cover art and its own loading state, instead of the whole tab waiting on the slowest of the three
+- List rows are laid out in columns: title, artists, then duration, quality badge and favourite marker. Nothing truncated before, so the terminal clipped rows at the right edge and a long title pushed the metadata off the screen entirely. The metadata now stays put and only the text ellipsizes, the artist column stepping aside first on a narrow terminal. The row under the cursor scrolls its text if it does not fit
+
+### Fixed
+- Tracks credited to more than one artist listed only the first. Every list parser dropped the rest of the `artists` relationship, so a collaboration or a feature showed a single name — and `g` could not reach the other artists, because the picker only appears when a track has more than one
+- Mix playlists showed "0 tracks". Tidal sends no item count for them at all, and the missing value was being rendered as zero rather than left out
+- The Search tab's playlist results showed no favourite marker, so saved and unsaved playlists looked identical
+- The command palette was unusable while the queue had focus: `:` opened it, but everything typed afterwards went to the queue, where `c` copied a link and `d` removed a track
+- Album art on the now-playing bar could vanish when a track without a cover started, and stayed gone for the rest of the queue. Thanks to @dghelm (#49)
+- Play from a stopped state could restart the current track instead of resuming it, if a media key repeated or a desktop sent the command twice
+- Sign-in failures now say what Tidal actually reported instead of only the HTTP status. Credentials from the Tidal developer portal cannot drive the device-login flow at all, and that case now says so rather than failing with a bare `400 Bad Request`
+
+### Internal
+- Listing the Playlists tab no longer fetches every playlist's full track list to display their names — 320 KB and three quarters of a second became 26 KB. The request that did it was also redundant: everything it returned was refetched by a second call that pages correctly, and it stopped at 20 playlists
+- The tab strip shared by the artist, search and Home views is one helper rather than two copies, and every list row goes through one of four row builders instead of being assembled by hand in twelve places
+- Truncation is measured in display columns rather than characters, so CJK titles and emoji no longer misalign the columns around them
+
 ## [1.2.0] - 2026-08-18
 
 ### Added
@@ -67,7 +97,6 @@ does. Stream URLs remain on v1 permanently — the v2 equivalent serves
 DRM-encrypted media that mpv cannot play. See the note on `get_stream_url`.
 
 ### Added
-- Fullscreen album-art mode with `Shift+A`, on-demand high-resolution covers, and a compact playback HUD
 - Sort order, volume, shuffle state and queue visibility now persist across restarts, in a new `prefs` block in `config.json`
   (the Tracks sort is stored as `tracks_sort`)
 - The active sort is shown in each list header, and the sort palette opens on the sort already applied

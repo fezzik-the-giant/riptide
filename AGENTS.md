@@ -262,6 +262,24 @@ message named the anomaly.
 - Chain the next page from the response handler, not from a scroll event
 
 ### UI Patterns
+- The artist, search and Home views share one tab strip: `render_carousel` in
+  `src/ui/carousel.rs` draws the bordered block whose title is the strip and
+  returns the area for the active tab's content. It owns the strip's padding —
+  labels passed in carry no leading or trailing spaces. `carousel_width` says
+  what the strip needs, which is how Home decides whether it can afford its art
+  column.
+- List rows go through `src/ui/row.rs`: `layout_row` splits a row into `Fixed`
+  columns (metadata that must stay visible) and `Flex` ones (text that can be
+  ellipsized). A `Flex` column whose share falls below its `min` is dropped
+  rightmost-first, which is how the artist gives way before the title. Truncation
+  is measured in **display columns** via `unicode-width`, not chars — a library
+  holds CJK titles and emoji, and counting chars misaligns every column on those
+  rows. `track_row`, `album_row`, `playlist_row` and `simple_row` in
+  `src/ui/lists.rs` are the only row shapes; do not hand-build a `ListItem`.
+- The marquee scrolls only the selected row's overflowing text, from
+  `App::marquee_phase()`. `handle_key` resets `marquee_epoch` on every keystroke,
+  which is why a row the cursor just landed on starts from its beginning — that
+  one line replaces per-list animation state.
 - Use `ListViewport` for scroll management (interior mutability with Cell)
 - Render functions receive `&Frame` for double-buffering
 - Use ratatui's Layout/Constraint system for responsive design

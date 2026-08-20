@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025 Ryan Cohan
+// Copyright (C) 2025 Fezzik the Giant
 
 //! Input handling and the main event loop.
 //!
-//! [`run_app`] drives the draw/poll cycle. Key dispatch in `handle_key` checks
-//! the contexts that capture input — overlays, the queue, the search box — before
-//! falling through to the global bindings and then list navigation.
+//! [`run_app`] drives the draw/poll cycle. Key dispatch in `handle_key` takes
+//! the text boxes first, then rewrites `j`/`k` into arrow keys, then works
+//! through the remaining contexts that capture input — help, the queue, the
+//! pickers — before falling through to the global bindings and list navigation.
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent};
 use std::time::Duration;
@@ -14,7 +15,7 @@ use tokio::sync::mpsc;
 use crate::api::ApiResponse;
 use crate::app::{App, Tab};
 use crate::mpris::MprisCmd;
-use crate::player::{PlayerCmd, PlayerEvent};
+use crate::player::PlayerEvent;
 
 mod filter;
 mod global;
@@ -57,11 +58,18 @@ pub fn run_app(
             match cmd {
                 MprisCmd::Next => app.next_track(),
                 MprisCmd::Previous => app.prev_track(),
-                MprisCmd::Play => app.set_paused(false),
+                MprisCmd::Play => app.mpris_play(),
                 MprisCmd::Pause => app.set_paused(true),
-                MprisCmd::PlayPause => app.toggle_pause(),
-                MprisCmd::Stop => {
-                    let _ = app.player_tx.send(PlayerCmd::Stop);
+                MprisCmd::PlayPause => app.mpris_play_pause(),
+                MprisCmd::Stop => app.stop_playback(),
+                MprisCmd::Quit => app.should_quit = true,
+                MprisCmd::SetVolume(v) => {
+                    app.set_volume_percent((v.clamp(0.0, 1.0) * 100.0).round() as u8)
+                }
+                MprisCmd::SetShuffle(on) => app.set_shuffle(on),
+                MprisCmd::Seek(offset_us) => app.seek_by_us(offset_us),
+                MprisCmd::SetPosition(track_id, position_us) => {
+                    app.set_position_us(track_id, position_us)
                 }
             }
         }
@@ -92,12 +100,35 @@ pub fn run_app(
     Ok(())
 }
 
-fn handle_key(app: &mut App, key: KeyEvent) {
-    if app.help_active {
-        handle_help_input(app, key);
-        return;
+/// `j`/`k` stand in for `Down`/`Up`. `h`/`l` already move between panes, so the
+/// same hand should move within one.
+///
+/// Rewriting the event once, here, reaches every list — the tabs, the detail
+/// views, the queue and the overlays — where adding a `Char('j')` arm beside
+/// each of the fifteen `KeyCode::Down` arms would leave the two spellings free
+/// to drift apart. Modified presses are left alone: the queue gives `Ctrl+Up`
+/// and `Ctrl+Down` a meaning of their own, and terminals send `Ctrl+J` as Enter.
+fn vim_arrows(mut key: KeyEvent) -> KeyEvent {
+    if !key.modifiers.is_empty() {
+        return key;
     }
+    key.code = match key.code {
+        KeyCode::Char('j') => KeyCode::Down,
+        KeyCode::Char('k') => KeyCode::Up,
+        code => code,
+    };
+    key
+}
 
+fn handle_key(app: &mut App, key: KeyEvent) {
+    // Any keystroke means the user is working the list, so restart the marquee
+    // and let them read the row they just landed on from its beginning.
+    app.marquee_epoch = std::time::Instant::now();
+
+    // A text box outranks every other context, because to it a keystroke is a
+    // character and nothing else may claim it first. The queue used to be
+    // checked ahead of the command palette and swallowed everything typed into
+    // a palette opened from it, which made `:` in there a dead end.
     if app.command.active {
         handle_command_input(app, key);
         return;
@@ -108,25 +139,24 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
-    if app.sort_palette.active {
-        handle_sort_palette_input(app, key);
-        return;
-    }
-
-    if app.artist_selection.active {
-        handle_artist_selection_input(app, key);
-        return;
-    }
-
     // The search box captures all keys while open, regardless of current tab.
     if app.search.modal_open {
         handle_search_input(app, key);
         return;
     }
 
+    // Past the text boxes, letters are commands again.
+    let key = vim_arrows(key);
+
+    if app.help_active {
+        handle_help_input(app, key);
+        return;
+    }
+
     // Fullscreen art is a presentation layer over the active view. Only global
     // controls apply while it is open, so list navigation cannot mutate the
-    // view hidden beneath it.
+    // view hidden beneath it. It also outranks queue focus so Esc dismisses
+    // art instead of the queue.
     if app.art_fullscreen {
         handle_global_key(app, key);
         return;
@@ -134,6 +164,16 @@ fn handle_key(app: &mut App, key: KeyEvent) {
 
     if app.queue_focused {
         handle_queue_input(app, key);
+        return;
+    }
+
+    if app.sort_palette.active {
+        handle_sort_palette_input(app, key);
+        return;
+    }
+
+    if app.artist_selection.active {
+        handle_artist_selection_input(app, key);
         return;
     }
 
@@ -150,28 +190,90 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         handle_navigation(app, key);
     }
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::test_app;
+    use crate::api::models::Artist;
+    use crate::app::test_support::{TestApp, test_app};
     use crossterm::event::KeyModifiers;
+
+    fn app_on_artists_tab() -> TestApp {
+        let mut t = test_app();
+        t.app.current_tab = Tab::Artists;
+        t.app.artists.append_page(
+            (0..3)
+                .map(|id| Artist {
+                    id,
+                    name: format!("Artist {id}"),
+                    added_at: None,
+                })
+                .collect(),
+            None,
+        );
+        t
+    }
+
+    fn press(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn j_and_k_move_the_selection() {
+        let mut t = app_on_artists_tab();
+
+        handle_key(&mut t.app, press('j'));
+        assert_eq!(t.app.artists.selected, 1);
+
+        handle_key(&mut t.app, press('k'));
+        assert_eq!(t.app.artists.selected, 0);
+    }
+
+    /// The queue used to be checked before the palette and ate everything typed
+    /// into one opened from it.
+    #[test]
+    fn the_command_palette_outranks_the_focused_queue() {
+        let mut t = app_on_artists_tab();
+        t.app.queue_focused = true;
+
+        handle_key(&mut t.app, press(':'));
+        handle_key(&mut t.app, press('c'));
+
+        assert!(t.app.command.active);
+        assert_eq!(t.app.command.input, "c");
+    }
+
+    /// The half that is easy to break: inside a text box they are letters again.
+    #[test]
+    fn the_filter_box_reads_j_and_k_as_letters() {
+        let mut t = app_on_artists_tab();
+        t.app.filter_active = true;
+
+        handle_key(&mut t.app, press('j'));
+        handle_key(&mut t.app, press('k'));
+
+        assert_eq!(t.app.active_filter(), "jk");
+        assert_eq!(t.app.artists.selected, 0);
+    }
 
     #[test]
     fn fullscreen_art_preempts_queue_focus_for_escape_and_navigation() {
-        let mut app = test_app().0;
-        app.art_fullscreen = true;
-        app.queue_focused = true;
+        let mut t = test_app();
+        t.app.art_fullscreen = true;
+        t.app.queue_focused = true;
 
         handle_key(
-            &mut app,
+            &mut t.app,
             KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE),
         );
-        assert!(app.art_fullscreen);
-        assert!(app.status.is_none());
-        assert!(app.view_stack.is_empty());
+        assert!(t.app.art_fullscreen);
+        assert!(t.app.status.is_none());
+        assert!(t.app.view_stack.is_empty());
 
-        handle_key(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-        assert!(!app.art_fullscreen);
-        assert!(app.queue_focused);
+        handle_key(&mut t.app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(!t.app.art_fullscreen);
+        assert!(t.app.queue_focused);
     }
 }

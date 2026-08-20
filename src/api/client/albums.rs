@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025 Ryan Cohan
+// Copyright (C) 2025 Fezzik the Giant
 
 //! Album detail, album tracks, and the saved-albums collection.
 
@@ -49,7 +49,7 @@ fn parse_album_tracks(
                                 .unwrap_or("PT0S"),
                         );
 
-                        let artist_name = extract_artist_from_track(track_obj, &artist_map);
+                        let artists = extract_artists_from_track(track_obj, &artist_map);
 
                         let album_title = attrs
                             .get("album")
@@ -74,8 +74,8 @@ fn parse_album_tracks(
                             id,
                             title: title.to_string(),
                             duration,
-                            artist: Some(ArtistRef { name: artist_name }),
-                            artists: Vec::new(),
+                            artist: artists.first().cloned(),
+                            artists,
                             album: Album {
                                 id: album_id,
                                 title: album_title.to_string(),

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025 Ryan Cohan
+// Copyright (C) 2025 Fezzik the Giant
 
 //! Top-level library lists and the shared track-list renderer.
 
@@ -12,6 +12,7 @@ use ratatui::{
 };
 
 use super::*;
+use crate::api::models::{Album, Playlist};
 use crate::app::{App, StatefulList};
 
 pub(super) fn render_content(f: &mut Frame, app: &App, area: Rect) {
@@ -140,8 +141,14 @@ pub(super) fn render_artist_list(f: &mut Frame, app: &App, area: Rect) {
             } else {
                 Style::default().fg(Color::White)
             };
-            let prefix = if selected { "▶ " } else { "  " };
-            ListItem::new(format!("{prefix}{}", artist.name)).style(style)
+            ListItem::new(simple_row(
+                app,
+                &artist.name,
+                inner.width,
+                selected,
+                style,
+                "",
+            ))
         })
         .collect();
 
@@ -198,13 +205,6 @@ pub(super) fn render_fav_albums_list(f: &mut Frame, app: &App, area: Rect) {
         .map(|(idx, album)| {
             let is_sel = *idx == selected;
             let bg = if is_sel { HIGHLIGHT_BG } else { Color::Reset };
-            let prefix = if is_sel { "▶ " } else { "  " };
-            let artist = album.artist.as_ref().map(|a| a.name.as_str()).unwrap_or("");
-            let badge = album
-                .quality_badge()
-                .map(|b| format!(" [{b}]"))
-                .unwrap_or_default();
-
             let title_style = Style::default()
                 .bg(bg)
                 .fg(Color::White)
@@ -214,24 +214,15 @@ pub(super) fn render_fav_albums_list(f: &mut Frame, app: &App, area: Rect) {
                     Modifier::empty()
                 });
             let sub_style = Style::default().bg(bg).fg(DIM);
-            let badge_style = Style::default()
-                .bg(bg)
-                .fg(ACCENT)
-                .add_modifier(Modifier::BOLD);
-
-            let line = Line::from(vec![
-                Span::styled(format!("{prefix}{}", album.title), title_style),
-                Span::styled(
-                    if artist.is_empty() {
-                        String::new()
-                    } else {
-                        format!("  {artist}")
-                    },
-                    sub_style,
-                ),
-                Span::styled(badge, badge_style),
-            ]);
-            ListItem::new(line)
+            ListItem::new(album_row(
+                app,
+                album,
+                inner.width,
+                is_sel,
+                true,
+                title_style,
+                sub_style,
+            ))
         })
         .collect();
 
@@ -274,13 +265,14 @@ pub(super) fn render_playlist_list(f: &mut Frame, app: &App, area: Rect) {
             } else {
                 Style::default().fg(Color::White)
             };
-            let prefix = if selected { "▶ " } else { "  " };
-            ListItem::new(format!(
-                "{prefix}{} ({} tracks)",
-                pl.title,
-                pl.number_of_tracks.unwrap_or(0)
+            ListItem::new(playlist_row(
+                app,
+                pl,
+                inner.width,
+                selected,
+                style,
+                Style::default().fg(DIM),
             ))
-            .style(style)
         })
         .collect();
 
@@ -294,6 +286,174 @@ pub(super) fn render_playlist_list(f: &mut Frame, app: &App, area: Rect) {
 
     let list = List::new(items);
     f.render_widget(list, inner);
+}
+
+/// The marquee only runs on the row under the cursor.
+fn marquee_phase(app: &App, is_selected: bool) -> Option<std::time::Duration> {
+    is_selected.then(|| app.marquee_phase())
+}
+
+/// One album row. `show_artist` is off inside an artist's own page, where the
+/// column would repeat the artist on every line.
+pub(super) fn album_row(
+    app: &App,
+    album: &Album,
+    width: u16,
+    is_selected: bool,
+    show_artist: bool,
+    style: Style,
+    dim: Style,
+) -> Line<'static> {
+    let phase = marquee_phase(app, is_selected);
+    let mut cells = vec![
+        Cell::fixed(if is_selected { "▶ " } else { "  " }, 2, style),
+        Cell::flex(album.title.clone(), 3, 0, style),
+    ];
+    if show_artist {
+        cells.push(Cell::flex(
+            album
+                .artist
+                .as_ref()
+                .map(|a| a.name.clone())
+                .unwrap_or_default(),
+            2,
+            12,
+            dim,
+        ));
+    }
+    cells.push(
+        Cell::fixed(
+            album
+                .release_date
+                .as_deref()
+                .and_then(|d| d.get(..4))
+                .unwrap_or("")
+                .to_string(),
+            6,
+            dim,
+        )
+        .right(),
+    );
+    cells.push(
+        Cell::fixed(
+            album
+                .number_of_tracks
+                .map(|n| format!("{n} tracks"))
+                .unwrap_or_default(),
+            11,
+            dim,
+        )
+        .right(),
+    );
+    cells.push(Cell::fixed(
+        album
+            .quality_badge()
+            .map(|b| format!(" [{b}]"))
+            .unwrap_or_default(),
+        8,
+        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+    ));
+    cells.push(Cell::fixed(
+        if app.favorite_album_ids.contains(&album.id) {
+            " ❤"
+        } else {
+            ""
+        },
+        2,
+        style,
+    ));
+    layout_row(width, cells, phase)
+}
+
+pub(super) fn playlist_row(
+    app: &App,
+    playlist: &Playlist,
+    width: u16,
+    is_selected: bool,
+    style: Style,
+    dim: Style,
+) -> Line<'static> {
+    layout_row(
+        width,
+        vec![
+            Cell::fixed(if is_selected { "▶ " } else { "  " }, 2, style),
+            Cell::flex(playlist.title.clone(), 1, 0, style),
+            Cell::fixed(playlist.track_count_label().unwrap_or_default(), 11, dim).right(),
+            Cell::fixed(
+                if app.favorite_playlist_ids.contains(&playlist.uuid) {
+                    " ❤"
+                } else {
+                    ""
+                },
+                2,
+                style,
+            ),
+        ],
+        marquee_phase(app, is_selected),
+    )
+}
+
+/// A single-field row: no columns to align, just a cursor and text that stops at
+/// the edge instead of being chopped mid-character.
+pub(super) fn simple_row(
+    app: &App,
+    text: &str,
+    width: u16,
+    is_selected: bool,
+    style: Style,
+    trailing: &str,
+) -> Line<'static> {
+    layout_row(
+        width,
+        vec![
+            Cell::fixed(if is_selected { "▶ " } else { "  " }, 2, style),
+            Cell::flex(text.to_string(), 1, 0, style),
+            Cell::fixed(trailing.to_string(), 2, style),
+        ],
+        marquee_phase(app, is_selected),
+    )
+}
+
+/// One track row, laid out in columns so the duration, badge and favourite
+/// marker stay put whatever the title and artists do.
+pub(super) fn track_row(
+    app: &App,
+    track: &Track,
+    width: u16,
+    ordinal: Option<String>,
+    is_selected: bool,
+    is_playing: bool,
+    style: Style,
+) -> Line<'static> {
+    let phase = marquee_phase(app, is_selected);
+    let mut cells = vec![
+        Cell::fixed(if is_selected { "▶ " } else { "  " }, 2, style),
+        Cell::fixed(if is_playing { "♪ " } else { "  " }, 2, style),
+    ];
+    if let Some(ordinal) = ordinal {
+        cells.push(Cell::fixed(ordinal, 5, style));
+    }
+    cells.push(Cell::flex(track.title.clone(), 3, 0, style));
+    cells.push(Cell::flex(track.all_artist_names(), 2, 12, style));
+    cells.push(Cell::fixed(track.duration_display(), 6, style).right());
+    cells.push(Cell::fixed(
+        track
+            .quality_badge()
+            .map(|b| format!(" [{b}]"))
+            .unwrap_or_default(),
+        8,
+        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+    ));
+    cells.push(Cell::fixed(
+        if app.favorite_track_ids.contains(&track.id) {
+            " ❤"
+        } else {
+            ""
+        },
+        2,
+        style,
+    ));
+    layout_row(width, cells, phase)
 }
 
 pub(super) fn render_track_list(
@@ -334,37 +494,17 @@ pub(super) fn render_track_list(
             } else {
                 Style::default().fg(Color::White)
             };
-            let prefix = if is_selected { "▶ " } else { "  " };
-            let playing = if is_playing { "♪ " } else { "" };
             // `i` stays 0-based for selection; only the displayed ordinal is 1-based.
-            let n = i + 1;
-
-            let title_span = Span::styled(
-                format!(
-                    "{prefix}{playing}{n:>3}. {} — {} ({})",
-                    track.title,
-                    track.all_artist_names(),
-                    track.duration_display()
-                ),
+            let ordinal = format!("{:>3}. ", i + 1);
+            ListItem::new(track_row(
+                app,
+                track,
+                inner.width,
+                Some(ordinal),
+                is_selected,
+                is_playing,
                 style,
-            );
-
-            let badge = track
-                .quality_badge()
-                .map(|b| format!(" [{b}]"))
-                .unwrap_or_default();
-            let badge_span = Span::styled(
-                badge,
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-            );
-
-            let heart = if app.favorite_track_ids.contains(&track.id) {
-                Span::raw(" ❤")
-            } else {
-                Span::raw("")
-            };
-
-            ListItem::new(Line::from(vec![title_span, badge_span, heart]))
+            ))
         })
         .collect();
 
@@ -378,4 +518,83 @@ pub(super) fn render_track_list(
 
     let list = List::new(items);
     f.render_widget(list, inner);
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::models::Playlist;
+    use crate::app::test_support::test_app;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    fn playlist(title: &str, number_of_tracks: Option<u32>) -> Playlist {
+        Playlist {
+            uuid: title.to_string(),
+            title: title.to_string(),
+            number_of_tracks,
+            description: None,
+            cover: None,
+            added_at: None,
+        }
+    }
+
+    /// Search results mix saved and unsaved playlists, and the marker is the only
+    /// thing that tells them apart.
+    #[test]
+    fn the_heart_marks_only_saved_playlists() {
+        let mut t = test_app();
+        t.app
+            .favorite_playlist_ids
+            .insert("Metal Classics".to_string());
+        std::mem::forget(t.api_rx);
+        let style = Style::default();
+
+        let row = |title: &str| {
+            let line = playlist_row(&t.app, &playlist(title, Some(12)), 60, false, style, style);
+            line.spans
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect::<String>()
+        };
+
+        assert!(row("Metal Classics").contains('❤'));
+        assert!(!row("Some Other Playlist").contains('❤'));
+    }
+
+    /// A `MIX` playlist reports no `numberOfItems`, and the row used to render
+    /// that `None` as `(0 tracks)`.
+    #[test]
+    fn a_playlist_with_no_count_shows_no_count() {
+        let mut t = test_app();
+        t.app.playlists.append_page(
+            vec![
+                playlist("Metal Classics", Some(181)),
+                playlist("Run The Jewels", None),
+            ],
+            None,
+        );
+        std::mem::forget(t.api_rx);
+
+        let (w, h) = (60u16, 8u16);
+        let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
+        terminal
+            .draw(|f| render_playlist_list(f, &t.app, Rect::new(0, 0, w, h)))
+            .unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let screen: String = (0..h)
+            .map(|y| {
+                (0..w)
+                    .map(|x| buf.cell((x, y)).unwrap().symbol().to_string())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(screen.contains("Metal Classics"), "{screen}");
+        assert!(screen.contains("181 tracks"), "{screen}");
+        assert!(screen.contains("Run The Jewels"), "{screen}");
+        assert!(!screen.contains("0 tracks"), "{screen}");
+    }
 }

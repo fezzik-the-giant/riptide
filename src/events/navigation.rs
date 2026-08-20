@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025 Ryan Cohan
+// Copyright (C) 2025 Fezzik the Giant
 
 //! List and view navigation for the main content area.
 
@@ -421,14 +421,7 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
     // Top-level tab navigation (no active detail view)
     match key.code {
         KeyCode::Up => match app.current_tab {
-            Tab::Home => {
-                use crate::app::HomeSectionFocus;
-                match app.home_section_focus {
-                    HomeSectionFocus::NewReleases => app.home_new_releases.prev(),
-                    HomeSectionFocus::DailyMixes => app.home_daily_mixes.prev(),
-                    HomeSectionFocus::DiscoveryMixes => app.home_discovery_mixes.prev(),
-                }
-            }
+            Tab::Home => app.home_prev(),
             Tab::Artists => app.artists.prev(),
             Tab::Albums => app.fav_albums.prev(),
             Tab::Playlists => app.playlists.prev(),
@@ -436,14 +429,7 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
             Tab::Search => app.search.pane_prev(),
         },
         KeyCode::Down => match app.current_tab {
-            Tab::Home => {
-                use crate::app::HomeSectionFocus;
-                match app.home_section_focus {
-                    HomeSectionFocus::NewReleases => app.home_new_releases.next(),
-                    HomeSectionFocus::DailyMixes => app.home_daily_mixes.next(),
-                    HomeSectionFocus::DiscoveryMixes => app.home_discovery_mixes.next(),
-                }
-            }
+            Tab::Home => app.home_next(),
             Tab::Artists => app.artists.next(),
             Tab::Albums => app.fav_albums.next(),
             Tab::Playlists => app.playlists.next(),
@@ -467,30 +453,18 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
             Tab::Search => app.search.pane_page_down(),
         },
         KeyCode::Left | KeyCode::Char('h') if app.current_tab == Tab::Home => {
-            use crate::app::HomeSectionFocus;
-            app.home_section_focus = match app.home_section_focus {
-                HomeSectionFocus::NewReleases => HomeSectionFocus::DiscoveryMixes,
-                HomeSectionFocus::DailyMixes => HomeSectionFocus::NewReleases,
-                HomeSectionFocus::DiscoveryMixes => HomeSectionFocus::DailyMixes,
-            };
+            app.home_section_prev();
         }
         KeyCode::Left | KeyCode::Char('h') if app.current_tab == Tab::Search => {
             app.search.prev_pane();
         }
         KeyCode::Right | KeyCode::Char('l') if app.current_tab == Tab::Home => {
-            use crate::app::HomeSectionFocus;
-            app.home_section_focus = match app.home_section_focus {
-                HomeSectionFocus::NewReleases => HomeSectionFocus::DailyMixes,
-                HomeSectionFocus::DailyMixes => HomeSectionFocus::DiscoveryMixes,
-                HomeSectionFocus::DiscoveryMixes => HomeSectionFocus::NewReleases,
-            };
+            app.home_section_next();
         }
         KeyCode::Right | KeyCode::Char('l') if app.current_tab == Tab::Search => {
             app.search.next_pane();
         }
-        KeyCode::Right | KeyCode::Char('l')
-            if !matches!(app.current_tab, Tab::Home | Tab::Search) =>
-        {
+        KeyCode::Right | KeyCode::Char('l') if app.current_tab != Tab::Search => {
             app.focus_queue();
         }
         KeyCode::Enter => match app.current_tab {

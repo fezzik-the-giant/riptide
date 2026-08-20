@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025 Ryan Cohan
+// Copyright (C) 2025 Fezzik the Giant
 
 use super::{App, Removal, SortField, SortPalette, StatusLevel, Tab};
 use crate::api::ApiRequest;
@@ -138,7 +138,7 @@ impl App {
         let _ = self.api_tx.send(ApiRequest::SavePlaylist {
             uuid: playlist.uuid.clone(),
         });
-        if !self.playlists.items.iter().any(|p| p.uuid == playlist.uuid) {
+        if self.favorite_playlist_ids.insert(playlist.uuid.clone()) {
             self.playlists.items.insert(0, playlist.clone());
             self.playlists.total = self.playlists.total.saturating_add(1);
             self.playlists.refilter();
@@ -161,7 +161,7 @@ impl App {
     }
 
     pub fn toggle_save_playlist(&mut self, playlist: &Playlist) {
-        if self.playlists.items.iter().any(|p| p.uuid == playlist.uuid) {
+        if self.favorite_playlist_ids.contains(&playlist.uuid) {
             self.remove_playlist(playlist);
         } else {
             self.save_playlist(playlist);

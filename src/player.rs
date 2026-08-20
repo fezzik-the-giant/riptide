@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025 Ryan Cohan
+// Copyright (C) 2025 Fezzik the Giant
 
 use anyhow::{Result, bail};
 use serde_json::json;
@@ -20,11 +20,15 @@ pub enum PlayerCmd {
     /// Drop whatever is queued behind the current track.
     ClearNext,
     TogglePause,
+    /// Absolute pause state; idempotent, unlike `TogglePause`.
+    SetPaused(bool),
     Stop,
     SetMediaTitle(String),
     ChangeVolume(i8),
     /// Absolute level, used to restore the saved volume at startup.
     SetVolume(u8),
+    /// Absolute position in seconds within the current track.
+    SeekAbsolute(f64),
 }
 
 #[derive(Debug, Clone)]
@@ -131,6 +135,11 @@ impl PlayerWorker {
                                 json!({"command": ["cycle", "pause"]}).to_string()
                             ));
                         }
+                        PlayerCmd::SetPaused(p) => {
+                            let _ = ipc_tx.send(IpcRequest::Write(
+                                json!({"command": ["set_property", "pause", p]}).to_string()
+                            ));
+                        }
                         PlayerCmd::Stop => {
                             let _ = ipc_tx.send(IpcRequest::Write(
                                 json!({"command": ["stop"]}).to_string()
@@ -149,6 +158,11 @@ impl PlayerWorker {
                         PlayerCmd::SetVolume(v) => {
                             let _ = ipc_tx.send(IpcRequest::Write(
                                 json!({"command": ["set_property", "volume", v]}).to_string()
+                            ));
+                        }
+                        PlayerCmd::SeekAbsolute(secs) => {
+                            let _ = ipc_tx.send(IpcRequest::Write(
+                                json!({"command": ["seek", secs, "absolute"]}).to_string()
                             ));
                         }
                     }

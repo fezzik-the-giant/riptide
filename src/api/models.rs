@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025 Ryan Cohan
+// Copyright (C) 2025 Fezzik the Giant
 
 use serde::{Deserialize, Serialize};
 
@@ -62,6 +62,43 @@ fn quality_badge_for(tags: &[String]) -> Option<&'static str> {
     } else {
         None
     }
+}
+
+const TIDAL_IMAGE_CDN_PREFIX: &str = "https://resources.tidal.com/images/";
+
+/// Direct CDN URL for a 320×320 cover image. Cover fields carry either a full
+/// URL (v2 endpoints) or a dashed resource id that maps onto the CDN path.
+pub fn cover_art_url(cover: &str) -> String {
+    if cover.starts_with("http") {
+        cover.to_owned()
+    } else {
+        tidal_art_url(cover, "320x320.jpg")
+    }
+}
+
+/// Direct CDN URL for a 640×640 cover image.
+///
+/// The API can return either a bare image id or an already-expanded Tidal CDN
+/// URL. Upgrade only Tidal URLs; custom artwork URLs stay untouched.
+pub fn presentation_art_url(cover: &str) -> String {
+    const SIZE: &str = "640x640.jpg";
+
+    if let Some(path) = cover.strip_prefix(TIDAL_IMAGE_CDN_PREFIX)
+        && let Some((image_id, _)) = path.rsplit_once('/')
+    {
+        return format!("{TIDAL_IMAGE_CDN_PREFIX}{image_id}/{SIZE}");
+    }
+    if cover.starts_with("http") {
+        return cover.to_string();
+    }
+    tidal_art_url(cover, SIZE)
+}
+
+fn tidal_art_url(image_id: &str, size: &str) -> String {
+    format!(
+        "{TIDAL_IMAGE_CDN_PREFIX}{}/{size}",
+        image_id.replace('-', "/")
+    )
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -181,14 +218,15 @@ impl Playlist {
     pub fn share_url(&self) -> String {
         format!("https://tidal.com/browse/playlist/{}", self.uuid)
     }
-}
 
-#[derive(Debug, Deserialize)]
-pub struct FavoritePlaylistEntry {
-    pub created: Option<String>,
-    // Tidal uses "playlist" here; every other favorites endpoint uses "item".
-    #[serde(alias = "item")]
-    pub playlist: Playlist,
+    /// `"23 tracks"`, or `None` when Tidal did not say.
+    ///
+    /// `MIX` playlists carry no `numberOfItems` at all — verified live, it is
+    /// absent from the attributes rather than zero — so rendering the `Option`
+    /// as 0 claimed those playlists were empty.
+    pub fn track_count_label(&self) -> Option<String> {
+        self.number_of_tracks.map(|n| format!("{n} tracks"))
+    }
 }
 
 // ── Search ────────────────────────────────────────────────────────────────────
@@ -340,7 +378,7 @@ pub struct Config {
 
 #[cfg(test)]
 mod tests {
-    use super::quality_badge_for;
+    use super::{cover_art_url, presentation_art_url, quality_badge_for};
 
     fn tags(list: &[&str]) -> Vec<String> {
         list.iter().map(|s| s.to_string()).collect()
@@ -383,5 +421,38 @@ mod tests {
     fn no_tags_means_no_badge() {
         assert_eq!(quality_badge_for(&[]), None);
         assert_eq!(quality_badge_for(&tags(&["SOMETHING_NEW"])), None);
+    }
+
+    #[test]
+    fn presentation_art_uses_tidal_medium_resolution_variant() {
+        assert_eq!(
+            presentation_art_url("33fd4c9b-5673-4c1e-bbd4-5346d397b8e0"),
+            "https://resources.tidal.com/images/33fd4c9b/5673/4c1e/bbd4/5346d397b8e0/640x640.jpg"
+        );
+        assert_eq!(
+            presentation_art_url(
+                "https://resources.tidal.com/images/33fd4c9b/5673/4c1e/bbd4/5346d397b8e0/320x320.jpg"
+            ),
+            "https://resources.tidal.com/images/33fd4c9b/5673/4c1e/bbd4/5346d397b8e0/640x640.jpg"
+        );
+    }
+
+    #[test]
+    fn thumbnail_art_remains_the_source_size() {
+        assert_eq!(
+            cover_art_url("33fd4c9b-5673-4c1e-bbd4-5346d397b8e0"),
+            "https://resources.tidal.com/images/33fd4c9b/5673/4c1e/bbd4/5346d397b8e0/320x320.jpg"
+        );
+        let existing =
+            "https://resources.tidal.com/images/33fd4c9b/5673/4c1e/bbd4/5346d397b8e0/320x320.jpg";
+        assert_eq!(cover_art_url(existing), existing);
+    }
+
+    #[test]
+    fn presentation_art_preserves_non_tidal_urls() {
+        assert_eq!(
+            presentation_art_url("https://example.com/custom-cover.png"),
+            "https://example.com/custom-cover.png"
+        );
     }
 }

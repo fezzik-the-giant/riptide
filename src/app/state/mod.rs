@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025 Ryan Cohan
+// Copyright (C) 2025 Fezzik the Giant
 
 use crate::api::models::*;
 use crate::playlist::PlaylistDetail;
 use std::cell::Cell;
+use std::collections::HashMap;
 
 mod detail;
 mod keybinds;

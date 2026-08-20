@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025 Ryan Cohan
+// Copyright (C) 2025 Fezzik the Giant
 
 use super::{App, StatusLevel};
 use crate::api::ApiRequest;
-use crate::api::models::Track;
+use crate::api::models::{Track, presentation_art_url};
 use crate::mpris::MprisState;
 use crate::player::PlayerCmd;
 
@@ -70,9 +70,10 @@ impl App {
     }
 
     pub fn set_paused(&mut self, paused: bool) {
-        if self.now_playing.paused != paused {
-            let _ = self.player_tx.send(PlayerCmd::TogglePause);
-        }
+        // set_property is idempotent where `cycle` is not: DEs repeat MPRIS
+        // Pause/Play, and two toggles racing the 500 ms pause-state poll would
+        // undo each other.
+        let _ = self.player_tx.send(PlayerCmd::SetPaused(paused));
     }
 
     pub fn next_track(&mut self) {
@@ -87,6 +88,9 @@ impl App {
                     .api_tx
                     .send(ApiRequest::ResolveStreamUrl { track_id: track.id });
             }
+            // No MPRIS push here: `active` is false until the stream URL
+            // resolves, and pushing would flash Stopped at clients on every
+            // skip. The StreamUrl handler pushes as soon as playback restarts.
         }
     }
 
@@ -149,6 +153,7 @@ impl App {
             self.replace_prefetched_next();
             self.set_status("Shuffle on".to_string(), StatusLevel::Info);
         }
+        self.push_mpris_state();
     }
 
     /// Point mpv at whatever now follows the current track. Call after any
@@ -199,6 +204,7 @@ impl App {
         }
 
         self.queue_cursor = idx - 1;
+        self.push_mpris_state();
     }
 
     pub fn move_queue_track_down(&mut self) {
@@ -226,6 +232,7 @@ impl App {
         }
 
         self.queue_cursor = idx + 1;
+        self.push_mpris_state();
     }
 
     pub fn add_to_queue(&mut self, track: Track) {
@@ -247,6 +254,7 @@ impl App {
                 .send(ApiRequest::ResolveStreamUrl { track_id: id });
         }
         self.set_status(format!("Queued: {title}"), StatusLevel::Info);
+        self.push_mpris_state();
     }
 
     pub fn focus_queue(&mut self) {
@@ -272,6 +280,7 @@ impl App {
         self.now_playing.active = false;
         self.now_playing.position = 0.0;
         if let Some(track) = self.now_playing.queue.get(idx) {
+            self.now_playing.play_pending = Some(track.id);
             let _ = self
                 .api_tx
                 .send(ApiRequest::ResolveStreamUrl { track_id: track.id });
@@ -333,33 +342,162 @@ impl App {
         if self.now_playing.queue.is_empty() {
             self.queue_focused = false;
         }
+        self.push_mpris_state();
     }
 
     pub fn push_mpris_state(&self) {
-        let state = match &self.now_playing.track {
+        let np = &self.now_playing;
+        let can_next = np.queue_index + 1 < np.queue.len();
+        let can_prev = np.queue_index > 0 && !np.queue.is_empty();
+        let state = match &np.track {
             Some(t) => MprisState {
+                track_id: t.id,
                 title: t.title.clone(),
-                artist: t.artist_name().to_owned(),
+                artists: if t.artists.is_empty() {
+                    t.artist.iter().map(|a| a.name.clone()).collect()
+                } else {
+                    t.artists.iter().map(|a| a.name.clone()).collect()
+                },
                 album: t.album.title.clone(),
-                art_url: t
-                    .album
-                    .cover
+                art_url: np
+                    .art_source
                     .as_deref()
-                    .map(|id| {
-                        format!(
-                            "https://resources.tidal.com/images/{}/320x320.jpg",
-                            id.replace('-', "/")
-                        )
-                    })
+                    .or(t.album.cover.as_deref())
+                    .map(presentation_art_url)
                     .unwrap_or_default(),
                 duration_us: t.duration as i64 * 1_000_000,
-                position_us: (self.now_playing.position * 1_000_000.0) as i64,
-                paused: self.now_playing.paused,
-                active: self.now_playing.active,
+                position_us: (np.position * 1_000_000.0) as i64,
+                position_epoch: np.position_epoch,
+                paused: np.paused,
+                active: np.active,
+                volume: np.volume,
+                shuffle: np.shuffle,
+                can_next,
+                can_prev,
+                has_track: true,
             },
-            None => MprisState::default(),
+            None => MprisState {
+                position_epoch: np.position_epoch,
+                volume: np.volume,
+                shuffle: np.shuffle,
+                can_next,
+                can_prev,
+                ..MprisState::default()
+            },
         };
         let _ = self.mpris_tx.send(state);
+    }
+
+    /// MPRIS Stop. mpv's `stop` clears its playlist, so nothing is prefetched
+    /// any more and the queue can only be resumed through a fresh `Play`.
+    pub fn stop_playback(&mut self) {
+        let _ = self.player_tx.send(PlayerCmd::Stop);
+        self.now_playing.active = false;
+        self.now_playing.position = 0.0;
+        self.now_playing.next_prefetched = None;
+        self.now_playing.mpv_exhausted = true;
+        self.now_playing.seek_pending = None;
+        self.now_playing.play_pending = None;
+        self.push_mpris_state();
+    }
+
+    /// MPRIS Play: resume when paused, restart the current queue entry when
+    /// stopped (after Stop, or after the queue ran out).
+    pub fn mpris_play(&mut self) {
+        if self.stopped_with_queue() {
+            self.play_from_queue(self.now_playing.queue_index);
+        } else {
+            self.set_paused(false);
+        }
+    }
+
+    pub fn mpris_play_pause(&mut self) {
+        if self.stopped_with_queue() {
+            self.play_from_queue(self.now_playing.queue_index);
+        } else {
+            self.toggle_pause();
+        }
+    }
+
+    /// Distinguishes "stopped" from the transient not-yet-active window while a
+    /// stream URL resolves: only a stop or a run-out leaves mpv exhausted, and
+    /// `track` stays None until a fresh queue's very first URL resolves — the
+    /// one window where `mpv_exhausted` is still at its startup value.
+    fn stopped_with_queue(&self) -> bool {
+        self.now_playing.track.is_some()
+            && !self.now_playing.active
+            && self.now_playing.mpv_exhausted
+            && self.now_playing.play_pending.is_none()
+            && !self.now_playing.queue.is_empty()
+    }
+
+    pub fn set_volume_percent(&mut self, pct: u8) {
+        let pct = pct.min(100);
+        let _ = self.player_tx.send(PlayerCmd::SetVolume(pct));
+        self.now_playing.volume = pct;
+        self.push_mpris_state();
+    }
+
+    pub fn set_shuffle(&mut self, on: bool) {
+        if on == self.now_playing.shuffle {
+            return;
+        }
+        // `toggle_shuffle` bails on an empty queue because there is no order to
+        // rewrite, which silently dropped `playerctl shuffle` before anything was
+        // playing — and left a saved shuffle preference impossible to turn off.
+        if self.now_playing.queue.is_empty() {
+            self.now_playing.shuffle = on;
+            self.push_mpris_state();
+            return;
+        }
+        self.toggle_shuffle();
+    }
+
+    pub fn seek_by_us(&mut self, offset_us: i64) {
+        if !self.now_playing.active {
+            return;
+        }
+        let target = self.now_playing.position + offset_us as f64 / 1_000_000.0;
+        if self.now_playing.duration > 0.0 && target >= self.now_playing.duration {
+            // The spec: seeking beyond the end acts like Next, and stops when
+            // there is no next track. `next_track` is a no-op on the last entry,
+            // which left the request doing nothing at all.
+            if self.now_playing.queue_index + 1 < self.now_playing.queue.len() {
+                self.next_track();
+            } else {
+                self.stop_playback();
+            }
+            return;
+        }
+        self.seek_to_secs(target.max(0.0));
+    }
+
+    pub fn set_position_us(&mut self, track_id: u64, position_us: i64) {
+        // Stale-call protection required by the spec: the client's trackid must
+        // still be the current track, and an out-of-range position is ignored.
+        if self.now_playing.track.as_ref().map(|t| t.id) != Some(track_id) {
+            return;
+        }
+        if !self.now_playing.active || position_us < 0 {
+            return;
+        }
+        let target = position_us as f64 / 1_000_000.0;
+        if self.now_playing.duration > 0.0 && target > self.now_playing.duration {
+            return;
+        }
+        self.seek_to_secs(target);
+    }
+
+    fn seek_to_secs(&mut self, secs: f64) {
+        let _ = self.player_tx.send(PlayerCmd::SeekAbsolute(secs));
+        self.now_playing.seek_pending = Some(crate::app::PendingSeek {
+            target_secs: secs,
+            origin_secs: self.now_playing.position,
+            polls_remaining: crate::app::PendingSeek::POLL_BUDGET,
+        });
+        self.now_playing.position = secs;
+        self.now_playing.position_epoch += 1;
+        self.push_mpris_state();
     }
 }
 
@@ -369,35 +507,11 @@ impl App {
 mod tests {
     use super::App;
     use crate::api::ApiRequest;
-    use crate::api::models::{Album, ArtistRef, Track};
+    use crate::api::models::Track;
+    use crate::app::test_support::track;
     use crate::mpris::MprisState;
     use crate::player::{PlayerCmd, PlayerEvent};
     use tokio::sync::mpsc;
-
-    fn track(id: u64) -> Track {
-        Track {
-            id,
-            title: format!("Track {id}"),
-            duration: 180,
-            artist: Some(ArtistRef {
-                name: "Artist".to_string(),
-            }),
-            artists: vec![],
-            album: Album {
-                id: 1,
-                title: "Album".to_string(),
-                number_of_tracks: None,
-                release_date: None,
-                cover: None,
-                artist: None,
-                media_metadata: None,
-                added_at: None,
-                album_type: None,
-            },
-            media_metadata: None,
-            added_at: None,
-        }
-    }
 
     fn make_app() -> App {
         make_app_watching_api().0
@@ -1095,5 +1209,444 @@ mod tests {
         assert_eq!(app.now_playing.queue[0].id, next_id);
         assert_eq!(app.now_playing.queue_index, 0);
         assert_eq!(app.now_playing.queue.len(), 2);
+    }
+
+    // ── MPRIS control ─────────────────────────────────────────────────────────
+
+    /// Keeps the MPRIS watch receiver alive: `watch::Sender::send` does not
+    /// update the channel once every receiver is gone, so asserting on pushed
+    /// state needs one held open.
+    #[allow(clippy::type_complexity)]
+    fn make_app_watching_mpris() -> (
+        App,
+        tokio::sync::watch::Receiver<MprisState>,
+        mpsc::UnboundedReceiver<ApiRequest>,
+        mpsc::UnboundedReceiver<PlayerCmd>,
+    ) {
+        let (api_tx, api_rx) = mpsc::unbounded_channel();
+        let (player_tx, player_rx) = mpsc::unbounded_channel();
+        let (mpris_tx, mpris_rx) = tokio::sync::watch::channel(MprisState::default());
+        let (lastfm_tx, _) = mpsc::unbounded_channel();
+        let app = App::new(
+            api_tx,
+            player_tx,
+            mpris_tx,
+            lastfm_tx,
+            crate::app::Preferences::default(),
+        );
+        (app, mpris_rx, api_rx, player_rx)
+    }
+
+    fn drain<T>(rx: &mut mpsc::UnboundedReceiver<T>) {
+        while rx.try_recv().is_ok() {}
+    }
+
+    #[test]
+    fn stop_reports_stopped_and_play_restarts_the_current_track() {
+        let (mut app, mpris_rx, mut api_rx, mut player_rx) = make_app_watching_mpris();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks((1..=3).map(track).collect(), 1);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        assert!(app.now_playing.active);
+
+        app.stop_playback();
+        assert!(!app.now_playing.active);
+        assert!(app.now_playing.mpv_exhausted);
+        assert!(!mpris_rx.borrow().active, "MPRIS must see Stopped");
+
+        drain(&mut api_rx);
+        app.mpris_play();
+        assert_eq!(resolved_track_ids(&mut api_rx), vec![2]);
+    }
+
+    #[test]
+    fn play_while_merely_paused_does_not_restart_the_track() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks((1..=3).map(track).collect(), 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        app.handle_player_event(PlayerEvent::Paused(true));
+
+        drain(&mut api_rx);
+        drain(&mut player_rx);
+        app.mpris_play();
+
+        assert!(resolved_track_ids(&mut api_rx).is_empty());
+        assert!(matches!(
+            player_rx.try_recv(),
+            Ok(PlayerCmd::SetPaused(false))
+        ));
+    }
+
+    #[test]
+    fn play_during_the_initial_resolve_does_not_double_resolve() {
+        let (mut app, mut api_rx, _player_rx) = make_app_watching_all();
+        app.play_tracks((1..=3).map(track).collect(), 0);
+        drain(&mut api_rx); // the fresh queue's first resolve is in flight
+
+        app.mpris_play();
+
+        assert!(resolved_track_ids(&mut api_rx).is_empty());
+    }
+
+    /// The stopped-state Play has to be idempotent too: a repeated media key, or
+    /// a desktop that sends Play twice, otherwise resolves the same track twice
+    /// and each response restarts it from the beginning.
+    #[test]
+    fn repeated_play_while_stopped_resolves_once() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks((1..=3).map(track).collect(), 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        app.stop_playback();
+        drain(&mut api_rx);
+
+        app.mpris_play();
+        let first = resolved_track_ids(&mut api_rx);
+        app.mpris_play();
+        let second = resolved_track_ids(&mut api_rx);
+
+        assert_eq!(first.len(), 1, "the first Play resolves the stopped track");
+        assert!(second.is_empty(), "the second must wait for that URL");
+    }
+
+    /// A stream URL that never arrives must not wedge Play for good.
+    #[test]
+    fn a_failed_resolve_lets_play_try_again() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks((1..=3).map(track).collect(), 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        app.stop_playback();
+        drain(&mut api_rx);
+
+        app.mpris_play();
+        drain(&mut api_rx);
+        app.handle_api_response(crate::api::ApiResponse::Error(
+            "no stream URL available for track 1".to_string(),
+        ));
+
+        app.mpris_play();
+        assert_eq!(resolved_track_ids(&mut api_rx).len(), 1);
+    }
+
+    /// `toggle_shuffle` bails on an empty queue, which used to swallow the
+    /// setting entirely over D-Bus.
+    #[test]
+    fn shuffle_can_be_set_before_anything_is_playing() {
+        let (mut app, _api_rx, _player_rx) = make_app_watching_all();
+        assert!(app.now_playing.queue.is_empty());
+
+        app.set_shuffle(true);
+        assert!(app.now_playing.shuffle);
+
+        app.set_shuffle(false);
+        assert!(!app.now_playing.shuffle);
+    }
+
+    /// Seeking past the end of the *last* track has nowhere to advance to, and
+    /// used to do nothing at all rather than stopping.
+    #[test]
+    fn seeking_past_the_end_of_the_last_track_stops() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks(vec![track(1)], 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        app.now_playing.duration = 100.0;
+        app.now_playing.position = 99.0;
+
+        app.seek_by_us(60_000_000);
+
+        assert!(!app.now_playing.active, "playback stopped");
+        assert!(app.now_playing.mpv_exhausted);
+    }
+
+    #[test]
+    fn skipping_does_not_flash_stopped_at_mpris_clients() {
+        let (mut app, mpris_rx, mut api_rx, mut player_rx) = make_app_watching_mpris();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks((1..=3).map(track).collect(), 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        assert!(mpris_rx.borrow().active);
+
+        app.next_track();
+
+        // Mid-resolve, the last published state must still be the playing one.
+        assert!(mpris_rx.borrow().active);
+    }
+
+    #[test]
+    fn seek_within_the_track_moves_position_and_mpv() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks(vec![track(1)], 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        app.now_playing.duration = 180.0;
+        app.now_playing.position = 10.0;
+        let epoch = app.now_playing.position_epoch;
+
+        drain(&mut player_rx);
+        app.seek_by_us(30_000_000);
+
+        assert_eq!(app.now_playing.position, 40.0);
+        assert_eq!(app.now_playing.position_epoch, epoch + 1);
+        assert!(matches!(player_rx.try_recv(), Ok(PlayerCmd::SeekAbsolute(s)) if s == 40.0));
+    }
+
+    #[test]
+    fn seek_past_the_end_acts_like_next() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks((1..=2).map(track).collect(), 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        app.now_playing.duration = 180.0;
+        app.now_playing.position = 170.0;
+
+        drain(&mut api_rx);
+        drain(&mut player_rx);
+        app.seek_by_us(30_000_000);
+
+        assert_eq!(app.now_playing.queue_index, 1);
+        assert_eq!(resolved_track_ids(&mut api_rx), vec![2]);
+        assert!(
+            player_rx.try_recv().is_err(),
+            "no seek is sent when advancing"
+        );
+    }
+
+    #[test]
+    fn seek_before_the_start_clamps_to_zero() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks(vec![track(1)], 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        app.now_playing.duration = 180.0;
+        app.now_playing.position = 5.0;
+
+        drain(&mut player_rx);
+        app.seek_by_us(-60_000_000);
+
+        assert_eq!(app.now_playing.position, 0.0);
+        assert!(matches!(player_rx.try_recv(), Ok(PlayerCmd::SeekAbsolute(s)) if s == 0.0));
+    }
+
+    #[test]
+    fn set_position_for_a_stale_track_is_ignored() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks(vec![track(1)], 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        app.now_playing.duration = 180.0;
+
+        drain(&mut player_rx);
+        app.set_position_us(9999, 10_000_000);
+
+        assert!(player_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn stale_position_polls_after_a_seek_are_dropped() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks(vec![track(1)], 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        app.now_playing.duration = 180.0;
+        app.now_playing.position = 100.0;
+
+        app.seek_by_us(-90_000_000);
+        assert_eq!(app.now_playing.position, 10.0);
+
+        app.handle_player_event(PlayerEvent::Position(100.4));
+        assert_eq!(
+            app.now_playing.position, 10.0,
+            "pre-seek poll must be dropped"
+        );
+
+        app.handle_player_event(PlayerEvent::Position(10.5));
+        assert_eq!(app.now_playing.position, 10.5);
+    }
+
+    /// A seek shorter than any fixed tolerance: the stale poll sits close to
+    /// the target, so staleness must be judged relative to the seek's origin,
+    /// not by absolute distance.
+    #[test]
+    fn a_small_seek_does_not_wobble_or_signal_twice() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks(vec![track(1)], 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        app.now_playing.duration = 180.0;
+        app.now_playing.position = 50.0;
+
+        app.seek_by_us(2_000_000);
+        let epoch = app.now_playing.position_epoch;
+        assert_eq!(app.now_playing.position, 52.0);
+
+        app.handle_player_event(PlayerEvent::Position(50.0)); // pre-seek straggler
+        assert_eq!(app.now_playing.position, 52.0, "must not snap back");
+
+        app.handle_player_event(PlayerEvent::Position(52.4)); // the landing
+        assert_eq!(app.now_playing.position, 52.4);
+        assert_eq!(
+            app.now_playing.position_epoch, epoch,
+            "the landing must not fire a second Seeked"
+        );
+    }
+
+    #[test]
+    fn seek_poll_budget_exhaustion_falls_back_to_what_mpv_reports() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks(vec![track(1)], 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        app.now_playing.duration = 180.0;
+        app.now_playing.position = 100.0;
+
+        app.seek_by_us(-90_000_000);
+        let epoch = app.now_playing.position_epoch;
+
+        for _ in 0..3 {
+            app.handle_player_event(PlayerEvent::Position(100.5));
+            assert_eq!(app.now_playing.position, 10.0);
+        }
+        // Budget spent: mpv evidently never landed the seek, so its position
+        // is reality again and the jump back is a signalled discontinuity.
+        app.handle_player_event(PlayerEvent::Position(100.5));
+        assert_eq!(app.now_playing.position, 100.5);
+        assert!(app.now_playing.seek_pending.is_none());
+        assert_eq!(app.now_playing.position_epoch, epoch + 1);
+    }
+
+    #[test]
+    fn set_position_accepts_in_range_and_rejects_out_of_range() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks(vec![track(1)], 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        app.now_playing.duration = 180.0;
+
+        drain(&mut player_rx);
+        app.set_position_us(1, 30_000_000);
+        assert_eq!(app.now_playing.position, 30.0);
+        assert!(matches!(
+            player_rx.try_recv(),
+            Ok(PlayerCmd::SeekAbsolute(s)) if s == 30.0
+        ));
+
+        app.set_position_us(1, -5);
+        app.set_position_us(1, 200_000_000);
+        assert!(player_rx.try_recv().is_err());
+        assert_eq!(app.now_playing.position, 30.0);
+    }
+
+    #[test]
+    fn mpris_volume_reaches_both_state_and_mpv() {
+        let (mut app, _api_rx, mut player_rx) = make_app_watching_all();
+        drain(&mut player_rx);
+
+        app.set_volume_percent(55);
+
+        assert_eq!(app.now_playing.volume, 55);
+        assert!(matches!(player_rx.try_recv(), Ok(PlayerCmd::SetVolume(55))));
+    }
+
+    /// Queue selection fetches art immediately so the HUD and MPRIS update
+    /// before the stream URL returns. That landing must not fetch again.
+    #[test]
+    fn queue_selection_does_not_refetch_presentation_art_when_stream_url_lands() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        let mut first = track(1);
+        first.album.id = 10;
+        first.album.cover = Some("cover-1".into());
+        let mut second = track(2);
+        second.album.id = 20;
+        second.album.cover = Some("cover-2".into());
+        app.play_tracks(vec![first, second], 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+
+        app.art_fullscreen = true;
+        app.play_from_queue(1);
+        drain(&mut player_rx);
+
+        let mut presentation_fetches = 0;
+        while let Ok(req) = api_rx.try_recv() {
+            if matches!(req, ApiRequest::FetchPresentationArt { album_id: 20, .. }) {
+                presentation_fetches += 1;
+            }
+        }
+        assert_eq!(presentation_fetches, 1);
+
+        app.handle_api_response(crate::api::ApiResponse::AlbumArt {
+            album_id: 20,
+            image_data: vec![3, 2, 1],
+        });
+        app.handle_api_response(crate::api::ApiResponse::PresentationArt {
+            album_id: 20,
+            image_data: Some(vec![9, 8, 7]),
+        });
+        assert_eq!(app.now_playing.art_bytes(), Some([3, 2, 1].as_slice()));
+        assert_eq!(
+            app.now_playing.presentation_art_bytes(),
+            Some([9, 8, 7].as_slice())
+        );
+
+        app.handle_api_response(crate::api::ApiResponse::StreamUrl {
+            track_id: 2,
+            url: "url-2".into(),
+            delivered: Default::default(),
+        });
+
+        assert_eq!(app.now_playing.art_bytes(), Some([3, 2, 1].as_slice()));
+        assert_eq!(
+            app.now_playing.presentation_art_bytes(),
+            Some([9, 8, 7].as_slice())
+        );
+        while let Ok(req) = api_rx.try_recv() {
+            assert!(
+                !matches!(req, ApiRequest::FetchPresentationArt { .. }),
+                "StreamUrl must not refetch presentation art for a track the queue already made current"
+            );
+        }
+    }
+
+    /// The reported bug: v2 track details carry the artwork as a URL and leave
+    /// `album.cover` empty, and replacing `now_playing.track` with them made the
+    /// next position tick strip `mpris:artUrl` from the metadata.
+    #[test]
+    fn track_details_without_album_cover_keep_the_mpris_art_url() {
+        let (mut app, mpris_rx, mut api_rx, mut player_rx) = make_app_watching_mpris();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks(vec![track(1)], 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+
+        let art = "https://resources.tidal.com/images/a/b/320x320.jpg";
+        let presentation = "https://resources.tidal.com/images/a/b/640x640.jpg";
+        app.handle_api_response(crate::api::ApiResponse::TrackDetails {
+            track_id: 1,
+            track: track(1), // album.cover is None, as in real v2 details
+            cover_url: Some(art.to_string()),
+        });
+        assert_eq!(app.now_playing.art_source.as_deref(), Some(art));
+        assert_eq!(mpris_rx.borrow().art_url, presentation);
+
+        app.handle_player_event(PlayerEvent::Position(3.0));
+        assert_eq!(
+            mpris_rx.borrow().art_url,
+            presentation,
+            "a position tick must not strip the art URL"
+        );
+    }
+
+    #[test]
+    fn mpris_art_url_uses_the_presentation_size() {
+        let (mut app, mpris_rx, _api_rx, _player_rx) = make_app_watching_mpris();
+        app.now_playing.track = Some(track(1));
+        app.now_playing.art_source = Some("33fd4c9b-5673-4c1e-bbd4-5346d397b8e0".into());
+        app.push_mpris_state();
+        assert_eq!(
+            mpris_rx.borrow().art_url,
+            "https://resources.tidal.com/images/33fd4c9b/5673/4c1e/bbd4/5346d397b8e0/640x640.jpg"
+        );
     }
 }

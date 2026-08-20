@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025 Ryan Cohan
+// Copyright (C) 2025 Fezzik the Giant
 
 use super::{App, View};
 use crate::api::ApiRequest;
@@ -127,7 +127,7 @@ impl App {
 mod tests {
     use super::*;
     use crate::api::models::{Album, ArtistRef, Track};
-    use crate::app::test_app;
+    use crate::app::test_support::test_app;
 
     fn track(cover: Option<&str>) -> Track {
         Track {
@@ -156,36 +156,36 @@ mod tests {
 
     #[test]
     fn presentation_art_fetch_is_idempotent_while_loading() {
-        let (mut app, mut api_rx) = test_app();
-        while api_rx.try_recv().is_ok() {}
-        app.now_playing.track = Some(track(Some("cover-id")));
+        let mut t = test_app();
+        t.drain_api();
+        t.app.now_playing.track = Some(track(Some("cover-id")));
 
-        app.fetch_presentation_art();
-        app.fetch_presentation_art();
+        t.app.fetch_presentation_art();
+        t.app.fetch_presentation_art();
 
-        assert!(app.now_playing.presentation_art_loading());
+        assert!(t.app.now_playing.presentation_art_loading());
         assert!(matches!(
-            api_rx.try_recv(),
+            t.api_rx.try_recv(),
             Ok(ApiRequest::FetchPresentationArt { album_id: 2, cover_id })
                 if cover_id == "cover-id"
         ));
-        assert!(api_rx.try_recv().is_err());
+        assert!(t.api_rx.try_recv().is_err());
     }
 
     #[test]
     fn missing_cover_loads_album_once_and_keeps_loading_visible() {
-        let (mut app, mut api_rx) = test_app();
-        while api_rx.try_recv().is_ok() {}
-        app.now_playing.track = Some(track(None));
+        let mut t = test_app();
+        t.drain_api();
+        t.app.now_playing.track = Some(track(None));
 
-        app.fetch_presentation_art();
-        app.fetch_presentation_art();
+        t.app.fetch_presentation_art();
+        t.app.fetch_presentation_art();
 
-        assert!(app.now_playing.presentation_art_loading());
+        assert!(t.app.now_playing.presentation_art_loading());
         assert!(matches!(
-            api_rx.try_recv(),
+            t.api_rx.try_recv(),
             Ok(ApiRequest::LoadAlbum { album_id: 2 })
         ));
-        assert!(api_rx.try_recv().is_err());
+        assert!(t.api_rx.try_recv().is_err());
     }
 }

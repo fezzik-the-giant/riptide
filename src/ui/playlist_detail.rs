@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025 Ryan Cohan
+// Copyright (C) 2025 Fezzik the Giant
 
 //! Playlist detail view.
 
@@ -52,7 +52,6 @@ pub(super) fn render_playlist_detail(
     }
 
     // ── Playlist metadata (title + description merged) ────────────────────────
-    let n_tracks = detail.playlist.number_of_tracks.unwrap_or(0);
     let focused = detail.focus == PlaylistDetailFocus::Description;
     let meta_area = header_cols[1];
 
@@ -87,13 +86,14 @@ pub(super) fn render_playlist_detail(
         sections[0],
     );
 
-    // Track count
-    f.render_widget(
-        Paragraph::new(format!("{} tracks", n_tracks))
-            .style(Style::default().fg(Color::White))
-            .alignment(Alignment::Center),
-        sections[1],
-    );
+    if let Some(count) = detail.playlist.track_count_label() {
+        f.render_widget(
+            Paragraph::new(count)
+                .style(Style::default().fg(Color::White))
+                .alignment(Alignment::Center),
+            sections[1],
+        );
+    }
 
     // Description with scrolling (if it exists)
     if let Some(desc) = &detail.playlist.description {

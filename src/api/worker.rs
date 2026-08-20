@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025 Ryan Cohan
+// Copyright (C) 2025 Fezzik the Giant
 
 //! The async API worker.
 //!
@@ -54,34 +54,13 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
             Err(e) => ApiResponse::Error(e.to_string()),
         },
 
-        ApiRequest::LoadPlaylists => {
-            match client.get_favorite_playlists().await {
-                Err(e) => ApiResponse::Error(e.to_string()),
-                Ok(fav_page) => {
-                    let mut playlists: Vec<Playlist> = fav_page
-                        .items
-                        .into_iter()
-                        .map(|entry| {
-                            let mut pl = entry.playlist;
-                            pl.added_at = entry.created;
-                            pl
-                        })
-                        .collect();
-
-                    // v2 collection — covers playlists saved via the Tidal web/mobile apps.
-                    if let Ok(coll) = client.get_user_collection_playlists().await {
-                        for pl in coll {
-                            if !playlists.iter().any(|p| p.uuid == pl.uuid) {
-                                playlists.push(pl);
-                            }
-                        }
-                    }
-
-                    let total = playlists.len() as u32;
-                    ApiResponse::Playlists(playlists, total)
-                }
+        ApiRequest::LoadPlaylists => match client.get_user_collection_playlists().await {
+            Ok(playlists) => {
+                let total = playlists.len() as u32;
+                ApiResponse::Playlists(playlists, total)
             }
-        }
+            Err(e) => ApiResponse::Error(e.to_string()),
+        },
 
         ApiRequest::LoadFavAlbums { next_url } => {
             match client.get_favorite_albums(next_url).await {
@@ -175,7 +154,7 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
         },
 
         ApiRequest::FetchAlbumArt { album_id, cover_id } => {
-            let url = thumbnail_art_url(&cover_id);
+            let url = cover_art_url(&cover_id);
             match client.fetch_bytes(&url).await {
                 Ok(data) => ApiResponse::AlbumArt {
                     album_id,
@@ -211,7 +190,7 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
             artist_id,
             picture_id,
         } => {
-            let url = thumbnail_art_url(&picture_id);
+            let url = cover_art_url(&picture_id);
             tracing::debug!("FetchArtistArt for artist {}: {}", artist_id, url);
             match client.fetch_bytes(&url).await {
                 Ok(data) => {
@@ -461,39 +440,6 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
     }
 }
 
-const TIDAL_IMAGE_CDN_PREFIX: &str = "https://resources.tidal.com/images/";
-
-fn thumbnail_art_url(cover: &str) -> String {
-    if cover.starts_with("http") {
-        cover.to_string()
-    } else {
-        tidal_art_url(cover, "320x320.jpg")
-    }
-}
-
-fn presentation_art_url(cover: &str) -> String {
-    const SIZE: &str = "640x640.jpg";
-
-    // The API can return either a bare image id or an already-expanded Tidal
-    // CDN URL. Upgrade only Tidal URLs; custom artwork URLs stay untouched.
-    if let Some(path) = cover.strip_prefix(TIDAL_IMAGE_CDN_PREFIX)
-        && let Some((image_id, _)) = path.rsplit_once('/')
-    {
-        return format!("{TIDAL_IMAGE_CDN_PREFIX}{image_id}/{SIZE}");
-    }
-    if cover.starts_with("http") {
-        return cover.to_string();
-    }
-    tidal_art_url(cover, SIZE)
-}
-
-fn tidal_art_url(image_id: &str, size: &str) -> String {
-    format!(
-        "{TIDAL_IMAGE_CDN_PREFIX}{}/{size}",
-        image_id.replace('-', "/")
-    )
-}
-
 fn parse_lrc(s: &str) -> Vec<(f64, String)> {
     let mut lines = Vec::new();
     for raw in s.lines() {
@@ -544,39 +490,6 @@ fn strip_wimplinks(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn presentation_art_uses_tidal_medium_resolution_variant() {
-        assert_eq!(
-            presentation_art_url("33fd4c9b-5673-4c1e-bbd4-5346d397b8e0"),
-            "https://resources.tidal.com/images/33fd4c9b/5673/4c1e/bbd4/5346d397b8e0/640x640.jpg"
-        );
-        assert_eq!(
-            presentation_art_url(
-                "https://resources.tidal.com/images/33fd4c9b/5673/4c1e/bbd4/5346d397b8e0/320x320.jpg"
-            ),
-            "https://resources.tidal.com/images/33fd4c9b/5673/4c1e/bbd4/5346d397b8e0/640x640.jpg"
-        );
-    }
-
-    #[test]
-    fn normal_album_art_remains_thumbnail_sized() {
-        assert_eq!(
-            thumbnail_art_url("33fd4c9b-5673-4c1e-bbd4-5346d397b8e0"),
-            "https://resources.tidal.com/images/33fd4c9b/5673/4c1e/bbd4/5346d397b8e0/320x320.jpg"
-        );
-        let existing =
-            "https://resources.tidal.com/images/33fd4c9b/5673/4c1e/bbd4/5346d397b8e0/320x320.jpg";
-        assert_eq!(thumbnail_art_url(existing), existing);
-    }
-
-    #[test]
-    fn presentation_art_preserves_non_tidal_urls() {
-        assert_eq!(
-            presentation_art_url("https://example.com/custom-cover.png"),
-            "https://example.com/custom-cover.png"
-        );
-    }
 
     // ── parse_lrc ─────────────────────────────────────────────────────────────
 

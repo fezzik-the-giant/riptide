@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025 Ryan Cohan
+// Copyright (C) 2025 Fezzik the Giant
 
 use super::{App, StatusLevel, View};
 use crate::api::models::*;
@@ -48,11 +48,13 @@ impl App {
 
             ApiResponse::PlaylistRemoved { uuid } => {
                 self.playlists.remove_where(|p| p.uuid != uuid);
+                self.favorite_playlist_ids.remove(&uuid);
             }
 
             ApiResponse::Playlists(items, total) => {
                 self.playlists.append(items, total);
                 self.sort_playlists();
+                self.rebuild_favorite_playlist_ids();
             }
 
             ApiResponse::Favorites(items, _total) => {
@@ -177,8 +179,7 @@ impl App {
                 }
 
                 // Also handle when album is loaded for now_playing track (from fetch_now_playing_art)
-                let is_now_playing = self.now_playing.is_current_album(album_id);
-                if is_now_playing {
+                if self.now_playing.is_current_album(album_id) {
                     if let Some(cover_url) = cover {
                         if self.now_playing.presentation_art_discovering_cover() {
                             self.now_playing.finish_presentation_art_load();
@@ -192,6 +193,7 @@ impl App {
                         if self.art_fullscreen {
                             self.fetch_presentation_art();
                         }
+                        self.push_mpris_state();
                     } else if self.now_playing.art_source.is_none() {
                         self.now_playing.art_loading = false;
                         self.now_playing.finish_presentation_art_load();
@@ -290,9 +292,15 @@ impl App {
             ApiResponse::PlaylistArt { uuid, image_data } => {
                 if let Some(View::PlaylistDetail(detail)) = self.view_stack.last_mut() {
                     if detail.playlist.uuid == uuid {
-                        detail.art_bytes = Some(image_data);
+                        detail.art_bytes = Some(image_data.clone());
                         detail.art_loading = false;
                     }
+                }
+                // Every playlist cover comes through here; only the mixes Home
+                // can show are worth keeping, or the cache grows with each
+                // playlist opened.
+                if self.is_home_mix(&uuid) {
+                    self.home_art.store(uuid, image_data);
                 }
             }
 
@@ -556,6 +564,7 @@ impl App {
                 if self.now_playing.queue.get(idx).map(|t| t.id) == Some(track_id)
                     && !already_playing
                 {
+                    self.now_playing.play_pending = None;
                     // Always update the track when we get a successful stream URL for the current track
                     let track_changed =
                         self.now_playing.track.as_ref().map(|t| t.id) != Some(track_id);
@@ -568,11 +577,13 @@ impl App {
                         self.now_playing.lyrics_synced.clear();
                         self.now_playing.lyrics_plain.clear();
                         self.now_playing.lyrics_loading = true;
+                        // Paths that already made this track current — `play_from_queue`,
+                        // removing the playing row — fetched metadata then. Doing it
+                        // again here would wipe presentation art that has already landed.
+                        self.fetch_now_playing_metadata();
                     }
 
-                    // Fetch track details, art, and lyrics now that playback is confirmed
                     let _ = self.api_tx.send(ApiRequest::GetTrackDetails { track_id });
-                    self.fetch_now_playing_metadata();
                     self.push_mpris_state();
 
                     // `loadfile replace` wipes mpv's playlist and always loads media,
@@ -642,6 +653,10 @@ impl App {
                             );
                         }
                     }
+                    // The replacement track may correct title, album, or art;
+                    // push now instead of letting the next 500 ms position tick
+                    // deliver it.
+                    self.push_mpris_state();
                 }
             }
 
@@ -701,20 +716,26 @@ impl App {
             ApiResponse::NewReleases(items) => {
                 self.home_new_releases.items = items;
                 self.home_new_releases.loading = false;
+                self.sync_home_art();
             }
 
             ApiResponse::DailyMixes(items) => {
                 self.home_daily_mixes.items = items;
                 self.home_daily_mixes.loading = false;
+                self.sync_home_art();
             }
 
             ApiResponse::DiscoveryMixes(items) => {
                 self.home_discovery_mixes.items = items;
                 self.home_discovery_mixes.loading = false;
+                self.sync_home_art();
             }
 
             ApiResponse::Error(msg) => {
                 let display_msg = if msg.contains("no stream URL available for track") {
+                    // The URL a Play was waiting on is never coming; leaving it
+                    // pending would make Play a no-op from then on.
+                    self.now_playing.play_pending = None;
                     // Try to enhance the error message with track name
                     if let Some(track_id_str) = msg.split("track ").last() {
                         if let Ok(track_id) = track_id_str.parse::<u64>() {
@@ -761,6 +782,8 @@ impl App {
                 self.now_playing.duration = 0.0;
                 self.now_playing.active = true;
                 self.now_playing.paused = false;
+                self.now_playing.seek_pending = None;
+                self.now_playing.play_pending = None;
                 self.now_playing.sample_rate = None;
                 self.now_playing.codec = None;
                 self.now_playing.lastfm_sent = false;
@@ -824,17 +847,36 @@ impl App {
                     self.now_playing.active = false;
                     self.now_playing.next_prefetched = None;
                     self.now_playing.mpv_exhausted = true;
-                    self.push_mpris_state();
                 }
                 self.now_playing.position = 0.0;
+                self.push_mpris_state();
             }
             PlayerEvent::Position(p) => {
                 if !self.now_playing.active {
                     return;
                 }
-                // Only accept position updates that move forward (with 10ms tolerance for jitter).
-                // This prevents the audio widget from showing position going backward.
-                if p >= self.now_playing.position - 0.01 {
+                if let Some(pending) = &mut self.now_playing.seek_pending {
+                    let stale = (p - pending.origin_secs).abs() < (p - pending.target_secs).abs();
+                    if stale && pending.polls_remaining > 0 {
+                        pending.polls_remaining -= 1;
+                        return;
+                    }
+                    self.now_playing.seek_pending = None;
+                    if !stale {
+                        self.now_playing.position = p;
+                        self.push_mpris_state();
+                        return;
+                    }
+                }
+                let delta = p - self.now_playing.position;
+                // Sub-poll backward jitter is dropped so the progress bar never
+                // wobbles, but a jump of more than a second either way is a real
+                // seek (e.g. through mpv's IPC socket) and must be taken — and
+                // signalled, which is what the epoch bump does.
+                if delta >= -0.01 || delta < -1.0 {
+                    if delta.abs() > 1.0 {
+                        self.now_playing.position_epoch += 1;
+                    }
                     self.now_playing.position = p;
                     self.push_mpris_state();
                 }
@@ -895,7 +937,12 @@ impl App {
             PlayerEvent::Error(e) => {
                 self.set_status(format!("Player: {e}"), StatusLevel::Error);
             }
-            PlayerEvent::CurrVolume(v) => self.now_playing.volume = v,
+            PlayerEvent::CurrVolume(v) => {
+                if self.now_playing.volume != v {
+                    self.now_playing.volume = v;
+                    self.push_mpris_state();
+                }
+            }
         }
     }
 }
@@ -903,7 +950,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::test_app;
+    use crate::app::test_support::test_app;
 
     fn track(album_id: u64) -> Track {
         Track {
@@ -930,78 +977,79 @@ mod tests {
 
     #[test]
     fn stale_presentation_art_does_not_replace_the_current_request() {
-        let mut app = test_app().0;
-        app.now_playing.track = Some(track(2));
-        app.now_playing.begin_presentation_art_fetch();
+        let mut t = test_app();
+        t.app.now_playing.track = Some(track(2));
+        t.app.now_playing.begin_presentation_art_fetch();
 
-        app.handle_api_response(ApiResponse::PresentationArt {
+        t.app.handle_api_response(ApiResponse::PresentationArt {
             album_id: 99,
             image_data: Some(vec![9, 9, 9]),
         });
 
-        assert!(app.now_playing.presentation_art_loading());
-        assert!(app.now_playing.presentation_art_bytes().is_none());
+        assert!(t.app.now_playing.presentation_art_loading());
+        assert!(t.app.now_playing.presentation_art_bytes().is_none());
 
-        app.handle_api_response(ApiResponse::PresentationArt {
+        t.app.handle_api_response(ApiResponse::PresentationArt {
             album_id: 2,
             image_data: Some(vec![1, 2, 3]),
         });
-        assert!(!app.now_playing.presentation_art_loading());
+        assert!(!t.app.now_playing.presentation_art_loading());
         assert_eq!(
-            app.now_playing.presentation_art_bytes(),
+            t.app.now_playing.presentation_art_bytes(),
             Some([1, 2, 3].as_slice())
         );
     }
 
     #[test]
     fn album_without_a_cover_finishes_art_loading() {
-        let mut app = test_app().0;
-        app.now_playing.track = Some(track(2));
-        app.now_playing.art_loading = true;
-        app.now_playing.begin_presentation_art_discovery();
+        let mut t = test_app();
+        t.app.now_playing.track = Some(track(2));
+        t.app.now_playing.art_loading = true;
+        t.app.now_playing.begin_presentation_art_discovery();
 
-        app.handle_api_response(ApiResponse::AlbumLoaded {
+        t.app.handle_api_response(ApiResponse::AlbumLoaded {
             album: track(2).album,
         });
 
-        assert!(!app.now_playing.art_loading);
-        assert!(!app.now_playing.presentation_art_loading());
+        assert!(!t.app.now_playing.art_loading);
+        assert!(!t.app.now_playing.presentation_art_loading());
     }
 
     #[test]
     fn unrelated_album_refresh_does_not_cancel_a_known_art_request() {
-        let mut app = test_app().0;
-        app.now_playing.track = Some(track(2));
-        app.now_playing.art_source = Some("cover-id".to_string());
-        app.now_playing.begin_presentation_art_fetch();
+        let mut t = test_app();
+        t.app.now_playing.track = Some(track(2));
+        t.app.now_playing.art_source = Some("cover-id".to_string());
+        t.app.now_playing.begin_presentation_art_fetch();
 
-        app.handle_api_response(ApiResponse::AlbumLoaded {
+        t.app.handle_api_response(ApiResponse::AlbumLoaded {
             album: track(2).album,
         });
 
-        assert!(app.now_playing.presentation_art_loading());
+        assert!(t.app.now_playing.presentation_art_loading());
     }
 
     #[test]
     fn discovered_cover_starts_the_presentation_fetch() {
-        let (mut app, mut api_rx) = test_app();
-        while api_rx.try_recv().is_ok() {}
-        app.now_playing.track = Some(track(2));
-        app.now_playing.begin_presentation_art_discovery();
-        app.art_fullscreen = true;
+        let mut t = test_app();
+        t.drain_api();
+        t.app.now_playing.track = Some(track(2));
+        t.app.now_playing.begin_presentation_art_discovery();
+        t.app.art_fullscreen = true;
         let mut album = track(2).album;
         album.cover = Some("cover-id".to_string());
 
-        app.handle_api_response(ApiResponse::AlbumLoaded { album });
+        t.app
+            .handle_api_response(ApiResponse::AlbumLoaded { album });
 
-        assert!(app.now_playing.presentation_art_loading());
+        assert!(t.app.now_playing.presentation_art_loading());
         assert!(matches!(
-            api_rx.try_recv(),
+            t.api_rx.try_recv(),
             Ok(ApiRequest::FetchAlbumArt { album_id: 2, cover_id })
                 if cover_id == "cover-id"
         ));
         assert!(matches!(
-            api_rx.try_recv(),
+            t.api_rx.try_recv(),
             Ok(ApiRequest::FetchPresentationArt { album_id: 2, cover_id })
                 if cover_id == "cover-id"
         ));
@@ -1009,36 +1057,36 @@ mod tests {
 
     #[test]
     fn album_lookup_failure_finishes_discovery() {
-        let mut app = test_app().0;
-        app.now_playing.track = Some(track(2));
-        app.now_playing.art_loading = true;
-        app.now_playing.begin_presentation_art_discovery();
+        let mut t = test_app();
+        t.app.now_playing.track = Some(track(2));
+        t.app.now_playing.art_loading = true;
+        t.app.now_playing.begin_presentation_art_discovery();
 
-        app.handle_api_response(ApiResponse::AlbumLoadFailed {
+        t.app.handle_api_response(ApiResponse::AlbumLoadFailed {
             album_id: 2,
             error: "offline".to_string(),
         });
 
-        assert!(!app.now_playing.art_loading);
-        assert!(!app.now_playing.presentation_art_loading());
+        assert!(!t.app.now_playing.art_loading);
+        assert!(!t.app.now_playing.presentation_art_loading());
         assert!(matches!(
-            &app.status,
+            &t.app.status,
             Some((message, StatusLevel::Error, _)) if message == "album: offline"
         ));
     }
 
     #[test]
     fn unavailable_presentation_art_finishes_loading() {
-        let mut app = test_app().0;
-        app.now_playing.track = Some(track(2));
-        app.now_playing.begin_presentation_art_fetch();
+        let mut t = test_app();
+        t.app.now_playing.track = Some(track(2));
+        t.app.now_playing.begin_presentation_art_fetch();
 
-        app.handle_api_response(ApiResponse::PresentationArt {
+        t.app.handle_api_response(ApiResponse::PresentationArt {
             album_id: 2,
             image_data: None,
         });
 
-        assert!(!app.now_playing.presentation_art_loading());
-        assert!(app.now_playing.presentation_art_bytes().is_none());
+        assert!(!t.app.now_playing.presentation_art_loading());
+        assert!(t.app.now_playing.presentation_art_bytes().is_none());
     }
 }

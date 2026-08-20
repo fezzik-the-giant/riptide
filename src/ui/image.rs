@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025 Ryan Cohan
+// Copyright (C) 2025 Fezzik the Giant
 
 //! Terminal image rendering.
 //!
@@ -116,6 +116,35 @@ fn should_release_scaled_protocol(previous: ImageFrameState, next: ImageFrameSta
     // the virtual placement makes the terminal paint those cells again.
     (previous.fullscreen_art && !next.fullscreen_art)
         || (next.fullscreen_art && previous.overlay_active && !next.overlay_active)
+}
+
+/// The terminal's cell size in pixels, queried once at startup.
+///
+/// Needed to frame an image snugly: `Resize::Fit` preserves the source's aspect
+/// ratio, so a box laid out on a guessed cell ratio leaves the border floating
+/// clear of the picture on any font that is not exactly twice as tall as wide.
+pub(super) fn cell_size() -> (u16, u16) {
+    let size = get_picker().font_size();
+    (size.width.max(1), size.height.max(1))
+}
+
+/// How many whole cells `bytes` covers at its natural size.
+///
+/// `Resize::Fit` only ever scales an image *down* — an image smaller than its
+/// area renders at native size and leaves the rest blank. So a frame drawn
+/// around one has to be capped at this, or the border floats clear of the
+/// picture. Reads the header only, not the pixels.
+pub(super) fn image_cells(bytes: &[u8]) -> Option<(u16, u16)> {
+    let (w, h) = image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .ok()?
+        .into_dimensions()
+        .ok()?;
+    let (cell_w, cell_h) = cell_size();
+    Some((
+        (w / cell_w as u32).max(1) as u16,
+        (h / cell_h as u32).max(1) as u16,
+    ))
 }
 
 pub(super) fn render_image(f: &mut Frame, bytes: &[u8], area: Rect) -> bool {

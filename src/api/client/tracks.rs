@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025 Ryan Cohan
+// Copyright (C) 2025 Fezzik the Giant
 
 //! Track detail, lyrics, and the favourite-tracks collection.
 
@@ -80,8 +80,8 @@ fn parse_v2_user_collection_tracks(
                                 .unwrap_or("PT0S"),
                         );
 
-                        let artist_name = extract_artist_from_track(track_obj, &artist_map);
-                        if artist_name == "Unknown" {
+                        let artists = extract_artists_from_track(track_obj, &artist_map);
+                        if artists.is_empty() {
                             unresolved_artists += 1;
                         }
 
@@ -99,13 +99,7 @@ fn parse_v2_user_collection_tracks(
                             number_of_tracks: None,
                             release_date: None,
                             cover: None,
-                            artist: if artist_name == "Unknown" {
-                                None
-                            } else {
-                                Some(ArtistRef {
-                                    name: artist_name.clone(),
-                                })
-                            },
+                            artist: artists.first().cloned(),
                             media_metadata: None,
                             added_at: None,
                             album_type: None,
@@ -115,14 +109,8 @@ fn parse_v2_user_collection_tracks(
                             id,
                             title: title.to_string(),
                             duration,
-                            artist: if artist_name == "Unknown" {
-                                None
-                            } else {
-                                Some(ArtistRef {
-                                    name: artist_name.clone(),
-                                })
-                            },
-                            artists: Vec::new(),
+                            artist: artists.first().cloned(),
+                            artists,
                             album,
                             media_metadata: extract_media_metadata(attrs),
                             added_at: added_at_map.get(&track_id).cloned(),
@@ -493,10 +481,24 @@ mod tests {
             "included": [
                 { "id": "178390467", "type": "tracks", "attributes": {
                     "title": "Lanterns", "duration": "PT3M58S",
-                    "mediaTags": ["HIRES_LOSSLESS", "LOSSLESS"] } },
+                    "mediaTags": ["HIRES_LOSSLESS", "LOSSLESS"] },
+                  "relationships": { "artists": { "data": [
+                      { "id": "3652937", "type": "artists" },
+                      { "id": "4761052", "type": "artists" },
+                      { "id": "9999999", "type": "artists" }
+                  ] } } },
                 { "id": "77712754", "type": "tracks", "attributes": {
                     "title": "Hail to the King", "duration": "PT5M04S",
-                    "mediaTags": ["LOSSLESS"] } }
+                    "mediaTags": ["LOSSLESS"] },
+                  "relationships": { "artists": { "data": [
+                      { "id": "19368", "type": "artists" }
+                  ] } } },
+                { "id": "3652937", "type": "artists",
+                  "attributes": { "name": "Bring Me The Horizon" } },
+                { "id": "4761052", "type": "artists",
+                  "attributes": { "name": "BABYMETAL" } },
+                { "id": "19368", "type": "artists",
+                  "attributes": { "name": "Avenged Sevenfold" } }
             ]
         })
     }
@@ -507,6 +509,20 @@ mod tests {
         assert_eq!(tracks.len(), 2);
         assert_eq!(tracks[0].quality_badge(), Some("MAX"));
         assert_eq!(tracks[1].quality_badge(), Some("HI-FI"));
+    }
+
+    /// A track's `artists` relationship routinely lists more than one, and the
+    /// UI shows every credit. Id 9999999 is deliberately absent from `included`.
+    #[test]
+    fn every_credited_artist_is_parsed() {
+        let (tracks, _, _) = parse_v2_user_collection_tracks(&collection_page()).unwrap();
+
+        assert_eq!(
+            tracks[0].all_artist_names(),
+            "Bring Me The Horizon, BABYMETAL"
+        );
+        assert_eq!(tracks[0].artist_name(), "Bring Me The Horizon");
+        assert_eq!(tracks[1].all_artist_names(), "Avenged Sevenfold");
     }
 
     #[test]

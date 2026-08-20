@@ -15,6 +15,7 @@
 - [Configuration](#configuration)
 - [Last.fm Scrobbling](#lastfm-scrobbling)
 - [Keybindings](#keybindings)
+- [MPRIS](#mpris)
 - [Image Rendering](#image-rendering)
 - [Logging](#logging)
 - [License](#license)
@@ -38,6 +39,8 @@ A terminal UI music player for Tidal, built with Rust.
 - Sort any library list by name, artist, or date added — your choice is remembered between sessions and shown in the
   list header
 - Volume, shuffle, and queue visibility persist across restarts
+- MPRIS support — media keys, `playerctl`, and desktop widgets see track metadata and album art and can control
+  playback, volume, seeking, and shuffle
 
 ## Requirements
 
@@ -415,35 +418,40 @@ It stays applied when you switch tabs, and `Esc` clears it from anywhere on the 
 
 ### Navigation
 
-| Key     | Action                           |
-|---------|----------------------------------|
-| `↑`     | Up                               |
-| `↓`     | Down                             |
-| `Enter` | Select/Open                      |
-| `a`     | Add to queue                     |
-| `f`     | Favorite/follow/save             |
-| `d`     | Remove from library              |
-| `u`     | Undo the last removal            |
-| `g`     | Go to artist                     |
-| `s`     | Sort (opens on the current sort) |
-| `r`     | Start radio                      |
-| `c`     | Copy share link (song)           |
-| `C`     | Copy share link (album/playlist) |
-| `→`     | Focus queue                      |
+| Key        | Action                           |
+|------------|----------------------------------|
+| `↑` or `k` | Up                               |
+| `↓` or `j` | Down                             |
+| `←` or `h` | Previous pane/section            |
+| `→` or `l` | Next pane/section, then queue    |
+| `Enter`    | Select/Open                      |
+| `a`        | Add to queue                     |
+| `f`        | Favorite/follow/save             |
+| `d`        | Remove from library              |
+| `u`        | Undo the last removal            |
+| `g`        | Go to artist                     |
+| `s`        | Sort (opens on the current sort) |
+| `r`        | Start radio                      |
+| `c`        | Copy share link (song)           |
+| `C`        | Copy share link (album/playlist) |
+
+The vim directions work anywhere a list does, including the queue, the detail
+views and the help modal — but not while a text box is open, where they are
+just letters.
 
 ### Queue
 
-| Key     | Action                  |
-|---------|-------------------------|
-| `↑`     | Up                      |
-| `↓`     | Down                    |
-| `d`     | Remove track            |
-| `c`     | Copy share link (song)  |
-| `C`     | Copy share link (album) |
-| `g`     | Go to artist            |
-| `Enter` | Play track              |
-| `t`     | Show/hide queue         |
-| `Esc`   | Unfocus queue           |
+| Key                 | Action                  |
+|---------------------|-------------------------|
+| `↑` or `k`          | Up                      |
+| `↓` or `j`          | Down                    |
+| `d`                 | Remove track            |
+| `c`                 | Copy share link (song)  |
+| `C`                 | Copy share link (album) |
+| `g`                 | Go to artist            |
+| `Enter`             | Play track              |
+| `t`                 | Show/hide queue         |
+| `Esc`, `←` or `h`   | Unfocus queue           |
 
 Hiding the queue with `t` also releases focus, and `→` won't focus it again while it's hidden.
 
@@ -454,18 +462,18 @@ Jump to the Search tab with `Tab`, or via the command palette.
 The search box opens automatically when there are no results yet. Once you have results the tab shows them instead, so
 you can leave and come back without losing them — press `/` to start a new search.
 
-| Key     | Action                                 |
-|---------|----------------------------------------|
-| `/`     | Open the search box                    |
-| `↑`     | Up                                     |
-| `↓`     | Down                                   |
-| `← →`   | Switch pane (Tracks/Artists/Playlists) |
-| `Enter` | Run the search, or open a result       |
-| `Esc`   | Close the search box                   |
+| Key              | Action                                 |
+|------------------|----------------------------------------|
+| `/`              | Open the search box                    |
+| `↑` or `k`       | Up                                     |
+| `↓` or `j`       | Down                                   |
+| `← →` or `h l`   | Switch pane (Tracks/Artists/Playlists) |
+| `Enter`          | Run the search, or open a result       |
+| `Esc`            | Close the search box                   |
 
 `Tab` and `Shift+Tab` change tabs as usual, even with the search box open.
 
-Note that `/` opens the search box on the Search tab, and the command palette everywhere else.
+Note that `/` opens the search box on the Search tab, and the list filter everywhere else.
 
 ### Command Palette
 
@@ -481,9 +489,28 @@ Open with `/` (on any tab except Search) and type the start of a destination (Ta
 
 ### Fullscreen Art
 
-Press `Shift+A` from any tab or detail view to show the current album cover nearly fullscreen. The underlying view stays untouched, so pressing `Shift+A` again, `Esc`, `Tab`, or `Shift+Tab` returns exactly where you were. A compact playback HUD retains track details, progress, time, and volume; global playback controls and `/` remain available. The same mode can be opened from the command palette with `art`.
+Press `Shift+A` from any tab or detail view to show the current album cover nearly fullscreen. The underlying view stays untouched, so pressing `Shift+A` again, `Esc`, `Tab`, or `Shift+Tab` returns exactly where you were. A compact playback HUD retains track details, progress, time, and volume; global playback controls and the command palette (`:`) remain available. `/` does not open the list filter while fullscreen art is showing, because that overlay is hidden there. The same mode can be opened from the command palette with `art`.
 
 Fullscreen Art requests Tidal's 640px cover on demand and caps the rendered surface at a 640px edge to bound terminal-protocol memory; normal thumbnails remain 320px.
+
+## MPRIS
+
+Riptide serves the [MPRIS D-Bus interface](https://specifications.freedesktop.org/mpris-spec/latest/) as
+`org.mpris.MediaPlayer2.riptide`, so media keys, desktop environment widgets, and tools like
+[playerctl](https://github.com/altdesktop/playerctl) work out of the box:
+
+```bash
+playerctl -p riptide play-pause
+playerctl -p riptide next
+playerctl -p riptide position 30          # seek to 0:30
+playerctl -p riptide volume 0.5           # 50%
+playerctl -p riptide shuffle On
+playerctl -p riptide metadata mpris:artUrl
+```
+
+Track metadata (title, all artists, album, cover art URL, duration), playback status, position, volume, and shuffle
+are all live, and changes are signalled to clients only when something actually changed. If a second riptide instance
+is started it serves under `org.mpris.MediaPlayer2.riptide.instance<pid>` instead of taking the name over.
 
 ## Image Rendering
 

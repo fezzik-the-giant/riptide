@@ -18,7 +18,7 @@ cd "$(dirname "$0")/.."
 
 SPEC=riptide.spec
 CHANGELOG=CHANGELOG.md
-PACKAGER="${SPEC_PACKAGER:-Ryan Cohan <noreply@github.com>}"
+PACKAGER="${SPEC_PACKAGER:-Fezzik the Giant <noreply@github.com>}"
 
 version=$(sed -n '0,/^version = /s/^version = "\(.*\)"/\1/p' Cargo.toml)
 if [ -z "$version" ]; then
