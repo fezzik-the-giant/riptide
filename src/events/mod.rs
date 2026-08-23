@@ -45,24 +45,47 @@ pub fn spawn_signal_watcher(shutdown: Arc<AtomicBool>) -> std::thread::JoinHandl
             .build()
             .expect("tokio runtime");
         rt.block_on(async {
-            // The store must only follow a real signal. On non-Unix the unix
-            // wait compiles out, so without a replacement the flag would rise
-            // immediately and quit the app on its first tick.
+            // The flag must only rise after a real signal.
             #[cfg(unix)]
             {
                 use tokio::signal::unix::{SignalKind, signal};
-                let mut term = signal(SignalKind::terminate()).expect("SIGTERM handler");
-                let mut hup = signal(SignalKind::hangup()).expect("SIGHUP handler");
-                let mut int = signal(SignalKind::interrupt()).expect("SIGINT handler");
+                // All three must register or none are used: a partial set
+                // leaves tokio's process-wide handler installed with no
+                // receiver alive, silently swallowing that signal.
+                let (mut term, mut hup, mut int) = match (
+                    signal(SignalKind::terminate()),
+                    signal(SignalKind::hangup()),
+                    signal(SignalKind::interrupt()),
+                ) {
+                    (Ok(t), Ok(h), Ok(i)) => (t, h, i),
+                    (_, _, Err(e)) | (Ok(_), Err(e), _) | (Err(e), _, _) => {
+                        tracing::warn!(
+                            "signal handlers unavailable ({e}); quitting without graceful shutdown"
+                        );
+                        return;
+                    }
+                };
                 tokio::select! {
                     _ = term.recv() => {}
                     _ = hup.recv() => {}
                     _ = int.recv() => {}
                 }
+                shutdown.store(true, Ordering::Relaxed);
+                // Tokio's handler stays installed for the process's lifetime,
+                // so an unhandled repeat would be swallowed and could no longer
+                // force past a stalled save or worker join.
+                while int.recv().await.is_some() {
+                    tracing::warn!("repeated signal during shutdown; exiting immediately");
+                    std::process::exit(143);
+                }
             }
             #[cfg(not(unix))]
-            tokio::signal::ctrl_c().await.ok();
-            shutdown.store(true, Ordering::Relaxed);
+            match tokio::signal::ctrl_c().await {
+                Ok(()) => shutdown.store(true, Ordering::Relaxed),
+                Err(e) => tracing::warn!(
+                    "ctrl-c handler unavailable ({e}); quitting without graceful shutdown"
+                ),
+            }
         });
     })
 }
