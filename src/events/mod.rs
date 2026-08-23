@@ -33,15 +33,21 @@ use overlays::*;
 use queue::*;
 use search::*;
 
-/// Watches for SIGINT, SIGTERM and SIGHUP and reports them through the flag.
-///
-/// Closing the terminal window used to kill the process outright, losing the
-/// session's preference changes (sorts, volume, queue visibility) because those
-/// are only written on a clean exit.
+// Watches for SIGINT, SIGTERM and SIGHUP and reports them through the flag.
+// Closing the terminal window used to kill the process outright, losing the
+// session's preference changes (sorts, volume, queue visibility) because those
+// are only written on a clean exit.
 pub fn spawn_signal_watcher(shutdown: Arc<AtomicBool>) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
-        let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+        // A single-signal wait needs no worker pool; current_thread suffices.
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("tokio runtime");
         rt.block_on(async {
+            // The store must only follow a real signal. On non-Unix the unix
+            // wait compiles out, so without a replacement the flag would rise
+            // immediately and quit the app on its first tick.
             #[cfg(unix)]
             {
                 use tokio::signal::unix::{SignalKind, signal};
@@ -54,6 +60,8 @@ pub fn spawn_signal_watcher(shutdown: Arc<AtomicBool>) -> std::thread::JoinHandl
                     _ = int.recv() => {}
                 }
             }
+            #[cfg(not(unix))]
+            tokio::signal::ctrl_c().await.ok();
             shutdown.store(true, Ordering::Relaxed);
         });
     })

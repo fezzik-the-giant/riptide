@@ -177,10 +177,17 @@ fn main() -> Result<()> {
 
     // Restore terminal unconditionally. Best-effort rather than `?`: after a
     // SIGHUP the tty is gone and these would fail, which must not skip the
-    // preference save below.
-    let _ = disable_raw_mode();
-    let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
-    let _ = terminal.show_cursor();
+    // preference save below. A failure there is expected; any other one gets a
+    // debug line so a wedged terminal can be told apart from a dead tty.
+    if let Err(e) = disable_raw_mode() {
+        tracing::debug!("restore: disable_raw_mode failed: {e}");
+    }
+    if let Err(e) = execute!(terminal.backend_mut(), LeaveAlternateScreen) {
+        tracing::debug!("restore: leave alternate screen failed: {e}");
+    }
+    if let Err(e) = terminal.show_cursor() {
+        tracing::debug!("restore: show cursor failed: {e}");
+    }
 
     // Persist UI choices on the way out — one write, rather than rewriting a
     // file containing OAuth tokens on every volume keypress. A crash loses the
