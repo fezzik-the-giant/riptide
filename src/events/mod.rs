@@ -9,6 +9,8 @@
 //! pickers — before falling through to the global bindings and list navigation.
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::sync::mpsc;
 
@@ -31,6 +33,32 @@ use overlays::*;
 use queue::*;
 use search::*;
 
+/// Watches for SIGINT, SIGTERM and SIGHUP and reports them through the flag.
+///
+/// Closing the terminal window used to kill the process outright, losing the
+/// session's preference changes (sorts, volume, queue visibility) because those
+/// are only written on a clean exit.
+pub fn spawn_signal_watcher(shutdown: Arc<AtomicBool>) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+        rt.block_on(async {
+            #[cfg(unix)]
+            {
+                use tokio::signal::unix::{SignalKind, signal};
+                let mut term = signal(SignalKind::terminate()).expect("SIGTERM handler");
+                let mut hup = signal(SignalKind::hangup()).expect("SIGHUP handler");
+                let mut int = signal(SignalKind::interrupt()).expect("SIGINT handler");
+                tokio::select! {
+                    _ = term.recv() => {}
+                    _ = hup.recv() => {}
+                    _ = int.recv() => {}
+                }
+            }
+            shutdown.store(true, Ordering::Relaxed);
+        });
+    })
+}
+
 pub fn run_app(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     app: &mut App,
@@ -38,6 +66,7 @@ pub fn run_app(
     mut player_rx: mpsc::UnboundedReceiver<PlayerEvent>,
     mut mpris_rx: mpsc::UnboundedReceiver<MprisCmd>,
     lastfm_evt_tx: mpsc::UnboundedSender<PlayerEvent>,
+    signal_shutdown: Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
     loop {
         terminal.draw(|f| crate::ui::draw(f, app))?;
@@ -75,6 +104,10 @@ pub fn run_app(
         }
 
         app.tick();
+
+        if signal_shutdown.load(Ordering::Relaxed) {
+            app.should_quit = true;
+        }
 
         if app.should_quit {
             break;

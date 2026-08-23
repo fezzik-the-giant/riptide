@@ -8,6 +8,8 @@ use crossterm::{
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::io;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use tokio::sync::mpsc;
 
 mod api;
@@ -148,6 +150,13 @@ fn main() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
+    // A signal (terminal closed, Ctrl+C from outside, systemd stop) must exit
+    // through the normal path so the session's preferences get written.
+    // Detached on purpose: after a clean `q` it would block forever waiting for
+    // a signal that never comes.
+    let signal_shutdown = Arc::new(AtomicBool::new(false));
+    events::spawn_signal_watcher(Arc::clone(&signal_shutdown));
+
     // Build app state and run
     let mut app = App::new(
         api_req_tx,
@@ -163,12 +172,15 @@ fn main() -> Result<()> {
         player_evt_rx,
         mpris_cmd_rx,
         player_evt_lastfm_tx,
+        signal_shutdown,
     );
 
-    // Restore terminal unconditionally
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-    terminal.show_cursor()?;
+    // Restore terminal unconditionally. Best-effort rather than `?`: after a
+    // SIGHUP the tty is gone and these would fail, which must not skip the
+    // preference save below.
+    let _ = disable_raw_mode();
+    let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
+    let _ = terminal.show_cursor();
 
     // Persist UI choices on the way out — one write, rather than rewriting a
     // file containing OAuth tokens on every volume keypress. A crash loses the
