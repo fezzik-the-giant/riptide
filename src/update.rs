@@ -841,18 +841,39 @@ fn http_client() -> Result<reqwest::blocking::Client> {
     builder.build().context("cannot build HTTP client")
 }
 
-/// Like [`http_client`] but for large downloads: drops the default 30 s
-/// total-request timeout (reqwest applies one per `read()` call) but keeps a
-/// connect deadline so a stalled connection still fails fast. The download
-/// itself is bounded only by the size caps in `download_to_file`.
+/// Hops allowed while chasing an asset URL. GitHub uses exactly one; the
+/// slack is for infrastructure changes, not for following a chain anywhere.
+const MAX_DOWNLOAD_REDIRECTS: usize = 5;
+
+/// Like [`http_client`] but with more headroom for a large body. On the
+/// *blocking* client `timeout` is per-operation, not a whole-request deadline
+/// — it bounds the wait for response headers and then restarts for each
+/// `read()` — so a slow-but-progressing download is never cut off, while a
+/// server that stalls mid-body still fails. Passing `None` here would remove
+/// both bounds and park the update actor forever. Body size is capped
+/// separately in `download_to_file`.
 fn http_client_for_download() -> Result<reqwest::blocking::Client> {
     let mut builder = base_client_builder()?;
     builder = builder
-        .timeout(None)
+        .timeout(std::time::Duration::from_secs(60))
         .connect_timeout(std::time::Duration::from_secs(30))
-        // Asset URLs are pre-validated GitHub https URLs; a redirect would
-        // silently leave the pinned trust domain, so treat one as an error.
-        .redirect(reqwest::redirect::Policy::none());
+        // `browser_download_url` always answers 302 for the asset CDN, so
+        // refusing redirects outright means no download ever completes. Every
+        // hop is re-validated instead: the trust model is "the bytes came from
+        // GitHub", which the first URL alone cannot establish.
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() > MAX_DOWNLOAD_REDIRECTS {
+                return attempt.error(format!(
+                    "more than {MAX_DOWNLOAD_REDIRECTS} redirects while downloading"
+                ));
+            }
+            if is_github_download_url(attempt.url().as_str()) {
+                attempt.follow()
+            } else {
+                let url = attempt.url().clone();
+                attempt.error(format!("redirect left the GitHub download hosts for {url}"))
+            }
+        }));
     builder.build().context("cannot build HTTP client")
 }
 
