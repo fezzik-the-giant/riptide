@@ -36,7 +36,7 @@ const DEFAULT_ART: &[u8] = include_bytes!("../../assets/wave-logo-320-transparen
 /// checks; `cmd_rx` receives Check/Install commands from the UI.
 pub struct UpdateActorHandles {
     pub check_tx: mpsc::UnboundedSender<Result<Option<String>, String>>,
-    pub checking_tx: mpsc::UnboundedSender<()>,
+    pub checking_tx: mpsc::UnboundedSender<UpdatePhase>,
     pub result_tx: mpsc::UnboundedSender<Result<crate::update::UpdateOutcome, String>>,
     pub cmd_rx: mpsc::UnboundedReceiver<UpdateCmd>,
 }
@@ -92,8 +92,9 @@ pub struct App {
     pub update: UpdateState,
     /// Receives the update-check outcome (found tag / none / failed).
     pub update_rx: mpsc::UnboundedReceiver<Result<Option<String>, String>>,
-    /// Receives a signal that the background check has started (Script install).
-    pub checking_rx: mpsc::UnboundedReceiver<()>,
+    /// Receives the actor's progress through resolving the install method and
+    /// running the background check.
+    pub checking_rx: mpsc::UnboundedReceiver<UpdatePhase>,
     /// Receives the result of a TUI-triggered update install.
     pub update_result_rx: mpsc::UnboundedReceiver<Result<crate::update::UpdateOutcome, String>>,
     /// Sends Check/Install commands to the update actor thread.
@@ -303,6 +304,15 @@ impl App {
             self.update.error = None;
             self.update.active = true;
         }
+    }
+
+    /// Send `Install` to the actor, clearing any cancellation left from an
+    /// earlier attempt. Resetting the flag here rather than on receipt keeps a
+    /// cancel raised *after* this send from being overwritten by the actor.
+    pub(crate) fn send_install(&mut self) -> bool {
+        self.update_cancel
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        self.update_cmd_tx.send(UpdateCmd::Install).is_ok()
     }
 
     /// Record the result of a background install.

@@ -114,6 +114,17 @@ pub enum UpdateStatus {
     UpToDate,
 }
 
+/// What the update actor has learned so far, sent as it learns it. The actor
+/// cannot report either until it has resolved `install_method`, which is
+/// deferred off the first frame and can take seconds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpdatePhase {
+    /// This install is package-managed; no check will ever run.
+    NotSelfUpdatable,
+    /// An availability check is in flight.
+    Checking,
+}
+
 /// Command sent to the self-update actor thread.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpdateCmd {
@@ -141,10 +152,10 @@ pub struct UpdateState {
     /// recent check errored. Lets `U` say "check failed" instead of
     /// misreporting "up to date".
     pub check_error: Option<String>,
-    /// True while an install-triggered re-check is in flight (the request the
-    /// actor sends before downloading). Distinct from `checking`, which tracks
-    /// only the startup/manual availability check.
-    pub update_checking: bool,
+    /// Whether self-update applies to this install, once the actor has
+    /// resolved it. `None` until then — pressing `U` in that window must not
+    /// claim either answer.
+    pub self_updatable: Option<bool>,
 }
 
 impl Default for UpdateState {
@@ -160,7 +171,7 @@ impl Default for UpdateState {
             status: UpdateStatus::Confirming,
             error: None,
             check_error: None,
-            update_checking: false,
+            self_updatable: None,
         }
     }
 }

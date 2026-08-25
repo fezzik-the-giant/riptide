@@ -331,18 +331,11 @@ pub(super) fn render_update_modal(f: &mut Frame, app: &App, area: Rect) {
             "Enter install · Esc cancel".to_string(),
             Style::default().fg(Color::White),
         ),
-        UpdateStatus::Working => {
-            let line2 = if app.update.update_checking {
-                "Re-checking latest release…".to_string()
-            } else {
-                "Downloading, verifying checksum, installing…".to_string()
-            };
-            (
-                "Installing update".to_string(),
-                line2,
-                Style::default().fg(DIM),
-            )
-        }
+        UpdateStatus::Working => (
+            "Installing update".to_string(),
+            "Downloading, verifying checksum, installing…".to_string(),
+            Style::default().fg(DIM),
+        ),
         UpdateStatus::Done => (
             format!("Updated to {latest}"),
             "Restart riptide to apply.  Enter/Esc close".to_string(),

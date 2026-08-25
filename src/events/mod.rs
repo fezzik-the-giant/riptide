@@ -13,7 +13,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 use crate::api::ApiResponse;
-use crate::app::{App, Tab, UpdateCmd, UpdateStatus};
+use crate::app::{App, Tab, UpdateCmd, UpdatePhase, UpdateStatus};
 use crate::mpris::MprisCmd;
 use crate::player::PlayerEvent;
 
@@ -75,32 +75,19 @@ pub fn run_app(
         }
 
         // Drain self-update channel: availability check result + install result
-        while let Ok(()) = app.checking_rx.try_recv() {
-            app.update.checking = true;
+        while let Ok(phase) = app.checking_rx.try_recv() {
+            app.update.self_updatable = Some(phase == UpdatePhase::Checking);
+            app.update.checking = phase == UpdatePhase::Checking;
         }
         while let Ok(result) = app.update_rx.try_recv() {
-            // A check result that lands while the modal is Working is the
-            // install-triggered re-check: proceed to download on a newer tag,
-            // otherwise surface the real outcome. A result landing on an open
-            // Failed modal is the user's manual retry — refresh the modal.
-            let install_recheck = app.update.active
-                && app.update.status == UpdateStatus::Working
-                && app.update.update_checking;
+            // A result landing on an open Failed modal is the user's manual
+            // retry — refresh the modal in place rather than leaving the old
+            // error on screen.
             let retry_check = app.update.active
                 && app.update.status == UpdateStatus::Failed
                 && app.update.checking;
             app.set_update_available(result);
-            if install_recheck {
-                app.update.update_checking = false;
-                if app.update.available.is_some() {
-                    let _ = app.update_cmd_tx.send(UpdateCmd::Install);
-                } else if let Some(err) = app.update.check_error.clone() {
-                    app.update.status = UpdateStatus::Failed;
-                    app.update.error = Some(err);
-                } else {
-                    app.update.status = UpdateStatus::UpToDate;
-                }
-            } else if retry_check {
+            if retry_check {
                 if app.update.available.is_some() {
                     app.update.status = UpdateStatus::Confirming;
                     app.update.error = None;
@@ -243,12 +230,11 @@ fn handle_update_input(app: &mut App, key: KeyEvent) {
     match app.update.status {
         UpdateStatus::Confirming => match key.code {
             KeyCode::Enter => {
-                if app.update_cmd_tx.send(UpdateCmd::Install).is_err() {
+                if app.send_install() {
+                    app.update.status = UpdateStatus::Working;
+                } else {
                     app.update.status = UpdateStatus::Failed;
                     app.update.error = Some("update service unavailable".to_string());
-                } else {
-                    app.update.status = UpdateStatus::Working;
-                    app.update.update_checking = true;
                 }
             }
             KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('u') | KeyCode::Char('U') => {
@@ -271,7 +257,12 @@ fn handle_update_input(app: &mut App, key: KeyEvent) {
             | KeyCode::Char('u')
             | KeyCode::Char('U')
             | KeyCode::Char(' ') => {
-                app.update.available = None;
+                // Done outlives the modal: the new binary is staged on disk
+                // while the old one is still running, so the footer and `U`
+                // must keep saying "restart" rather than "up to date".
+                if app.update.status == UpdateStatus::UpToDate {
+                    app.update.available = None;
+                }
                 app.update.active = false;
             }
             _ => {}
@@ -323,6 +314,28 @@ mod tests {
 
     fn press(c: char) -> KeyEvent {
         KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn closing_the_installed_modal_leaves_a_restart_pending() {
+        let mut t = test_app();
+        t.app
+            .set_update_result(Ok(crate::update::UpdateOutcome::Updated("v9.9.9".into())));
+        t.app.update.active = true;
+
+        handle_update_input(&mut t.app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(!t.app.update.active);
+        // The staged binary outlives the modal, so the state that drives the
+        // footer hint and `U` has to as well.
+        assert_eq!(t.app.update.status, UpdateStatus::Done);
+        assert_eq!(t.app.update.available.as_deref(), Some("v9.9.9"));
+
+        handle_global_key(
+            &mut t.app,
+            KeyEvent::new(KeyCode::Char('U'), KeyModifiers::SHIFT),
+        );
+        assert!(t.app.update.active);
+        assert_eq!(t.app.update.status, UpdateStatus::Done);
     }
 
     #[test]

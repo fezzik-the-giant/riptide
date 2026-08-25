@@ -197,10 +197,11 @@ fn main() -> Result<()> {
                     .unwrap_or(update::InstallMethod::Script);
                 if method != update::InstallMethod::Script {
                     tracing::debug!("self-update disabled for this install method");
+                    let _ = checking_tx.send(app::UpdatePhase::NotSelfUpdatable);
                     return;
                 }
 
-                let _ = checking_tx.send(());
+                let _ = checking_tx.send(app::UpdatePhase::Checking);
                 let initial = std::panic::catch_unwind(update::check_for_update_assuming_script)
                     .unwrap_or_else(|_| Err("update check panicked".to_string()));
                 update::sending_check(&check_tx, initial);
@@ -210,17 +211,18 @@ fn main() -> Result<()> {
                     use app::UpdateCmd;
                     match cmd {
                         UpdateCmd::Check => {
-                            let _ = checking_tx.send(());
+                            let _ = checking_tx.send(app::UpdatePhase::Checking);
                             let r =
                                 std::panic::catch_unwind(update::check_for_update_assuming_script)
                                     .unwrap_or_else(|_| Err("update check panicked".to_string()));
                             update::sending_check(&check_tx, r);
                         }
                         UpdateCmd::Install => {
-                            // Catch panics so the TUI never hangs in Working. Reset
-                            // cancel so a retried update can proceed. AlreadyCurrent
-                            // surfaces the release no longer being newer — benign.
-                            cancel.store(false, std::sync::atomic::Ordering::Relaxed);
+                            // Catch panics so the TUI never hangs in Working.
+                            // AlreadyCurrent surfaces the release no longer being
+                            // newer — benign. The cancel flag is reset by the
+                            // sender, not here: a cancel raised while this command
+                            // sat in the queue must survive being picked up.
                             let r = std::panic::catch_unwind(|| {
                                 update::self_update_with_cancel(&cancel)
                             });
