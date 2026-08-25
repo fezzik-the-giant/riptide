@@ -11,8 +11,14 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 
+use unicode_width::UnicodeWidthStr;
+
 use super::*;
 use crate::app::App;
+
+/// Floor for the update modal so short states keep the roomy look they had
+/// before the box started sizing itself to its content.
+const UPDATE_MODAL_MIN_H: u16 = 7;
 
 pub(super) fn render_command_overlay(f: &mut Frame, app: &App, area: Rect) {
     let matches = app.command.matches();
@@ -294,33 +300,39 @@ pub(super) fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
     }
 }
 
-pub(super) fn render_update_modal(f: &mut Frame, app: &App, area: Rect) {
-    let box_w = 52u16.min(area.width.saturating_sub(4));
-    let box_h = 7u16.min(area.height.saturating_sub(4));
-    let x = area.x + area.width.saturating_sub(box_w) / 2;
-    let y = area.y + area.height.saturating_sub(box_h) / 2;
-    let overlay = Rect::new(
-        x.min(area.right().saturating_sub(box_w)),
-        y.min(area.bottom().saturating_sub(box_h)),
-        box_w.min(area.width),
-        box_h.min(area.height),
-    );
-
-    f.render_widget(Clear, overlay);
-    let block = Block::default()
-        .title(Span::styled(
-            " update ",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        ))
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(ACCENT));
-    let inner = block.inner(overlay);
-    f.render_widget(block, overlay);
-
-    if inner.height == 0 {
-        return;
+/// Rows `text` occupies once `Wrap { trim: true }` has broken it to `width`,
+/// so the modal can be sized around its own content.
+fn wrapped_height(text: &str, width: u16) -> u16 {
+    if width == 0 {
+        return text.lines().count().max(1) as u16;
     }
+    let width = width as usize;
+    let mut rows: u16 = 0;
+    for para in text.lines() {
+        let mut used = 0usize;
+        let mut rows_here: u16 = 1;
+        for word in para.split_whitespace() {
+            let w = UnicodeWidthStr::width(word);
+            if used == 0 {
+                used = w;
+            } else if used + 1 + w <= width {
+                used += 1 + w;
+            } else {
+                rows_here += 1;
+                used = w;
+            }
+            // A single word longer than the line wraps mid-word.
+            while used > width {
+                rows_here += 1;
+                used -= width;
+            }
+        }
+        rows += rows_here;
+    }
+    rows.max(1)
+}
 
+pub(super) fn render_update_modal(f: &mut Frame, app: &App, area: Rect) {
     let current = env!("CARGO_PKG_VERSION");
     let latest = app.update.available.clone().unwrap_or_default();
 
@@ -346,37 +358,82 @@ pub(super) fn render_update_modal(f: &mut Frame, app: &App, area: Rect) {
             format!("Running the latest release (v{current}).  Enter/Esc close"),
             Style::default().fg(Color::Green),
         ),
-        UpdateStatus::Failed => {
-            let raw = app
-                .update
+        UpdateStatus::Failed => (
+            "Update failed.".to_string(),
+            app.update
                 .error
                 .clone()
-                .unwrap_or_else(|| "unknown error".into());
-            let footer = if app.update.checking {
-                "Retrying…"
-            } else {
-                "u retry check · Esc close"
-            };
-            (
-                "Update failed.".to_string(),
-                format!("{raw}\n\n{footer}"),
-                Style::default().fg(Color::White),
-            )
-        }
+                .unwrap_or_else(|| "unknown error".into()),
+            Style::default().fg(Color::White),
+        ),
     };
+
+    // Only the failure state has a body that can wrap, so only it needs its
+    // hints pinned to their own row; the rest keep their single centred line.
+    let footer = match app.update.status {
+        UpdateStatus::Failed if app.update.checking => Some("Retrying…"),
+        UpdateStatus::Failed => Some("u retry check · Esc close"),
+        _ => None,
+    };
+
+    let box_w = 52u16.min(area.width.saturating_sub(4));
+    // Grow for content that does not fit: the permission-denied failure wraps
+    // to four lines and used to push its own retry/dismiss footer off the box.
+    let footer_rows = if footer.is_some() { 2 } else { 0 };
+    // Grow for content that does not fit: the permission-denied failure wraps
+    // to four lines inside a box that used to be a fixed seven rows tall.
+    let box_h = (1 + wrapped_height(&line2, box_w.saturating_sub(2)) + footer_rows + 2)
+        .max(UPDATE_MODAL_MIN_H)
+        .min(area.height.saturating_sub(4));
+    let x = area.x + area.width.saturating_sub(box_w) / 2;
+    let y = area.y + area.height.saturating_sub(box_h) / 2;
+    let overlay = Rect::new(
+        x.min(area.right().saturating_sub(box_w)),
+        y.min(area.bottom().saturating_sub(box_h)),
+        box_w.min(area.width),
+        box_h.min(area.height),
+    );
+
+    f.render_widget(Clear, overlay);
+    let block = Block::default()
+        .title(Span::styled(
+            " update ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(ACCENT));
+    let inner = block.inner(overlay);
+    f.render_widget(block, overlay);
+
+    if inner.height == 0 {
+        return;
+    }
 
     f.render_widget(
         Paragraph::new(Line::from(line1)).alignment(Alignment::Center),
         Rect::new(inner.x, inner.y, inner.width, 1),
     );
 
-    if inner.height >= 2 {
+    // The footer takes the last row before the body gets what is left, so a
+    // long error can only ever clip itself — never the way to dismiss it.
+    let body_rows = inner.height - 1 - u16::from(footer.is_some() && inner.height >= 3);
+    if body_rows > 0 {
         f.render_widget(
             Paragraph::new(line2)
                 .style(line2_style)
                 .alignment(Alignment::Center)
                 .wrap(Wrap { trim: true }),
-            Rect::new(inner.x, inner.y + 1, inner.width, inner.height - 1),
+            Rect::new(inner.x, inner.y + 1, inner.width, body_rows),
+        );
+    }
+    if let Some(footer) = footer
+        && inner.height >= 3
+    {
+        f.render_widget(
+            Paragraph::new(footer)
+                .style(Style::default().fg(DIM))
+                .alignment(Alignment::Center),
+            Rect::new(inner.x, inner.bottom() - 1, inner.width, 1),
         );
     }
 }
@@ -520,6 +577,25 @@ mod tests {
         assert!(
             text.contains("install.sh"),
             "error must not be truncated before the remedy: {text}"
+        );
+        assert!(
+            text.contains("retry check"),
+            "a wrapped error must not push its own footer out of the box: {text}"
+        );
+    }
+
+    #[test]
+    fn update_modal_keeps_the_footer_when_the_box_cannot_grow() {
+        let mut app = make_app();
+        app.update.active = true;
+        app.update.status = crate::app::UpdateStatus::Failed;
+        app.update.error = Some("word ".repeat(60));
+        // Too short for the box to fit the wrapped error, so the body clips —
+        // the dismiss hint must not clip with it.
+        let text = render_modal(&app, 80, 12);
+        assert!(
+            text.contains("retry check"),
+            "footer must survive a body too long for the box: {text}"
         );
     }
 
