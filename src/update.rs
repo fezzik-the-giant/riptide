@@ -395,29 +395,35 @@ fn remove_sudo_staged(path: &Path) {
         .status();
 }
 
+/// Fixed leading part of each self-update artifact name; what follows is
+/// `<pid>-<rnd>`.
+const TMP_DIR_PREFIX: &str = "riptide-update-";
+const STAGED_PREFIX: &str = ".riptide.new-";
+const SUDO_STAGED_PREFIX: &str = ".riptide.sudo-staged-";
+
+/// Extract the pid embedded in an artifact name. The prefixes themselves
+/// contain `-` and not the same number of them, so the pid cannot be found by
+/// counting separators from the left of the whole name.
+fn artifact_pid(name: &str, prefix: &str) -> Option<u32> {
+    name.strip_prefix(prefix)?.split('-').next()?.parse().ok()
+}
+
 /// Remove stale self-update artifacts left by a previous cancelled or crashed
 /// update. Called at startup so a stranded `/tmp/riptide-update-*` or
 /// `<installdir>/.riptide.new-*` does not accumulate per cancellation.
 ///
-/// Only artifacts from *dead* processes are reaped: the pid is the first
-/// `-`-separated field of the randomized name (e.g. `riptide-update-1234-a1b2c3d4`).
-/// A live pid is left alone so a concurrently running instance's in-flight
-/// update is never destroyed mid-swap.
+/// Only artifacts from *dead* processes are reaped; a live pid is left alone
+/// so a concurrently running instance's in-flight update is never destroyed
+/// mid-swap.
 pub fn cleanup_stale_artifacts() {
-    let reap = |name: &str| {
-        name.split('-')
-            .nth(2)
-            .and_then(|p| p.parse::<u32>().ok())
-            .map(|pid| !pid_is_alive(pid))
-            .unwrap_or(false)
-    };
-    // Temp dirs: riptide-update-<pid>-<rnd>
+    let reap =
+        |name: &str, prefix: &str| artifact_pid(name, prefix).is_some_and(|pid| !pid_is_alive(pid));
     let tmp = std::env::temp_dir();
     if let Ok(entries) = std::fs::read_dir(&tmp) {
         for entry in entries.flatten() {
             let name = entry.file_name();
             let s = name.to_string_lossy();
-            if s.starts_with("riptide-update-") && reap(&s) {
+            if reap(&s, TMP_DIR_PREFIX) {
                 let _ = std::fs::remove_dir_all(entry.path());
             }
         }
@@ -436,9 +442,9 @@ pub fn cleanup_stale_artifacts() {
             for entry in entries.flatten() {
                 let n = entry.file_name();
                 let s = n.to_string_lossy();
-                if s.starts_with(".riptide.new-") && reap(&s) {
+                if reap(&s, STAGED_PREFIX) {
                     let _ = std::fs::remove_file(entry.path());
-                } else if s.starts_with(".riptide.sudo-staged-") && reap(&s) {
+                } else if reap(&s, SUDO_STAGED_PREFIX) {
                     // May be root-owned if the previous updater was killed
                     // between `sudo cp` and `sudo mv`; escalate to remove it.
                     remove_sudo_staged(&entry.path());
@@ -534,7 +540,7 @@ pub fn self_update_with_cancel(cancel: &std::sync::atomic::AtomicBool) -> Result
     // Randomized temp dir; created non-following below.
     let tmp = {
         let rnd: u32 = rand::random();
-        std::env::temp_dir().join(format!("riptide-update-{}-{rnd:08x}", std::process::id()))
+        std::env::temp_dir().join(format!("{TMP_DIR_PREFIX}{}-{rnd:08x}", std::process::id()))
     };
     if tmp.exists() {
         let meta = std::fs::symlink_metadata(&tmp)?;
@@ -615,7 +621,7 @@ fn download_and_install(
     // Use a randomized suffix to avoid collisions between concurrent updaters.
     let staged = {
         let rnd: u32 = rand::random();
-        dir.join(format!(".riptide.new-{}-{rnd:08x}", std::process::id()))
+        dir.join(format!("{STAGED_PREFIX}{}-{rnd:08x}", std::process::id()))
     };
     // Ensure staged path is not a pre-existing symlink.
     if let Ok(meta) = std::fs::symlink_metadata(&staged) {
@@ -728,7 +734,7 @@ fn try_sudo_swap(target: &Path, staged: &Path) -> bool {
     let sudo_tmp = {
         let rnd: u32 = rand::random();
         dir.join(format!(
-            ".riptide.sudo-staged-{}-{rnd:08x}",
+            "{SUDO_STAGED_PREFIX}{}-{rnd:08x}",
             std::process::id()
         ))
     };
@@ -1319,6 +1325,38 @@ mod tests {
         assert_eq!(
             parse_sha256sums(&sums, &info.asset_name),
             Some("abc123".to_string())
+        );
+    }
+
+    // ── artifact_pid ──────────────────────────────────────────────────────
+
+    #[test]
+    fn artifact_pid_reads_the_pid_from_every_prefix() {
+        // The three prefixes hold different numbers of `-`, which is what a
+        // fixed field index got wrong for the staged binary.
+        assert_eq!(
+            artifact_pid("riptide-update-4242-a1b2c3d4", TMP_DIR_PREFIX),
+            Some(4242)
+        );
+        assert_eq!(
+            artifact_pid(".riptide.new-4242-a1b2c3d4", STAGED_PREFIX),
+            Some(4242)
+        );
+        assert_eq!(
+            artifact_pid(".riptide.sudo-staged-4242-a1b2c3d4", SUDO_STAGED_PREFIX),
+            Some(4242)
+        );
+    }
+
+    #[test]
+    fn artifact_pid_rejects_foreign_names() {
+        assert_eq!(artifact_pid("riptide", TMP_DIR_PREFIX), None);
+        assert_eq!(artifact_pid(".riptide.new-", STAGED_PREFIX), None);
+        // A staged binary must never be reaped on a pid read with the wrong
+        // prefix's layout, or an unrelated process decides its fate.
+        assert_eq!(
+            artifact_pid(".riptide.new-4242-a1b2c3d4", TMP_DIR_PREFIX),
+            None
         );
     }
 
