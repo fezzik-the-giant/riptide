@@ -132,6 +132,39 @@ pub(super) fn handle_global_key(app: &mut App, key: KeyEvent) -> bool {
                 );
             }
         }
+        KeyCode::Char('U') => {
+            use crate::app::UpdateStatus;
+            if app.update.status == UpdateStatus::Done {
+                // An install already succeeded this session; re-open it rather
+                // than falling through to "up to date", which would name the
+                // version the user is still running.
+                app.open_update_dialog_in_state(UpdateStatus::Done);
+            } else if app.update.check_done {
+                if app.update.available.is_some() {
+                    app.open_update_dialog_in_state(UpdateStatus::Confirming);
+                } else if app.update.check_error.is_some() {
+                    if let Some(err) = app.update.check_error.clone() {
+                        app.update.error = Some(err);
+                    }
+                    app.open_update_dialog_in_state(UpdateStatus::Failed);
+                } else {
+                    app.open_update_dialog_in_state(UpdateStatus::UpToDate);
+                }
+            } else if app.update.self_updatable == Some(false) {
+                app.set_status(
+                    "Updates are handled by your package manager".to_string(),
+                    crate::app::StatusLevel::Info,
+                );
+            } else {
+                // Either the actor has not resolved the install method yet or
+                // the first check is still in flight; both are momentary and
+                // neither justifies claiming an answer.
+                app.set_status(
+                    "Checking for updates…".to_string(),
+                    crate::app::StatusLevel::Info,
+                );
+            }
+        }
         _ => return false,
     }
     true
@@ -142,6 +175,27 @@ mod tests {
     use super::*;
     use crate::app::Tab;
     use crate::app::test_support::test_app;
+
+    fn press_u(app: &mut crate::app::App) {
+        assert!(handle_global_key(
+            app,
+            KeyEvent::new(KeyCode::Char('U'), KeyModifiers::SHIFT)
+        ));
+    }
+
+    #[test]
+    fn u_does_not_claim_a_package_manager_before_the_actor_reports() {
+        let mut t = test_app();
+        // self_updatable is None for the first seconds of every session, while
+        // the actor resolves the install method off the first frame.
+        press_u(&mut t.app);
+        let (msg, _, _) = t.app.status.clone().expect("U must give some feedback");
+        assert!(
+            msg.contains("Checking"),
+            "an unresolved install method must not be reported as one: {msg}"
+        );
+        assert!(!t.app.update.active);
+    }
 
     #[test]
     fn shift_a_toggles_fullscreen_without_changing_tabs() {

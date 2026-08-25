@@ -87,6 +87,10 @@ impl KeybindGroup {
                     action: "Show/hide queue",
                 },
                 Keybind {
+                    key: "U",
+                    action: "Update to latest release",
+                },
+                Keybind {
                     key: "+ or =",
                     action: "Volume Up",
                 },

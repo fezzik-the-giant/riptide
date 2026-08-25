@@ -13,7 +13,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 use crate::api::ApiResponse;
-use crate::app::{App, Tab};
+use crate::app::{App, Tab, UpdateCmd, UpdatePhase, UpdateStatus};
 use crate::mpris::MprisCmd;
 use crate::player::PlayerEvent;
 
@@ -74,6 +74,34 @@ pub fn run_app(
             }
         }
 
+        // Drain self-update channel: availability check result + install result
+        while let Ok(phase) = app.checking_rx.try_recv() {
+            app.update.self_updatable = Some(phase == UpdatePhase::Checking);
+            app.update.checking = phase == UpdatePhase::Checking;
+        }
+        while let Ok(result) = app.update_rx.try_recv() {
+            // A result landing on an open Failed modal is the user's manual
+            // retry — refresh the modal in place rather than leaving the old
+            // error on screen.
+            let retry_check = app.update.active
+                && app.update.status == UpdateStatus::Failed
+                && app.update.checking;
+            app.set_update_available(result);
+            if retry_check {
+                if app.update.available.is_some() {
+                    app.update.status = UpdateStatus::Confirming;
+                    app.update.error = None;
+                } else if let Some(err) = app.update.check_error.clone() {
+                    app.update.error = Some(err);
+                } else {
+                    app.update.status = UpdateStatus::UpToDate;
+                }
+            }
+        }
+        while let Ok(result) = app.update_result_rx.try_recv() {
+            app.set_update_result(result);
+        }
+
         app.tick();
 
         if app.should_quit {
@@ -121,6 +149,11 @@ fn vim_arrows(mut key: KeyEvent) -> KeyEvent {
 }
 
 fn handle_key(app: &mut App, key: KeyEvent) {
+    if app.update.active {
+        handle_update_input(app, key);
+        return;
+    }
+
     // Any keystroke means the user is working the list, so restart the marquee
     // and let them read the row they just landed on from its beginning.
     app.marquee_epoch = std::time::Instant::now();
@@ -191,6 +224,69 @@ fn handle_key(app: &mut App, key: KeyEvent) {
     }
 }
 
+/// Input handler for the self-update modal (captures all keys while open).
+fn handle_update_input(app: &mut App, key: KeyEvent) {
+    use crate::app::UpdateStatus;
+    match app.update.status {
+        UpdateStatus::Confirming => match key.code {
+            KeyCode::Enter => {
+                if app.send_install() {
+                    app.update.status = UpdateStatus::Working;
+                } else {
+                    app.update.status = UpdateStatus::Failed;
+                    app.update.error = Some("update service unavailable".to_string());
+                }
+            }
+            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('u') | KeyCode::Char('U') => {
+                app.update.active = false;
+            }
+            _ => {}
+        },
+        UpdateStatus::Working => match key.code {
+            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
+                app.update_cancel
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
+                app.should_quit = true;
+            }
+            _ => {}
+        },
+        UpdateStatus::Done | UpdateStatus::UpToDate => match key.code {
+            KeyCode::Esc
+            | KeyCode::Enter
+            | KeyCode::Char('q')
+            | KeyCode::Char('u')
+            | KeyCode::Char('U')
+            | KeyCode::Char(' ') => {
+                // Done outlives the modal: the new binary is staged on disk
+                // while the old one is still running, so the footer and `U`
+                // must keep saying "restart" rather than "up to date".
+                if app.update.status == UpdateStatus::UpToDate {
+                    app.update.available = None;
+                }
+                app.update.active = false;
+            }
+            _ => {}
+        },
+        UpdateStatus::Failed => match key.code {
+            KeyCode::Char('u') if !app.update.checking => {
+                app.update.checking = true;
+                if app.update_cmd_tx.send(UpdateCmd::Check).is_err() {
+                    app.update.checking = false;
+                    app.update.error = Some("update service unavailable".to_string());
+                }
+            }
+            KeyCode::Esc
+            | KeyCode::Enter
+            | KeyCode::Char('q')
+            | KeyCode::Char('U')
+            | KeyCode::Char(' ') => {
+                app.update.active = false;
+            }
+            _ => {}
+        },
+    }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -218,6 +314,28 @@ mod tests {
 
     fn press(c: char) -> KeyEvent {
         KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn closing_the_installed_modal_leaves_a_restart_pending() {
+        let mut t = test_app();
+        t.app
+            .set_update_result(Ok(crate::update::UpdateOutcome::Updated("v9.9.9".into())));
+        t.app.update.active = true;
+
+        handle_update_input(&mut t.app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(!t.app.update.active);
+        // The staged binary outlives the modal, so the state that drives the
+        // footer hint and `U` has to as well.
+        assert_eq!(t.app.update.status, UpdateStatus::Done);
+        assert_eq!(t.app.update.available.as_deref(), Some("v9.9.9"));
+
+        handle_global_key(
+            &mut t.app,
+            KeyEvent::new(KeyCode::Char('U'), KeyModifiers::SHIFT),
+        );
+        assert!(t.app.update.active);
+        assert_eq!(t.app.update.status, UpdateStatus::Done);
     }
 
     #[test]

@@ -109,6 +109,10 @@ fn render_overlays(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         render_help_modal(f, app, area);
     }
 
+    if app.update.active {
+        render_update_modal(f, app, area);
+    }
+
     render_toast(f, app, area);
 }
 

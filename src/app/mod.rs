@@ -31,6 +31,16 @@ const DEFAULT_ART: &[u8] = include_bytes!("../../assets/wave-logo-320-transparen
 
 // ── App ───────────────────────────────────────────────────────────────────────
 
+/// Ends of the self-update channels owned by the update actor thread (main.rs).
+/// `check_tx` carries `Ok(tag)`/`Ok(None)`/`Err(message)` from availability
+/// checks; `cmd_rx` receives Check/Install commands from the UI.
+pub struct UpdateActorHandles {
+    pub check_tx: mpsc::UnboundedSender<Result<Option<String>, String>>,
+    pub checking_tx: mpsc::UnboundedSender<UpdatePhase>,
+    pub result_tx: mpsc::UnboundedSender<Result<crate::update::UpdateOutcome, String>>,
+    pub cmd_rx: mpsc::UnboundedReceiver<UpdateCmd>,
+}
+
 pub struct App {
     pub should_quit: bool,
     pub current_tab: Tab,
@@ -78,6 +88,23 @@ pub struct App {
     pub help_active: bool,
     pub help_scroll: u16,
 
+    /// Self-update availability + dialog state.
+    pub update: UpdateState,
+    /// Receives the update-check outcome (found tag / none / failed).
+    pub update_rx: mpsc::UnboundedReceiver<Result<Option<String>, String>>,
+    /// Receives the actor's progress through resolving the install method and
+    /// running the background check.
+    pub checking_rx: mpsc::UnboundedReceiver<UpdatePhase>,
+    /// Receives the result of a TUI-triggered update install.
+    pub update_result_rx: mpsc::UnboundedReceiver<Result<crate::update::UpdateOutcome, String>>,
+    /// Sends Check/Install commands to the update actor thread.
+    pub update_cmd_tx: mpsc::UnboundedSender<UpdateCmd>,
+    /// Cancellation flag for an in-flight download/install; set when the
+    /// user quits while Working so the actor aborts before replacing the binary.
+    pub update_cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Actor-thread ends of the update channels; taken by main() to spawn it.
+    update_actor: Option<UpdateActorHandles>,
+
     pub tick: u64,
     /// When the marquee's cycle started. Reset on every keypress, so a row the
     /// cursor just landed on scrolls from its start rather than picking up
@@ -105,6 +132,14 @@ impl App {
         lastfm_tx: mpsc::UnboundedSender<LastfmCmd>,
         prefs: Preferences,
     ) -> Self {
+        // Self-update plumbing. The check/install thread is NOT started here
+        // (App::new is also used in tests, which must stay offline) — main()
+        // takes the senders back and spawns the actor.
+        let (update_check_tx, update_rx) = mpsc::unbounded_channel();
+        let (checking_tx, checking_rx) = mpsc::unbounded_channel();
+        let (update_result_tx, update_result_rx) = mpsc::unbounded_channel();
+        let (update_cmd_tx, update_cmd_rx) = mpsc::unbounded_channel();
+
         let mut app = Self {
             should_quit: false,
             current_tab: Tab::Home,
@@ -146,6 +181,18 @@ impl App {
             last_removal: None,
             help_active: false,
             help_scroll: 0,
+            update: UpdateState::default(),
+            update_rx,
+            checking_rx,
+            update_result_rx,
+            update_cmd_tx,
+            update_cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            update_actor: Some(UpdateActorHandles {
+                check_tx: update_check_tx,
+                checking_tx,
+                result_tx: update_result_tx,
+                cmd_rx: update_cmd_rx,
+            }),
             tick: 0,
             marquee_epoch: std::time::Instant::now(),
             status: None,
@@ -225,6 +272,76 @@ impl App {
 
     pub(crate) fn set_status(&mut self, msg: String, level: StatusLevel) {
         self.status = Some((msg, level, std::time::Instant::now()));
+    }
+
+    /// Hand the update-actor channel ends to main() (once). None in tests.
+    pub fn take_update_actor(&mut self) -> Option<UpdateActorHandles> {
+        self.update_actor.take()
+    }
+
+    /// Record the background update-check outcome; sets the footer hint on a
+    /// found release, or surfaces a check failure instead of "up to date".
+    pub(crate) fn set_update_available(&mut self, result: Result<Option<String>, String>) {
+        match result {
+            Ok(tag) => {
+                self.update.available = tag;
+                self.update.check_error = None;
+            }
+            Err(e) => {
+                self.update.available = None;
+                self.update.check_error = Some(e);
+            }
+        }
+        self.update.checking = false;
+        self.update.check_done = true;
+    }
+
+    /// Open the update dialog in a specific state (Confirming for an available
+    /// release, UpToDate to bare the result of a manual check).
+    pub(crate) fn open_update_dialog_in_state(&mut self, status: UpdateStatus) {
+        if !self.update.active {
+            self.update.status = status;
+            self.update.error = None;
+            self.update.active = true;
+        }
+    }
+
+    /// Send `Install` to the actor, clearing any cancellation left from an
+    /// earlier attempt. Resetting the flag here rather than on receipt keeps a
+    /// cancel raised *after* this send from being overwritten by the actor.
+    pub(crate) fn send_install(&mut self) -> bool {
+        self.update_cancel
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        self.update_cmd_tx.send(UpdateCmd::Install).is_ok()
+    }
+
+    /// Record the result of a background install.
+    pub(crate) fn set_update_result(
+        &mut self,
+        result: Result<crate::update::UpdateOutcome, String>,
+    ) {
+        match result {
+            Ok(crate::update::UpdateOutcome::Updated(tag)) => {
+                self.update.status = UpdateStatus::Done;
+                self.update.error = None;
+                self.update.available = Some(tag.clone());
+                self.update.checking = false;
+                tracing::info!("self-update installed {tag}; restart required");
+            }
+            Ok(crate::update::UpdateOutcome::AlreadyCurrent) => {
+                self.update.status = UpdateStatus::UpToDate;
+                self.update.error = None;
+                self.update.available = None;
+                self.update.checking = false;
+                tracing::info!("self-update: already up to date");
+            }
+            Err(err) => {
+                tracing::warn!("self-update failed: {err}");
+                self.update.status = UpdateStatus::Failed;
+                self.update.error = Some(err);
+                self.update.checking = false;
+            }
+        }
     }
 
     pub(crate) fn rebuild_favorite_track_ids(&mut self) {

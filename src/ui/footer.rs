@@ -18,7 +18,19 @@ pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
     let cols = Layout::horizontal([Constraint::Min(0), Constraint::Length(20)]).split(area);
 
     let context_hint = get_context_hint(app);
-    let context_span = Span::styled(context_hint, Style::default().fg(DIM));
+    let context_span = match app.update.available.as_deref() {
+        // Done means the binary on disk is already the new one; the hint has
+        // to switch from "install this" to "you are still running the old one".
+        Some(tag) if app.update.status == crate::app::UpdateStatus::Done => Span::styled(
+            format!("✓ {tag} — restart  {context_hint}"),
+            Style::default().fg(DIM),
+        ),
+        Some(tag) => Span::styled(
+            format!("↑ {tag} — U  {context_hint}"),
+            Style::default().fg(DIM),
+        ),
+        None => Span::styled(context_hint, Style::default().fg(DIM)),
+    };
     f.render_widget(
         Paragraph::new(Line::from(context_span)).alignment(Alignment::Left),
         cols[0],

@@ -396,6 +396,7 @@ Press `?` in the player to view all keybinds. Here's the complete reference:
 | `p`         | Previous track  |
 | `z`         | Toggle shuffle  |
 | `t`         | Show/hide queue |
+| `U`         | Update to latest release |
 | `+ or =`    | Volume Up       |
 | `-`         | Volume Down     |
 | `Esc`       | Back/Go up      |
