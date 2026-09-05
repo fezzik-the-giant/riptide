@@ -15,23 +15,96 @@ pub struct KeybindGroup {
     pub binds: &'static [Keybind],
 }
 
+/// Filtered view of a keybind group for help search.
+pub struct FilteredKeybindGroup {
+    pub title: &'static str,
+    pub binds: Vec<&'static Keybind>,
+}
+
 impl KeybindGroup {
-    /// Calculate total lines needed to display all keybind groups (for scrolling bounds)
-    pub fn total_help_lines() -> u16 {
-        let groups = vec![
+    /// All groups in display order.
+    pub fn all() -> Vec<Self> {
+        vec![
             Self::global(),
             Self::navigation(),
             Self::queue(),
             Self::search(),
             Self::command(),
-        ];
+        ]
+    }
+
+    /// Case-insensitive substring filter on title/key/action. Empty query = all.
+    pub fn filtered_groups(query: &str) -> Vec<FilteredKeybindGroup> {
+        let q = query.trim().to_lowercase();
+        if q.is_empty() {
+            return Self::all()
+                .into_iter()
+                .map(|g| FilteredKeybindGroup {
+                    title: g.title,
+                    binds: g.binds.iter().collect(),
+                })
+                .collect();
+        }
+        let mut out = Vec::new();
+        for g in Self::all() {
+            let title_lower = g.title.to_lowercase();
+            if title_lower.contains(&q) {
+                out.push(FilteredKeybindGroup {
+                    title: g.title,
+                    binds: g.binds.iter().collect(),
+                });
+                continue;
+            }
+            let binds: Vec<&'static Keybind> = g
+                .binds
+                .iter()
+                .filter(|b| {
+                    b.key.to_lowercase().contains(&q) || b.action.to_lowercase().contains(&q)
+                })
+                .collect();
+            if !binds.is_empty() {
+                out.push(FilteredKeybindGroup {
+                    title: g.title,
+                    binds,
+                });
+            }
+        }
+        out
+    }
+
+    /// Total lines needed to display filtered groups (for scroll bounds).
+    pub fn total_help_lines_filtered(query: &str) -> u16 {
+        let groups = Self::filtered_groups(query);
+        if groups.is_empty() {
+            return 1;
+        }
         let mut total = 0u16;
-        for group in groups {
+        for g in groups {
             total += 1; // group header
-            total += group.binds.len() as u16; // keybinds
+            total += g.binds.len() as u16; // keybinds
             total += 1; // blank line
         }
         total
+    }
+
+    /// Count of binds matching the query across all groups.
+    #[allow(dead_code)]
+    pub fn filtered_bind_count(query: &str) -> usize {
+        Self::filtered_groups(query)
+            .iter()
+            .map(|g| g.binds.len())
+            .sum()
+    }
+
+    /// Total bind count across all groups.
+    pub fn total_bind_count() -> usize {
+        Self::all().iter().map(|g| g.binds.len()).sum()
+    }
+
+    /// Calculate total lines needed to display all keybind groups (for scrolling bounds)
+    #[allow(dead_code)]
+    pub fn total_help_lines() -> u16 {
+        Self::total_help_lines_filtered("")
     }
 
     pub fn global() -> Self {
@@ -264,5 +337,76 @@ impl KeybindGroup {
                 },
             ],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── Help filtering ────────────────────────────────────────────────────
+
+    #[test]
+    fn help_filter_empty_returns_all() {
+        let all = KeybindGroup::filtered_groups("");
+        assert_eq!(all.len(), 5);
+        assert_eq!(
+            KeybindGroup::filtered_bind_count(""),
+            KeybindGroup::total_bind_count()
+        );
+    }
+
+    #[test]
+    fn help_filter_matches_action_case_insensitive() {
+        let groups = KeybindGroup::filtered_groups("shuffle");
+        let count: usize = groups.iter().map(|g| g.binds.len()).sum();
+        assert_eq!(count, 1);
+        assert!(groups.iter().any(|g| {
+            g.binds
+                .iter()
+                .any(|b| b.action.to_lowercase().contains("shuffle"))
+        }));
+        // Case insensitive
+        let groups2 = KeybindGroup::filtered_groups("SHUFFLE");
+        assert_eq!(groups2.iter().map(|g| g.binds.len()).sum::<usize>(), count);
+    }
+
+    #[test]
+    fn help_filter_matches_key() {
+        let groups = KeybindGroup::filtered_groups("Tab");
+        // Should match Global Tab, Search Tab, etc.
+        assert!(!groups.is_empty());
+        let has_tab = groups
+            .iter()
+            .flat_map(|g| &g.binds)
+            .any(|b| b.key.contains("Tab"));
+        assert!(has_tab);
+    }
+
+    #[test]
+    fn help_filter_matches_group_title() {
+        let groups = KeybindGroup::filtered_groups("global");
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].title, "Global");
+        assert_eq!(groups[0].binds.len(), KeybindGroup::global().binds.len());
+    }
+
+    #[test]
+    fn help_filter_no_match_returns_empty() {
+        let groups = KeybindGroup::filtered_groups("xyznotfound");
+        assert!(groups.is_empty());
+        assert_eq!(KeybindGroup::filtered_bind_count("xyznotfound"), 0);
+        assert_eq!(KeybindGroup::total_help_lines_filtered("xyznotfound"), 1);
+    }
+
+    #[test]
+    fn help_filter_trims_whitespace() {
+        let a = KeybindGroup::filtered_groups("  shuffle  ");
+        let b = KeybindGroup::filtered_groups("shuffle");
+        assert_eq!(a.len(), b.len());
+        assert_eq!(
+            KeybindGroup::filtered_bind_count("  shuffle  "),
+            KeybindGroup::filtered_bind_count("shuffle")
+        );
     }
 }

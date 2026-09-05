@@ -87,6 +87,7 @@ pub struct App {
 
     pub help_active: bool,
     pub help_scroll: u16,
+    pub help_query: String,
 
     /// Self-update availability + dialog state.
     pub update: UpdateState,
@@ -193,6 +194,7 @@ impl App {
                 result_tx: update_result_tx,
                 cmd_rx: update_cmd_rx,
             }),
+            help_query: String::new(),
             tick: 0,
             marquee_epoch: std::time::Instant::now(),
             status: None,
