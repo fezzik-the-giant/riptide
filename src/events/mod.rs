@@ -178,13 +178,15 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
-    // Past the text boxes, letters are commands again.
-    let key = vim_arrows(key);
-
+    // The help modal carries a filter box of its own, so it ranks with the text
+    // boxes: j and k have to reach it as letters, not as scroll commands.
     if app.help_active {
         handle_help_input(app, key);
         return;
     }
+
+    // Past the text boxes, letters are commands again.
+    let key = vim_arrows(key);
 
     // Fullscreen art is a presentation layer over the active view. Only global
     // controls apply while it is open, so list navigation cannot mutate the
@@ -393,5 +395,78 @@ mod tests {
         handle_key(&mut t.app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
         assert!(!t.app.art_fullscreen);
         assert!(t.app.queue_focused);
+    }
+
+    /// `vim_arrows` rewrote j and k before the help modal saw them, so the
+    /// filter box could not be typed most of the words it exists to search for.
+    #[test]
+    fn j_and_k_type_into_the_help_filter() {
+        let mut t = test_app();
+        t.app.help_active = true;
+
+        for c in "jack".chars() {
+            handle_key(&mut t.app, press(c));
+        }
+
+        assert_eq!(t.app.help_query, "jack");
+    }
+
+    #[test]
+    fn arrows_still_scroll_the_help_modal() {
+        let mut t = test_app();
+        t.app.help_active = true;
+        t.app.help_content_h.set(20);
+
+        handle_key(&mut t.app, KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+
+        assert_eq!(t.app.help_scroll, 1);
+        assert!(t.app.help_query.is_empty());
+    }
+
+    /// The filter trims, so a query of spaces matched everything while the box
+    /// looked filled — and Esc read as clear-not-close, taking two presses.
+    #[test]
+    fn a_lone_space_neither_filters_nor_swallows_escape() {
+        let mut t = test_app();
+        t.app.help_active = true;
+
+        handle_key(&mut t.app, press(' '));
+        assert!(t.app.help_query.is_empty());
+
+        handle_key(&mut t.app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(!t.app.help_active);
+    }
+
+    #[test]
+    fn backspace_on_an_empty_filter_keeps_the_scroll() {
+        let mut t = test_app();
+        t.app.help_active = true;
+        t.app.help_content_h.set(20);
+        t.app.help_scroll = 7;
+
+        handle_key(
+            &mut t.app,
+            KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE),
+        );
+
+        assert_eq!(t.app.help_scroll, 7);
+    }
+
+    /// The bound was the whole content minus one line, so the modal held an
+    /// offset the render would never honour and the first presses back up did
+    /// nothing at all.
+    #[test]
+    fn help_scroll_stops_where_the_render_stops() {
+        let mut t = test_app();
+        t.app.help_active = true;
+        let content_h = 20u16;
+        t.app.help_content_h.set(content_h);
+        let total = crate::app::KeybindGroup::total_help_lines_filtered("");
+
+        for _ in 0..200 {
+            handle_key(&mut t.app, KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        }
+
+        assert_eq!(t.app.help_scroll, total - content_h);
     }
 }

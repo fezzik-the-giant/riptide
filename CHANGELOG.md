@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Self-update for binaries installed via `install.sh` or a manual release download. The player checks GitHub Releases shortly after startup; when a newer version exists the footer hints at it and `U` opens a dialog to download, verify the SHA-256 checksum, and install it atomically. A failed check can be retried from the dialog (`u`). Pacman/AUR, Nix and Cargo installs are left to their own package manager. Also available headless as `riptide update`
 - Fullscreen album-art mode with `Shift+A`, on-demand high-resolution covers, and a compact playback HUD
+- The help modal filters as you type. Its list had grown past what one screenful shows, so finding a binding meant scrolling the whole thing; a search line at the top now matches on key, action and section name, highlights the hit in each row and counts what is left. `Esc` clears the filter, or closes the modal when there is nothing to clear. Thanks to @Nichokas (#35)
+
+### Changed
+- `j` and `k` type into the help modal instead of scrolling it, now that it has a filter box of its own — the same rule the search box, the filter box and the command palette already followed. The arrow keys, `PageUp` and `PageDown` still scroll it
 
 ## [1.3.0] - 2026-08-19
 

@@ -11,7 +11,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::*;
 use crate::app::App;
@@ -306,6 +306,33 @@ fn highlight_spans(text: &str, query: &str, base: Style, hl: Style) -> Vec<Span<
     spans
 }
 
+/// Keep the end of `text` in view. A filter box must show the characters just
+/// typed, which is the opposite end from the one `ellipsize` keeps for list rows.
+fn ellipsize_head(text: &str, columns: usize) -> String {
+    if text.width() <= columns {
+        return text.to_owned();
+    }
+    if columns == 0 {
+        return String::new();
+    }
+    if columns == 1 {
+        return "…".to_owned();
+    }
+    let mut tail: Vec<char> = Vec::new();
+    let mut w = 0usize;
+    for c in text.chars().rev() {
+        let cw = UnicodeWidthChar::width(c).unwrap_or(0);
+        if w + cw > columns - 1 {
+            break;
+        }
+        tail.push(c);
+        w += cw;
+    }
+    let mut out = String::from("…");
+    out.extend(tail.into_iter().rev());
+    out
+}
+
 pub(super) fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
     // Fixed size modal, well clear of the now-playing bar (9 lines at bottom)
     let box_w = 50u16.min(area.width.saturating_sub(4));
@@ -351,25 +378,6 @@ pub(super) fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
         let placeholder = "type to filter…";
         let is_empty = query.is_empty();
 
-        let mut left_spans: Vec<Span> = Vec::new();
-        left_spans.push(Span::styled(
-            "⌕ ",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        ));
-        if is_empty {
-            left_spans.push(Span::styled(
-                placeholder.to_owned(),
-                Style::default().fg(DIM),
-            ));
-            left_spans.push(Span::styled(cursor.to_owned(), cursor_style));
-        } else {
-            left_spans.push(Span::styled(
-                query.clone(),
-                Style::default().fg(Color::White),
-            ));
-            left_spans.push(Span::styled(cursor.to_owned(), cursor_style));
-        }
-
         let count_str = format!(" {}/{} ", filtered_binds, total_binds);
         let esc_hint = if is_empty {
             "Esc to close"
@@ -381,13 +389,38 @@ pub(super) fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
             Span::styled(esc_hint.to_owned(), Style::default().fg(DIM)),
         ];
 
-        let left_w: usize = 2 + if is_empty {
-            placeholder.chars().count() + 1
+        // The match count and the Esc hint are what tell the user whether the
+        // filter caught anything, so a long query gives way to them instead of
+        // pushing them off the end of the line.
+        const SEARCH_ICON_W: usize = 2;
+        const CURSOR_W: usize = 1;
+        const MIN_GAP: usize = 1;
+        let right_w = count_str.width() + esc_hint.width() + 1;
+        let text_budget =
+            (inner.width as usize).saturating_sub(SEARCH_ICON_W + CURSOR_W + right_w + MIN_GAP);
+        let (text, text_style) = if is_empty {
+            (
+                ellipsize(placeholder, text_budget as u16),
+                Style::default().fg(DIM),
+            )
         } else {
-            query.chars().count() + 1
+            (
+                ellipsize_head(query, text_budget),
+                Style::default().fg(Color::White),
+            )
         };
-        let right_w: usize = count_str.chars().count() + esc_hint.chars().count() + 1;
-        let mid_w = (inner.width as usize).saturating_sub(left_w + right_w + 2);
+
+        let left_spans: Vec<Span> = vec![
+            Span::styled(
+                "⌕ ",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(text.clone(), text_style),
+            Span::styled(cursor.to_owned(), cursor_style),
+        ];
+
+        let left_w = SEARCH_ICON_W + text.width() + CURSOR_W;
+        let mid_w = (inner.width as usize).saturating_sub(left_w + right_w);
         let mut line_spans = left_spans;
         if mid_w > 0 {
             line_spans.push(Span::raw(" ".repeat(mid_w)));
@@ -411,6 +444,8 @@ pub(super) fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
         (inner.y, inner.height)
     };
 
+    app.help_content_h.set(content_h);
+
     if content_h == 0 {
         return;
     }
@@ -418,7 +453,7 @@ pub(super) fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
     let mut lines: Vec<Line> = Vec::new();
     if filtered.is_empty() {
         lines.push(Line::from(Span::styled(
-            format!(" no matches for \"{}\"", query),
+            ellipsize(&format!(" no matches for \"{query}\""), inner.width),
             Style::default().fg(DIM),
         )));
     } else {
@@ -703,6 +738,27 @@ mod tests {
         app.update.available = Some("v1.0.2".to_string());
         app.update.status = crate::app::UpdateStatus::Confirming;
         app
+    }
+
+    /// A long query used to push the match count and the Esc hint off the end
+    /// of the line, clipped away by the paragraph with nothing to show for it.
+    #[test]
+    fn help_search_keeps_the_count_and_hint_against_a_long_query() {
+        let mut app = make_app();
+        app.help_active = true;
+        app.help_query = "e".repeat(48);
+
+        let text = render_modal(&app, 80, 40);
+
+        assert!(text.contains("Esc to clear"), "hint was clipped: {text}");
+        assert!(
+            text.contains(&format!("/{}", KeybindGroup::total_bind_count())),
+            "match count was clipped: {text}"
+        );
+        assert!(
+            text.contains('…'),
+            "the query was not marked as trimmed: {text}"
+        );
     }
 
     #[test]

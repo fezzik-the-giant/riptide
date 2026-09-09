@@ -19,6 +19,7 @@ use crate::lastfm::LastfmCmd;
 use crate::mpris::MprisState;
 use crate::player::PlayerCmd;
 use crate::search::SearchState;
+use std::cell::Cell;
 use std::collections::HashSet;
 use tokio::sync::{mpsc, watch};
 
@@ -88,6 +89,9 @@ pub struct App {
     pub help_active: bool,
     pub help_scroll: u16,
     pub help_query: String,
+    /// Rows the last help render fitted, so the scroll bound matches what the
+    /// modal can actually show instead of overshooting it.
+    pub help_content_h: Cell<u16>,
 
     /// Self-update availability + dialog state.
     pub update: UpdateState,
@@ -195,6 +199,7 @@ impl App {
                 cmd_rx: update_cmd_rx,
             }),
             help_query: String::new(),
+            help_content_h: Cell::new(0),
             tick: 0,
             marquee_epoch: std::time::Instant::now(),
             status: None,

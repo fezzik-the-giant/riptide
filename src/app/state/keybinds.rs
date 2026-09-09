@@ -78,17 +78,16 @@ impl KeybindGroup {
         if groups.is_empty() {
             return 1;
         }
+        const HEADER_AND_GAP: u16 = 2;
         let mut total = 0u16;
         for g in groups {
-            total += 1; // group header
-            total += g.binds.len() as u16; // keybinds
-            total += 1; // blank line
+            total += g.binds.len() as u16 + HEADER_AND_GAP;
         }
         total
     }
 
     /// Count of binds matching the query across all groups.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn filtered_bind_count(query: &str) -> usize {
         Self::filtered_groups(query)
             .iter()
@@ -99,12 +98,6 @@ impl KeybindGroup {
     /// Total bind count across all groups.
     pub fn total_bind_count() -> usize {
         Self::all().iter().map(|g| g.binds.len()).sum()
-    }
-
-    /// Calculate total lines needed to display all keybind groups (for scrolling bounds)
-    #[allow(dead_code)]
-    pub fn total_help_lines() -> u16 {
-        Self::total_help_lines_filtered("")
     }
 
     pub fn global() -> Self {
