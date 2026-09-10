@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Fezzik the Giant
 
-use super::{App, StatusLevel, View};
+use super::{App, QueueSource, StatusLevel, View};
 use crate::api::models::*;
 use crate::api::{ApiRequest, ApiResponse};
 use crate::player::{PlayerCmd, PlayerEvent};
@@ -220,9 +220,16 @@ impl App {
                 if let Some(View::AlbumDetail(detail)) = self.view_stack.last_mut() {
                     if detail.album.id == album_id {
                         let n = tracks.len() as u32;
-                        detail.tracks.append(tracks, n);
+                        detail.tracks.append(tracks.clone(), n);
                         detail.tracks.exhausted = true;
                     }
+                }
+                // The client drains an album's tracks internally, so one
+                // response is the whole thing.
+                if let Some(pending) = self.pending_queue_entry(&QueueSource::Album(album_id)) {
+                    pending.tracks = tracks;
+                    pending.complete = true;
+                    self.drain_pending_queue();
                 }
             }
 
@@ -385,6 +392,32 @@ impl App {
 
                 // 2. Eagerly request the next page (no waiting for the user to scroll).
                 self.load_more_playlist_tracks();
+
+                // 2a. A queue-append takes every page as it arrives. It drives its
+                // own pagination unless the detail view is open and doing it, since
+                // asking for the same cursor twice would queue that page twice.
+                let source = QueueSource::Playlist(uuid.clone());
+                if self.pending_queue_entry(&source).is_some() {
+                    let detail_open = matches!(
+                        self.view_stack.last(),
+                        Some(View::PlaylistDetail(d)) if d.playlist.uuid == uuid
+                    );
+                    let more = next_cursor.clone();
+                    if let Some(pending) = self.pending_queue_entry(&source) {
+                        pending.tracks.extend(tracks.clone());
+                        pending.complete = more.is_none();
+                    }
+                    match more {
+                        Some(cursor) if !detail_open => {
+                            let _ = self.api_tx.send(ApiRequest::LoadPlaylistTracks {
+                                uuid: uuid.clone(),
+                                next_url: Some(cursor),
+                            });
+                        }
+                        _ => {}
+                    }
+                    self.drain_pending_queue();
+                }
 
                 // 3. Extend the live queue if we're playing from this playlist.
                 let is_source = self.now_playing.source_playlist_uuid.as_deref() == Some(&uuid);

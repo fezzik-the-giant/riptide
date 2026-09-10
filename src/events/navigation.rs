@@ -6,16 +6,9 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::*;
-use crate::app::{App, ArtistDetailFocus, Tab, View};
+use crate::app::{App, ArtistDetailFocus, QueueAt, Tab, View};
 use crate::playlist::PlaylistDetailFocus;
 use crate::search::SearchPane;
-
-/// Where `a` puts a track: plain appends, Alt inserts after the current track.
-#[derive(Clone, Copy, PartialEq, Debug)]
-enum QueueAt {
-    End,
-    Next,
-}
 
 fn queue_at(key: &KeyEvent) -> QueueAt {
     if key.modifiers.contains(KeyModifiers::ALT) {
@@ -40,6 +33,7 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
         PlayTracks(Vec<crate::api::models::Track>, usize),
         OpenAlbum,
         AddToQueue(crate::api::models::Track, QueueAt),
+        QueueAlbum(crate::api::models::Album, QueueAt),
         ToggleFavoriteTrack(crate::api::models::Track),
         ToggleFollowArtist(crate::api::models::Artist),
         ToggleFavoriteAlbum(crate::api::models::Album),
@@ -133,6 +127,24 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
                         Action::OpenAlbum
                     } else {
                         return;
+                    }
+                }
+                KeyCode::Char('a')
+                    if matches!(
+                        detail.focus,
+                        ArtistDetailFocus::Albums
+                            | ArtistDetailFocus::EPs
+                            | ArtistDetailFocus::Singles
+                    ) =>
+                {
+                    let list = match detail.focus {
+                        ArtistDetailFocus::Albums => &detail.albums,
+                        ArtistDetailFocus::EPs => &detail.eps,
+                        _ => &detail.singles,
+                    };
+                    match list.items.get(list.selected).cloned() {
+                        Some(album) => Action::QueueAlbum(album, queue_at(&key)),
+                        None => return,
                     }
                 }
                 KeyCode::Char('a') if detail.focus == ArtistDetailFocus::Tracks => {
@@ -405,6 +417,10 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
             queue_track(app, track, at);
             return;
         }
+        Action::QueueAlbum(album, at) => {
+            app.queue_album(&album, at);
+            return;
+        }
         Action::ToggleFavoriteTrack(track) => {
             app.toggle_favorite_track(&track);
             return;
@@ -536,6 +552,21 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
             Tab::Search if app.search.pane == SearchPane::Tracks => {
                 if let Some(track) = app.search.tracks.get(app.search.track_sel).cloned() {
                     queue_track(app, track, queue_at(&key));
+                }
+            }
+            Tab::Albums => {
+                if let Some(album) = app.fav_albums.selected_item().cloned() {
+                    app.queue_album(&album, queue_at(&key));
+                }
+            }
+            Tab::Playlists => {
+                if let Some(playlist) = app.playlists.selected_item().cloned() {
+                    app.queue_playlist(&playlist, queue_at(&key));
+                }
+            }
+            Tab::Search if app.search.pane == SearchPane::Playlists => {
+                if let Some(playlist) = app.search.playlists.get(app.search.playlist_sel).cloned() {
+                    app.queue_playlist(&playlist, queue_at(&key));
                 }
             }
             _ => {}

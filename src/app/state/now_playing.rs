@@ -22,6 +22,34 @@ impl PendingSeek {
     pub const POLL_BUDGET: u8 = 3;
 }
 
+/// Where newly queued tracks land.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum QueueAt {
+    End,
+    Next,
+}
+
+/// What a pending queue-append is waiting on.
+#[derive(Clone, PartialEq, Debug)]
+pub enum QueueSource {
+    Album(u64),
+    Playlist(String),
+}
+
+/// An album or playlist whose tracks were requested so they could be appended
+/// to the queue.
+///
+/// These are held in the order the user asked for them and drained from the
+/// front, so queueing several albums in quick succession lands them in that
+/// order however the responses interleave.
+pub struct PendingQueueAdd {
+    pub source: QueueSource,
+    pub label: String,
+    pub at: QueueAt,
+    pub tracks: Vec<Track>,
+    pub complete: bool,
+}
+
 pub struct NowPlaying {
     pub track: Option<Track>,
     /// True only after mpv fires TrackStarted; false on startup and after the queue empties.
