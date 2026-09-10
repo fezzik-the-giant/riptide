@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-09-10
+
+### Fixed
+- Building from source in a terminal could fail in the test suite, which broke `paru`/`makepkg` installs of 1.4.0. The Home tab's art frame is laid out in whole cells against the terminal's real font metrics, so it can only be square to within one cell — but its test asserted square to the *pixel*. That holds only at an exactly 1:2 cell ratio, which is what a build server sees, because with no terminal to answer the query the image library falls back to a 10x20 default. A terminal reporting 9x20 produced a frame 279x280 px and failed. The test now allows the sub-cell difference that is unavoidable, and runs against fixed cell sizes rather than whatever the build machine reports
+
 ## [1.4.0] - 2026-09-09
 
 ### Added

@@ -6,7 +6,7 @@
 %global debug_package %{nil}
 
 Name:           riptide
-Version:        1.4.0
+Version:        1.4.1
 Release:        1%{?dist}
 Summary:        Terminal UI music player for Tidal
 License:        GPL-3.0-or-later
@@ -55,6 +55,9 @@ cargo test --release --locked
 %{_bindir}/%{name}
 
 %changelog
+* Thu Sep 10 2026 Fezzik the Giant <noreply@github.com> - 1.4.1-1
+- Fixed: Building from source in a terminal could fail in the test suite, which broke paru/makepkg installs of 1.4.0.
+
 * Wed Sep 09 2026 Fezzik the Giant <noreply@github.com> - 1.4.0-1
 - Added: Self-update for binaries installed via install.sh or a manual release download.
 - Added: Fullscreen album-art mode with Shift+A, on-demand high-resolution covers, and a compact playback HUD
