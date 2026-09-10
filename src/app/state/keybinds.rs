@@ -149,6 +149,10 @@ impl KeybindGroup {
                     action: "Toggle shuffle",
                 },
                 Keybind {
+                    key: "Alt+f",
+                    action: "Favorite playing track",
+                },
+                Keybind {
                     key: "t",
                     action: "Show/hide queue",
                 },
