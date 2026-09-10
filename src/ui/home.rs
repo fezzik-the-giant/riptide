@@ -62,18 +62,28 @@ fn section_label(app: &App, section: HomeSectionFocus) -> (String, bool) {
     (label, app.home_section_focus == section)
 }
 
-fn render_home_art(f: &mut Frame, app: &App, area: Rect) {
-    // Covers are square, and `Resize::Fit` keeps them that way, so the frame has
-    // to be square in *pixels* — which takes the terminal's real cell size, not
-    // an assumed one. Whole cells rarely divide evenly, so the art is fitted to
-    // the smaller axis and the box drawn around what it actually occupies.
-    let (cell_w, cell_h) = cell_size();
+/// Inner size of the art frame, in cells, or `None` when nothing fits.
+///
+/// Covers are square, and `Resize::Fit` keeps them that way, so the frame has to
+/// be square in *pixels* — which takes the terminal's real cell size, not an
+/// assumed one. Whole cells rarely divide evenly, so the art is fitted to the
+/// smaller axis and the box drawn around what it actually occupies: the result
+/// is square to within one cell, not to the pixel.
+///
+/// Split out from the rendering so it can be tested at cell sizes other than
+/// whatever the machine running the tests happens to report.
+fn art_frame_cells(
+    area: Rect,
+    cell_w: u16,
+    cell_h: u16,
+    art_cells: Option<(u16, u16)>,
+) -> Option<(u16, u16)> {
     let title_rows = 2;
     let mut cols = area.width.saturating_sub(2);
     let mut rows = (cols as u32 * cell_w as u32 / cell_h as u32) as u16;
     let mut max_rows = area.height.saturating_sub(2 + title_rows);
     // The art never scales up, so the frame must not outgrow it.
-    if let Some((art_cols, art_rows)) = app.home_art.bytes.as_deref().and_then(image_cells) {
+    if let Some((art_cols, art_rows)) = art_cells {
         cols = cols.min(art_cols);
         max_rows = max_rows.min(art_rows);
     }
@@ -83,9 +93,15 @@ fn render_home_art(f: &mut Frame, app: &App, area: Rect) {
     // Back-solve the width from the rows that survived rounding, so the frame is
     // the size the fitted image ends up rather than the size it asked for.
     cols = cols.min((rows as u32 * cell_h as u32 / cell_w as u32) as u16);
-    if cols == 0 || rows == 0 {
+    (cols > 0 && rows > 0).then_some((cols, rows))
+}
+
+fn render_home_art(f: &mut Frame, app: &App, area: Rect) {
+    let (cell_w, cell_h) = cell_size();
+    let art_cells = app.home_art.bytes.as_deref().and_then(image_cells);
+    let Some((cols, rows)) = art_frame_cells(area, cell_w, cell_h, art_cells) else {
         return;
-    }
+    };
 
     let frame = Rect::new(area.x, area.y, cols + 2, rows + 2);
     let block = Block::default()
@@ -260,32 +276,30 @@ mod tests {
         );
     }
 
-    /// The cover is square and `Resize::Fit` keeps it that way, so the frame has
-    /// to be square in pixels or the border floats clear of the picture.
+    /// The frame is laid out in whole cells, so it can only be square to within
+    /// one of them: `cell_size()` reports the terminal's real font metrics, and
+    /// the 1:2 ratio the arithmetic would need to land exactly is not what most
+    /// terminals use.
+    ///
+    /// This asserted exact pixel equality once, which made it a test of the host
+    /// rather than of the code — it passed wherever no terminal answered the
+    /// query and `Picker::halfblocks()` supplied its 10x20 fallback (CI, COPR),
+    /// and failed in every AUR build run from a terminal with, say, 9x20 cells.
     #[test]
-    fn the_art_frame_is_square_in_pixels() {
-        let app = home_app();
-        let (cell_w, cell_h) = cell_size();
-
-        for (w, h) in [(96u16, 24u16), (140, 30), (96, 12)] {
-            let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
-            term.draw(|f| render_home(f, &app, Rect::new(0, 0, w, h)))
-                .unwrap();
-            let buf = term.backend().buffer().clone();
-
-            let row = |y: u16| -> String {
-                (0..w)
-                    .map(|x| buf.cell((x, y)).unwrap().symbol().to_string())
-                    .collect()
-            };
-            let cols = row(0).chars().position(|c| c == '┐').unwrap() + 1;
-            let rows = (0..h).find(|&y| row(y).starts_with('└')).unwrap() + 1;
-
-            let (px_w, px_h) = (
-                (cols as u16 - 2) * cell_w,
-                (rows.saturating_sub(2)) * cell_h,
-            );
-            assert_eq!(px_w, px_h, "{w}x{h}: frame is {px_w}x{px_h} px");
+    fn the_art_frame_is_square_to_within_one_cell() {
+        for (cell_w, cell_h) in [(10u16, 20u16), (9, 20), (7, 15), (8, 17), (6, 13)] {
+            for (w, h) in [(40u16, 24u16), (60, 30), (40, 12), (24, 40), (30, 8)] {
+                let Some((cols, rows)) =
+                    art_frame_cells(Rect::new(0, 0, w, h), cell_w, cell_h, None)
+                else {
+                    continue;
+                };
+                let (px_w, px_h) = (cols as u32 * cell_w as u32, rows as u32 * cell_h as u32);
+                assert!(
+                    px_w <= px_h && px_h - px_w < cell_w as u32,
+                    "{w}x{h} at {cell_w}x{cell_h}: frame is {px_w}x{px_h} px ({cols}x{rows} cells)"
+                );
+            }
         }
     }
 
