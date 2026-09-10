@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.5.0] - 2026-09-10
 
 ### Added
 - `a` on an album or playlist row queues the whole thing, and `Alt+a` puts it next (#54). Works from the Albums and Playlists tabs, playlist search results, and an artist's albums, EPs and singles — a track row still queues just that track. Queue several in a row and they land in the order you pressed them however the responses come back, and a long playlist is fetched a page at a time until all of it is in. Thanks to @joshbmarshall for the suggestion

@@ -6,7 +6,7 @@
 %global debug_package %{nil}
 
 Name:           riptide
-Version:        1.4.1
+Version:        1.5.0
 Release:        1%{?dist}
 Summary:        Terminal UI music player for Tidal
 License:        GPL-3.0-or-later
@@ -55,6 +55,12 @@ cargo test --release --locked
 %{_bindir}/%{name}
 
 %changelog
+* Thu Sep 10 2026 Fezzik the Giant <noreply@github.com> - 1.5.0-1
+- Added: a on an album or playlist row queues the whole thing, and Alt+a puts it next (#54).
+- Added: Alt+f adds the playing track to your favorites from anywhere in the app.
+- Added: Alt+a queues a track to play after the current one instead of at the end (#53).
+- Fixed: Pressing a in the moment between starting a track and it beginning to play replaced the whole queue with that one track.
+
 * Thu Sep 10 2026 Fezzik the Giant <noreply@github.com> - 1.4.1-1
 - Fixed: Building from source in a terminal could fail in the test suite, which broke paru/makepkg installs of 1.4.0.
 
