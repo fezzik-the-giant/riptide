@@ -236,7 +236,10 @@ impl App {
     }
 
     pub fn add_to_queue(&mut self, track: Track) {
-        if self.now_playing.track.is_none() {
+        // Not `track.is_none()`: that stays unset until the stream URL lands, so
+        // a press during the initial resolve would replace the queue it is
+        // about to start playing.
+        if self.now_playing.queue.is_empty() {
             self.play_track(track);
             return;
         }
