@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `Alt+f` adds the playing track to your favorites from anywhere in the app. A bare `f` acts on the row under the cursor, so favoriting what you were actually listening to meant finding it in a list first — and it need not be in the list you are looking at, or on screen at all. Press it again to remove, which `u` still undoes. In the queue a bare `f` keeps its old meaning of the row under the cursor
+
 ## [1.4.1] - 2026-09-10
 
 ### Fixed

@@ -469,4 +469,69 @@ mod tests {
 
         assert_eq!(t.app.help_scroll, total - content_h);
     }
+
+    fn alt(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::ALT)
+    }
+
+    /// The one favourite binding that ignores the cursor, so it has to reach the
+    /// playing track from a list showing something else entirely.
+    #[test]
+    fn alt_f_favorites_the_playing_track_not_the_cursor() {
+        use crate::app::test_support::track;
+        let mut t = test_app();
+        t.app.current_tab = Tab::Favorites;
+        t.app.now_playing.track = Some(track(7));
+        t.app.now_playing.queue = vec![track(1), track(7)];
+
+        handle_key(&mut t.app, alt('f'));
+        assert!(t.app.favorites.items.iter().any(|x| x.id == 7));
+        assert!(!t.app.favorites.items.iter().any(|x| x.id == 1));
+
+        // Removal is server-confirmed — `ApiResponse::FavoriteRemoved` drops the
+        // row — so the request is what a second press has to produce.
+        t.drain_api();
+        handle_key(&mut t.app, alt('f'));
+        assert!(
+            t.api_requests()
+                .iter()
+                .any(|r| matches!(r, crate::api::ApiRequest::UnfavoriteTrack { track_id: 7 })),
+            "a second press should ask the server to take it back off"
+        );
+    }
+
+    /// Adding Alt+f globally must not repoint the queue's own `f`, which has
+    /// always meant the row under the cursor — rarely the playing track.
+    #[test]
+    fn the_focused_queue_keeps_plain_f_for_its_cursor() {
+        use crate::app::test_support::track;
+        let mut t = test_app();
+        t.app.now_playing.track = Some(track(7));
+        t.app.now_playing.queue = vec![track(1), track(7)];
+        t.app.queue_cursor = 0;
+        t.app.queue_focused = true;
+
+        handle_key(&mut t.app, press('f'));
+        assert!(
+            t.app.favorites.items.iter().any(|x| x.id == 1),
+            "plain f should still take the cursor"
+        );
+
+        handle_key(&mut t.app, alt('f'));
+        assert!(
+            t.app.favorites.items.iter().any(|x| x.id == 7),
+            "alt+f should reach the playing track through the queue"
+        );
+    }
+
+    #[test]
+    fn alt_f_with_nothing_playing_says_so() {
+        let mut t = test_app();
+
+        handle_key(&mut t.app, alt('f'));
+
+        assert!(t.app.favorites.items.is_empty());
+        let (msg, _, _) = t.app.status.clone().expect("alt+f must give feedback");
+        assert!(msg.contains("Nothing playing"), "{msg}");
+    }
 }

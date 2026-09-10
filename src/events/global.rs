@@ -99,6 +99,18 @@ pub(super) fn handle_global_key(app: &mut App, key: KeyEvent) -> bool {
         KeyCode::Char('p') => app.prev_track(),
         KeyCode::Char('z') => app.toggle_shuffle(),
         KeyCode::Char('u') => app.undo_last_removal(),
+        // Alt, because a bare `f` everywhere else acts on the row under the
+        // cursor. This is the one favourite binding that ignores the cursor and
+        // takes what is playing, so it has to be reachable from a list without
+        // first navigating to the track — which may not even be on screen.
+        KeyCode::Char('f') | KeyCode::Char('F') if key.modifiers.contains(KeyModifiers::ALT) => {
+            match app.now_playing.track.clone() {
+                Some(track) => app.toggle_favorite_track(&track),
+                None => {
+                    app.set_status("Nothing playing".to_string(), crate::app::StatusLevel::Info)
+                }
+            }
+        }
         KeyCode::Esc => {
             // A filter left applied after the box closed would otherwise have no
             // quick way out; clearing it takes priority over navigating back.

@@ -40,7 +40,9 @@ pub(super) fn handle_queue_input(app: &mut App, key: KeyEvent) {
             let cursor = app.queue_cursor;
             app.remove_from_queue(cursor);
         }
-        KeyCode::Char('f') => {
+        // Alt+f is the global "favourite what is playing"; a bare `f` in here
+        // means the row under the cursor, which is rarely the same track.
+        KeyCode::Char('f') if !key.modifiers.contains(KeyModifiers::ALT) => {
             if let Some(track) = app.now_playing.queue.get(app.queue_cursor).cloned() {
                 app.toggle_favorite_track(&track);
             }
