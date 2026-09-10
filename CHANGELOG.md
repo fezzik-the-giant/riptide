@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `Alt+f` adds the playing track to your favorites from anywhere in the app. A bare `f` acts on the row under the cursor, so favoriting what you were actually listening to meant finding it in a list first — and it need not be in the list you are looking at, or on screen at all. Press it again to remove, which `u` still undoes. In the queue a bare `f` keeps its old meaning of the row under the cursor
+- `Alt+a` queues a track to play after the current one instead of at the end (#53). Pressing it on several tracks in turn keeps them in the order you pressed them, rather than each one jumping ahead of the last. Available anywhere a plain `a` queues a track. Thanks to @joshbmarshall for the suggestion
+
+### Fixed
+- Pressing `a` in the moment between starting a track and it beginning to play replaced the whole queue with that one track. The check for "nothing is playing yet" read the current track, which stays unset until Tidal returns a stream URL, rather than the queue itself
 
 ## [1.4.1] - 2026-09-10
 

@@ -3,12 +3,34 @@
 
 //! List and view navigation for the main content area.
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::*;
 use crate::app::{App, ArtistDetailFocus, Tab, View};
 use crate::playlist::PlaylistDetailFocus;
 use crate::search::SearchPane;
+
+/// Where `a` puts a track: plain appends, Alt inserts after the current track.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum QueueAt {
+    End,
+    Next,
+}
+
+fn queue_at(key: &KeyEvent) -> QueueAt {
+    if key.modifiers.contains(KeyModifiers::ALT) {
+        QueueAt::Next
+    } else {
+        QueueAt::End
+    }
+}
+
+fn queue_track(app: &mut App, track: crate::api::models::Track, at: QueueAt) {
+    match at {
+        QueueAt::End => app.add_to_queue(track),
+        QueueAt::Next => app.play_next(track),
+    }
+}
 
 pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
     // First pass: mutate the view's own list state (navigation within a detail view).
@@ -17,7 +39,7 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
         None,
         PlayTracks(Vec<crate::api::models::Track>, usize),
         OpenAlbum,
-        AddToQueue(crate::api::models::Track),
+        AddToQueue(crate::api::models::Track, QueueAt),
         ToggleFavoriteTrack(crate::api::models::Track),
         ToggleFollowArtist(crate::api::models::Artist),
         ToggleFavoriteAlbum(crate::api::models::Album),
@@ -115,7 +137,7 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
                 }
                 KeyCode::Char('a') if detail.focus == ArtistDetailFocus::Tracks => {
                     match detail.tracks.items.get(detail.tracks.selected).cloned() {
-                        Some(t) => Action::AddToQueue(t),
+                        Some(t) => Action::AddToQueue(t, queue_at(&key)),
                         None => return,
                     }
                 }
@@ -261,7 +283,7 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
                 KeyCode::Char('a') => {
                     if detail.focus == PlaylistDetailFocus::Tracks {
                         match detail.tracks.items.get(detail.tracks.selected).cloned() {
-                            Some(t) => Action::AddToQueue(t),
+                            Some(t) => Action::AddToQueue(t, queue_at(&key)),
                             None => return,
                         }
                     } else {
@@ -338,7 +360,7 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
                     }
                     KeyCode::Char('a') => {
                         match detail.tracks.items.get(detail.tracks.selected).cloned() {
-                            Some(t) => Action::AddToQueue(t),
+                            Some(t) => Action::AddToQueue(t, queue_at(&key)),
                             None => return,
                         }
                     }
@@ -379,8 +401,8 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
             app.open_selected_album();
             return;
         }
-        Action::AddToQueue(track) => {
-            app.add_to_queue(track);
+        Action::AddToQueue(track, at) => {
+            queue_track(app, track, at);
             return;
         }
         Action::ToggleFavoriteTrack(track) => {
@@ -508,12 +530,12 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
         KeyCode::Char('a') => match app.current_tab {
             Tab::Favorites => {
                 if let Some(track) = app.favorites.selected_item().cloned() {
-                    app.add_to_queue(track);
+                    queue_track(app, track, queue_at(&key));
                 }
             }
             Tab::Search if app.search.pane == SearchPane::Tracks => {
                 if let Some(track) = app.search.tracks.get(app.search.track_sel).cloned() {
-                    app.add_to_queue(track);
+                    queue_track(app, track, queue_at(&key));
                 }
             }
             _ => {}

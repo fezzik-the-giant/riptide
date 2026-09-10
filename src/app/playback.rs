@@ -11,6 +11,7 @@ impl App {
     pub fn play_track(&mut self, track: Track) {
         let id = track.id;
         self.now_playing.queue = vec![track.clone()];
+        self.now_playing.play_next_tail = None;
         self.now_playing.queue_index = 0;
         // Don't set now_playing.track yet - wait for successful StreamUrl response
         self.now_playing.active = false;
@@ -46,6 +47,7 @@ impl App {
         let track_id = queue.get(queue_index).map(|t| t.id);
         // Don't set track yet - wait for successful StreamUrl response
         self.now_playing.queue = queue;
+        self.now_playing.play_next_tail = None;
         self.now_playing.queue_index = queue_index;
         self.now_playing.active = false;
         self.now_playing.position = 0.0;
@@ -133,6 +135,7 @@ impl App {
             match restore_to {
                 Some(idx) => {
                     self.now_playing.queue = std::mem::take(&mut self.now_playing.original_queue);
+                    self.now_playing.play_next_tail = None;
                     self.now_playing.queue_index = idx;
                     self.replace_prefetched_next();
                 }
@@ -236,7 +239,10 @@ impl App {
     }
 
     pub fn add_to_queue(&mut self, track: Track) {
-        if self.now_playing.track.is_none() {
+        // Not `track.is_none()`: that stays unset until the stream URL lands, so
+        // a press during the initial resolve would replace the queue it is
+        // about to start playing.
+        if self.now_playing.queue.is_empty() {
             self.play_track(track);
             return;
         }
@@ -245,15 +251,59 @@ impl App {
             self.now_playing.original_queue.push(track.clone());
         }
         self.now_playing.queue.push(track);
-        let qi = self.now_playing.queue_index;
-        let new_idx = self.now_playing.queue.len() - 1;
-        if new_idx == qi + 1 {
-            let id = self.now_playing.queue[new_idx].id;
-            let _ = self
-                .api_tx
-                .send(ApiRequest::ResolveStreamUrl { track_id: id });
-        }
+        // Appending onto an empty tail makes the new track the next one, which
+        // mpv has to be told about.
+        self.replace_prefetched_next();
         self.set_status(format!("Queued: {title}"), StatusLevel::Info);
+        self.push_mpris_state();
+    }
+
+    /// Insert `track` to play after the current one.
+    ///
+    /// Repeated presses keep the order they were pressed in rather than
+    /// stacking in reverse: [`NowPlaying::play_next_tail`] anchors the run, so
+    /// the second press lands after the first.
+    pub fn play_next(&mut self, track: Track) {
+        // Not `track.is_none()`: that stays unset until the stream URL lands, so
+        // a press during the initial resolve would replace the queue it is
+        // about to start playing.
+        if self.now_playing.queue.is_empty() {
+            self.play_track(track);
+            return;
+        }
+        let title = track.title.clone();
+        let id = track.id;
+        let qi = self.now_playing.queue_index;
+        let old_next_id = self.now_playing.queue.get(qi + 1).map(|t| t.id);
+
+        let at = self
+            .now_playing
+            .play_next_tail
+            .and_then(|tail| {
+                self.now_playing.queue[(qi + 1).min(self.now_playing.queue.len())..]
+                    .iter()
+                    .position(|t| t.id == tail)
+                    .map(|p| qi + 2 + p)
+            })
+            .unwrap_or(qi + 1)
+            .min(self.now_playing.queue.len());
+
+        // Or turning shuffle off would drop it again.
+        if self.now_playing.shuffle {
+            self.now_playing.original_queue.push(track.clone());
+        }
+        self.now_playing.queue.insert(at, track);
+        self.now_playing.play_next_tail = Some(id);
+        // The panel cursor addresses positions, so it has to move with the rows
+        // that just shifted under it.
+        if at <= self.queue_cursor {
+            self.queue_cursor += 1;
+        }
+
+        if self.now_playing.queue.get(qi + 1).map(|t| t.id) != old_next_id {
+            self.replace_prefetched_next();
+        }
+        self.set_status(format!("Playing next: {title}"), StatusLevel::Info);
         self.push_mpris_state();
     }
 
@@ -541,6 +591,10 @@ mod tests {
             crate::app::Preferences::default(),
         );
         (app, api_rx, player_rx)
+    }
+
+    fn queue_ids(app: &App) -> Vec<u64> {
+        app.now_playing.queue.iter().map(|t| t.id).collect()
     }
 
     fn resolved_track_ids(rx: &mut mpsc::UnboundedReceiver<ApiRequest>) -> Vec<u64> {
@@ -1649,5 +1703,69 @@ mod tests {
             mpris_rx.borrow().art_url,
             "https://resources.tidal.com/images/33fd4c9b/5673/4c1e/bbd4/5346d397b8e0/640x640.jpg"
         );
+    }
+
+    #[test]
+    fn play_next_inserts_after_the_current_track() {
+        let (mut app, mut api_rx) = make_app_watching_api();
+        app.play_tracks((1..=3).map(track).collect(), 0);
+        app.now_playing.next_prefetched = Some(2);
+        let _ = resolved_track_ids(&mut api_rx);
+
+        app.play_next(track(9));
+
+        assert_eq!(queue_ids(&app), vec![1, 9, 2, 3]);
+        // mpv is holding track 2 for gapless playback, so it has to be told the
+        // next track changed or it plays the one it already has.
+        assert_eq!(resolved_track_ids(&mut api_rx), vec![9]);
+    }
+
+    /// Pressed on 8 then 9, they have to play 8 then 9 — inserting each one at
+    /// the current track's heel would play them back to front.
+    #[test]
+    fn repeated_play_next_keeps_the_order_pressed() {
+        let mut app = make_app();
+        app.play_tracks((1..=3).map(track).collect(), 0);
+
+        app.play_next(track(8));
+        app.play_next(track(9));
+
+        assert_eq!(queue_ids(&app), vec![1, 8, 9, 2, 3]);
+    }
+
+    /// The anchor is never cleaned up as the queue advances; it stops applying
+    /// because it is no longer ahead of `queue_index`.
+    #[test]
+    fn play_next_starts_a_fresh_run_once_the_last_one_has_played() {
+        let mut app = make_app();
+        app.play_tracks((1..=3).map(track).collect(), 0);
+        app.play_next(track(8));
+        app.now_playing.queue_index = 2; // 8 has played, 2 is playing
+
+        app.play_next(track(9));
+
+        assert_eq!(queue_ids(&app), vec![1, 8, 2, 9, 3]);
+    }
+
+    #[test]
+    fn play_next_with_nothing_playing_just_plays_it() {
+        let mut app = make_app();
+
+        app.play_next(track(4));
+
+        assert_eq!(queue_ids(&app), vec![4]);
+        assert_eq!(app.now_playing.queue_index, 0);
+    }
+
+    #[test]
+    fn a_play_next_track_survives_turning_shuffle_off() {
+        let mut app = make_app();
+        app.play_tracks((1..=3).map(track).collect(), 0);
+        app.toggle_shuffle();
+
+        app.play_next(track(9));
+        app.toggle_shuffle();
+
+        assert!(queue_ids(&app).contains(&9));
     }
 }
