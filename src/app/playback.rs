@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Fezzik the Giant
 
-use super::{App, StatusLevel};
+use super::{App, PendingQueueAdd, QueueAt, QueueSource, StatusLevel};
 use crate::api::ApiRequest;
-use crate::api::models::{Track, presentation_art_url};
+use crate::api::models::{Album, Playlist, Track, presentation_art_url};
 use crate::mpris::MprisState;
 use crate::player::PlayerCmd;
 
@@ -239,45 +239,26 @@ impl App {
     }
 
     pub fn add_to_queue(&mut self, track: Track) {
-        // Not `track.is_none()`: that stays unset until the stream URL lands, so
-        // a press during the initial resolve would replace the queue it is
-        // about to start playing.
-        if self.now_playing.queue.is_empty() {
-            self.play_track(track);
-            return;
-        }
         let title = track.title.clone();
-        if self.now_playing.shuffle {
-            self.now_playing.original_queue.push(track.clone());
+        if self.queue_tracks(vec![track], QueueAt::End) {
+            self.set_status(format!("Queued: {title}"), StatusLevel::Info);
         }
-        self.now_playing.queue.push(track);
-        // Appending onto an empty tail makes the new track the next one, which
-        // mpv has to be told about.
-        self.replace_prefetched_next();
-        self.set_status(format!("Queued: {title}"), StatusLevel::Info);
-        self.push_mpris_state();
     }
 
     /// Insert `track` to play after the current one.
-    ///
-    /// Repeated presses keep the order they were pressed in rather than
-    /// stacking in reverse: [`NowPlaying::play_next_tail`] anchors the run, so
-    /// the second press lands after the first.
     pub fn play_next(&mut self, track: Track) {
-        // Not `track.is_none()`: that stays unset until the stream URL lands, so
-        // a press during the initial resolve would replace the queue it is
-        // about to start playing.
-        if self.now_playing.queue.is_empty() {
-            self.play_track(track);
-            return;
-        }
         let title = track.title.clone();
-        let id = track.id;
-        let qi = self.now_playing.queue_index;
-        let old_next_id = self.now_playing.queue.get(qi + 1).map(|t| t.id);
+        if self.queue_tracks(vec![track], QueueAt::Next) {
+            self.set_status(format!("Playing next: {title}"), StatusLevel::Info);
+        }
+    }
 
-        let at = self
-            .now_playing
+    /// Where a "play next" insert lands: after any run already queued that way,
+    /// so repeated requests keep the order they were made in rather than
+    /// stacking in reverse. [`NowPlaying::play_next_tail`] anchors the run.
+    fn play_next_position(&self) -> usize {
+        let qi = self.now_playing.queue_index;
+        self.now_playing
             .play_next_tail
             .and_then(|tail| {
                 self.now_playing.queue[(qi + 1).min(self.now_playing.queue.len())..]
@@ -286,25 +267,122 @@ impl App {
                     .map(|p| qi + 2 + p)
             })
             .unwrap_or(qi + 1)
-            .min(self.now_playing.queue.len());
+            .min(self.now_playing.queue.len())
+    }
 
-        // Or turning shuffle off would drop it again.
+    /// Add `tracks` to the queue, at the end or straight after the current
+    /// track.
+    ///
+    /// Returns false when there was nothing playing to queue behind, in which
+    /// case the tracks start playing instead — callers use it to decide whether
+    /// a "queued" status message would be a lie.
+    pub fn queue_tracks(&mut self, tracks: Vec<Track>, at: QueueAt) -> bool {
+        if tracks.is_empty() {
+            return false;
+        }
+        // Not `now_playing.track.is_none()`: that stays unset until the stream
+        // URL lands, so a press during the initial resolve would replace the
+        // queue it is about to start playing.
+        if self.now_playing.queue.is_empty() {
+            self.play_tracks(tracks, 0);
+            return false;
+        }
+        let qi = self.now_playing.queue_index;
+        let old_next_id = self.now_playing.queue.get(qi + 1).map(|t| t.id);
+
+        // Or turning shuffle off would drop them again.
         if self.now_playing.shuffle {
-            self.now_playing.original_queue.push(track.clone());
-        }
-        self.now_playing.queue.insert(at, track);
-        self.now_playing.play_next_tail = Some(id);
-        // The panel cursor addresses positions, so it has to move with the rows
-        // that just shifted under it.
-        if at <= self.queue_cursor {
-            self.queue_cursor += 1;
+            self.now_playing
+                .original_queue
+                .extend(tracks.iter().cloned());
         }
 
+        match at {
+            QueueAt::End => self.now_playing.queue.extend(tracks),
+            QueueAt::Next => {
+                let pos = self.play_next_position();
+                let added = tracks.len();
+                self.now_playing.play_next_tail = tracks.last().map(|t| t.id);
+                for (offset, track) in tracks.into_iter().enumerate() {
+                    self.now_playing.queue.insert(pos + offset, track);
+                }
+                // The panel cursor addresses positions, so it has to move with
+                // the rows that just shifted under it.
+                if pos <= self.queue_cursor {
+                    self.queue_cursor += added;
+                }
+            }
+        }
+
+        // Appending onto an empty tail makes a new track the next one, which
+        // mpv has to be told about.
         if self.now_playing.queue.get(qi + 1).map(|t| t.id) != old_next_id {
             self.replace_prefetched_next();
         }
-        self.set_status(format!("Playing next: {title}"), StatusLevel::Info);
         self.push_mpris_state();
+        true
+    }
+
+    /// Fetch an album's tracks and append them to the queue when they land.
+    pub fn queue_album(&mut self, album: &Album, at: QueueAt) {
+        self.pending_queue.push(PendingQueueAdd {
+            source: QueueSource::Album(album.id),
+            label: album.title.clone(),
+            at,
+            tracks: Vec::new(),
+            complete: false,
+        });
+        let _ = self
+            .api_tx
+            .send(ApiRequest::LoadAlbumTracks { album_id: album.id });
+        self.set_status(format!("Queueing {}…", album.title), StatusLevel::Info);
+    }
+
+    /// Fetch a playlist's tracks and append them to the queue when they land.
+    pub fn queue_playlist(&mut self, playlist: &Playlist, at: QueueAt) {
+        self.pending_queue.push(PendingQueueAdd {
+            source: QueueSource::Playlist(playlist.uuid.clone()),
+            label: playlist.title.clone(),
+            at,
+            tracks: Vec::new(),
+            complete: false,
+        });
+        let _ = self.api_tx.send(ApiRequest::LoadPlaylistTracks {
+            uuid: playlist.uuid.clone(),
+            next_url: None,
+        });
+        self.set_status(format!("Queueing {}…", playlist.title), StatusLevel::Info);
+    }
+
+    pub(super) fn pending_queue_entry(
+        &mut self,
+        source: &QueueSource,
+    ) -> Option<&mut PendingQueueAdd> {
+        self.pending_queue.iter_mut().find(|p| &p.source == source)
+    }
+
+    /// Append every finished request at the front of the queue-add list.
+    ///
+    /// Stops at the first unfinished one, so a slow album cannot let a later
+    /// one overtake it.
+    pub(super) fn drain_pending_queue(&mut self) {
+        while self.pending_queue.first().is_some_and(|p| p.complete) {
+            let pending = self.pending_queue.remove(0);
+            let count = pending.tracks.len();
+            if count == 0 {
+                self.set_status(
+                    format!("{} has no tracks to queue", pending.label),
+                    StatusLevel::Info,
+                );
+                continue;
+            }
+            let label = pending.label.clone();
+            self.queue_tracks(pending.tracks, pending.at);
+            self.set_status(
+                format!("Queued {count} tracks from {label}"),
+                StatusLevel::Info,
+            );
+        }
     }
 
     pub fn focus_queue(&mut self) {
@@ -556,8 +634,9 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::App;
-    use crate::api::ApiRequest;
     use crate::api::models::Track;
+    use crate::api::{ApiRequest, ApiResponse};
+    use crate::app::QueueAt;
     use crate::app::test_support::track;
     use crate::mpris::MprisState;
     use crate::player::{PlayerCmd, PlayerEvent};
@@ -1767,5 +1846,102 @@ mod tests {
         app.toggle_shuffle();
 
         assert!(queue_ids(&app).contains(&9));
+    }
+
+    fn album_fixture(id: u64) -> crate::api::models::Album {
+        crate::api::models::Album {
+            id,
+            title: format!("Album {id}"),
+            number_of_tracks: None,
+            release_date: None,
+            cover: None,
+            artist: None,
+            media_metadata: None,
+            added_at: None,
+            album_type: None,
+        }
+    }
+
+    /// Queueing two albums in quick succession must land them in that order even
+    /// when the second one's tracks come back first.
+    #[test]
+    fn albums_queue_in_the_order_asked_for_not_the_order_they_arrive() {
+        let mut app = make_app();
+        app.play_tracks(vec![track(1)], 0);
+
+        app.queue_album(&album_fixture(10), QueueAt::End);
+        app.queue_album(&album_fixture(20), QueueAt::End);
+
+        // The second album answers first.
+        app.handle_api_response(ApiResponse::AlbumTracks {
+            album_id: 20,
+            tracks: vec![track(201), track(202)],
+        });
+        assert_eq!(
+            queue_ids(&app),
+            vec![1],
+            "nothing may be queued while the album asked for first is outstanding"
+        );
+
+        app.handle_api_response(ApiResponse::AlbumTracks {
+            album_id: 10,
+            tracks: vec![track(101)],
+        });
+        assert_eq!(queue_ids(&app), vec![1, 101, 201, 202]);
+        assert!(app.pending_queue.is_empty());
+    }
+
+    #[test]
+    fn a_queued_album_can_go_next_instead_of_last() {
+        let mut app = make_app();
+        app.play_tracks(vec![track(1), track(2)], 0);
+
+        app.queue_album(&album_fixture(10), QueueAt::Next);
+        app.handle_api_response(ApiResponse::AlbumTracks {
+            album_id: 10,
+            tracks: vec![track(101), track(102)],
+        });
+
+        assert_eq!(queue_ids(&app), vec![1, 101, 102, 2]);
+    }
+
+    /// A playlist arrives a page at a time; every page joins the queue and the
+    /// next one is requested until the cursor runs out.
+    #[test]
+    fn a_queued_playlist_drains_every_page_before_it_lands() {
+        let (mut app, mut api_rx) = make_app_watching_api();
+        app.play_tracks(vec![track(1)], 0);
+        let playlist = crate::api::models::Playlist {
+            uuid: "pl-1".to_string(),
+            title: "Mix".to_string(),
+            number_of_tracks: None,
+            description: None,
+            cover: None,
+            added_at: None,
+        };
+
+        app.queue_playlist(&playlist, QueueAt::End);
+        let page = |tracks: Vec<crate::api::models::Track>, cursor: Option<&str>| {
+            ApiResponse::PlaylistTracks {
+                uuid: "pl-1".to_string(),
+                tracks,
+                total: 3,
+                next_cursor: cursor.map(|c| c.to_string()),
+                description: None,
+                cover: None,
+            }
+        };
+
+        app.handle_api_response(page(vec![track(301), track(302)], Some("c2")));
+        assert_eq!(
+            queue_ids(&app),
+            vec![1],
+            "a half-read playlist must not be queued piecemeal"
+        );
+
+        app.handle_api_response(page(vec![track(303)], None));
+        assert_eq!(queue_ids(&app), vec![1, 301, 302, 303]);
+        assert!(app.pending_queue.is_empty());
+        let _ = resolved_track_ids(&mut api_rx);
     }
 }

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `a` on an album or playlist row queues the whole thing, and `Alt+a` puts it next (#54). Works from the Albums and Playlists tabs, playlist search results, and an artist's albums, EPs and singles — a track row still queues just that track. Queue several in a row and they land in the order you pressed them however the responses come back, and a long playlist is fetched a page at a time until all of it is in. Thanks to @joshbmarshall for the suggestion
 - `Alt+f` adds the playing track to your favorites from anywhere in the app. A bare `f` acts on the row under the cursor, so favoriting what you were actually listening to meant finding it in a list first — and it need not be in the list you are looking at, or on screen at all. Press it again to remove, which `u` still undoes. In the queue a bare `f` keeps its old meaning of the row under the cursor
 - `Alt+a` queues a track to play after the current one instead of at the end (#53). Pressing it on several tracks in turn keeps them in the order you pressed them, rather than each one jumping ahead of the last. Available anywhere a plain `a` queues a track. Thanks to @joshbmarshall for the suggestion
 

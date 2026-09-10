@@ -86,6 +86,9 @@ pub struct App {
     /// Most recent library removal, restorable with `u` until the next one.
     pub last_removal: Option<Removal>,
 
+    /// Albums and playlists being fetched so their tracks can join the queue.
+    pub pending_queue: Vec<PendingQueueAdd>,
+
     pub help_active: bool,
     pub help_scroll: u16,
     pub help_query: String,
@@ -184,6 +187,7 @@ impl App {
             queue_cursor: 0,
             queue_viewport: ListViewport::default(),
             last_removal: None,
+            pending_queue: Vec::new(),
             help_active: false,
             help_scroll: 0,
             update: UpdateState::default(),
