@@ -194,7 +194,11 @@ impl KeybindGroup {
                 },
                 Keybind {
                     key: "a",
-                    action: "Add to queue",
+                    action: "Add to queue (end)",
+                },
+                Keybind {
+                    key: "Alt+a",
+                    action: "Add to queue (next)",
                 },
                 Keybind {
                     key: "f",

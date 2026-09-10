@@ -66,6 +66,14 @@ pub struct NowPlaying {
     /// Kept a superset of `queue` while shuffle is on, so tracks queued in the
     /// meantime survive the restore.
     pub original_queue: Vec<Track>,
+    /// Id of the last track inserted by "play next", anchoring a run of them so
+    /// repeated presses keep the order they were pressed in.
+    ///
+    /// Needs no cleanup as the queue advances: once the run has played through,
+    /// the anchor is no longer ahead of `queue_index` and the next press starts
+    /// a fresh run. It is cleared only where the queue is replaced wholesale,
+    /// since an id from the old one could otherwise match by coincidence.
+    pub play_next_tail: Option<u64>,
     /// Track whose stream URL is currently appended to mpv's playlist as the next
     /// entry. mpv advances on its own, so this is the only way to tell whether it
     /// moved to the track the app is about to display.
@@ -116,6 +124,7 @@ impl Default for NowPlaying {
             source_playlist_next_offset: 0,
             source_playlist_cursor: None,
             original_queue: Vec::new(),
+            play_next_tail: None,
             next_prefetched: None,
             mpv_exhausted: true,
             play_pending: None,

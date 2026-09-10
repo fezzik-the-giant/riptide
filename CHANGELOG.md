@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `Alt+a` queues a track to play after the current one instead of at the end (#53). Pressing it on several tracks in turn keeps them in the order you pressed them, rather than each one jumping ahead of the last. Available anywhere a plain `a` queues a track. Thanks to @joshbmarshall for the suggestion
+
 ### Fixed
 - Pressing `a` in the moment between starting a track and it beginning to play replaced the whole queue with that one track. The check for "nothing is playing yet" read the current track, which stays unset until Tidal returns a stream URL, rather than the queue itself
 

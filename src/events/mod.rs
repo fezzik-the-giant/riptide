@@ -469,4 +469,30 @@ mod tests {
 
         assert_eq!(t.app.help_scroll, total - content_h);
     }
+
+    /// `a` and Alt+a share one key arm, so the modifier is the only thing
+    /// separating "at the end" from "next".
+    #[test]
+    fn alt_a_queues_next_while_plain_a_still_appends() {
+        use crate::app::test_support::track;
+        let mut t = test_app();
+        t.app.current_tab = Tab::Favorites;
+        t.app.favorites.append_page(vec![track(1), track(2)], None);
+        t.app.now_playing.queue = vec![track(5), track(6)];
+
+        t.app.favorites.selected = 1;
+        handle_key(
+            &mut t.app,
+            KeyEvent::new(KeyCode::Char('a'), KeyModifiers::ALT),
+        );
+        assert_eq!(ids(&t.app), vec![5, 2, 6]);
+
+        t.app.favorites.selected = 0;
+        handle_key(&mut t.app, press('a'));
+        assert_eq!(ids(&t.app), vec![5, 2, 6, 1]);
+    }
+
+    fn ids(app: &crate::app::App) -> Vec<u64> {
+        app.now_playing.queue.iter().map(|t| t.id).collect()
+    }
 }
