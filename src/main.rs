@@ -8,6 +8,8 @@ use crossterm::{
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::io;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use tokio::sync::mpsc;
 
 mod api;
@@ -162,6 +164,13 @@ fn main() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
+    // A signal (terminal closed, Ctrl+C from outside, systemd stop) must exit
+    // through the normal path so the session's preferences get written.
+    // Detached on purpose: after a clean `q` it would block forever waiting for
+    // a signal that never comes.
+    let signal_shutdown = Arc::new(AtomicBool::new(false));
+    events::spawn_signal_watcher(Arc::clone(&signal_shutdown));
+
     // Build app state and run
     let mut app = App::new(
         api_req_tx,
@@ -248,12 +257,22 @@ fn main() -> Result<()> {
         player_evt_rx,
         mpris_cmd_rx,
         player_evt_lastfm_tx,
+        signal_shutdown,
     );
 
-    // Restore terminal unconditionally
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-    terminal.show_cursor()?;
+    // Restore terminal unconditionally. Best-effort rather than `?`: after a
+    // SIGHUP the tty is gone and these would fail, which must not skip the
+    // preference save below. A failure there is expected; any other one gets a
+    // debug line so a wedged terminal can be told apart from a dead tty.
+    if let Err(e) = disable_raw_mode() {
+        tracing::debug!("restore: disable_raw_mode failed: {e}");
+    }
+    if let Err(e) = execute!(terminal.backend_mut(), LeaveAlternateScreen) {
+        tracing::debug!("restore: leave alternate screen failed: {e}");
+    }
+    if let Err(e) = terminal.show_cursor() {
+        tracing::debug!("restore: show cursor failed: {e}");
+    }
 
     // Persist UI choices on the way out — one write, rather than rewriting a
     // file containing OAuth tokens on every volume keypress. A crash loses the

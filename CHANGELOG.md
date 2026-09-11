@@ -36,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The library list and the queue could both draw a cursor at once, so neither looked like the pane the keys went to. Only the focused pane draws one now, and the queue marks it with the same filled bar as the library instead of a single column of border colour
 - The queue's divider and title were a fixed dark grey, which on a light terminal read stronger than the focused accent and inverted the signal they exist to give. Both now use palette colours that track the theme
 
+### Fixed
+- Closing the terminal window, or stopping Riptide with `systemctl stop` or a Ctrl+C from another shell, lost the session's preference changes — sorts, volume, queue visibility. Those are only written on the way out, and a signal skipped that path entirely. A second signal still forces an immediate exit, and the config is now written through a temporary file, so being cut off mid-write can no longer cost you the saved login
+
 ## [1.3.0] - 2026-08-19
 
 ### Added

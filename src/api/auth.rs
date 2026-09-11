@@ -79,10 +79,21 @@ pub fn load_config() -> Result<Config> {
     Ok(serde_json::from_str(&data)?)
 }
 
+/// Write the config, replacing it only once the new copy is complete.
+///
+/// `fs::write` truncates in place, so anything that cuts the process off
+/// mid-write leaves a config that has lost the OAuth tokens sharing the file
+/// and forces a re-auth. The shutdown path can now be cut off exactly there —
+/// a second Ctrl+C or `systemctl stop` while preferences are being saved — so
+/// the new copy goes to a temporary file and is renamed over the old one,
+/// which is atomic within a directory.
 pub fn save_config(config: &Config) -> Result<()> {
     let path = config_path();
-    fs::create_dir_all(path.parent().unwrap())?;
-    fs::write(&path, serde_json::to_string_pretty(config)?)?;
+    let dir = path.parent().unwrap();
+    fs::create_dir_all(dir)?;
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, serde_json::to_string_pretty(config)?)?;
+    fs::rename(&tmp, &path)?;
     Ok(())
 }
 
