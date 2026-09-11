@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- A settings modal on `Shift+S`, covering Dolby Atmos, shuffle, the queue panel, volume and Last.fm scrobbling, over a read-only summary of the signed-in account. Everything in it was previously either a keybind you had to know about or a line in the config file
+- Dolby Atmos is now a setting rather than something that happened to you. Riptide sends `immersiveaudio` with every stream request, so an Atmos release plays as its stereo FLAC master by default and as the Atmos mix when you turn it on. Toggling applies from the next track; the one playing keeps the stream it already resolved
+- With Atmos off, releases Tidal holds only as an Atmos mix are hidden, the way the official apps hide them. They would otherwise sit in your lists wearing an `ATMOS` badge and play as ordinary stereo FLAC — and next to the catalogue's separate stereo release, which is what you actually want. Releases that carry both mixes stay, badged for the mix you will get. Turning Atmos back on brings them back immediately, without reloading anything, and re-runs the search you are looking at
+
+### Changed
+- Atmos releases now play the stereo FLAC master unless Atmos is turned on. Riptide never sent `immersiveaudio`, and Tidal defaults it to on, so these releases were served E-AC-3 — which mpv decodes to the 5.1 core, a lossy downmix on a two-speaker setup. If you want the Atmos mix back, it is the first row of `Shift+S`
+- Last.fm scrobbling can be turned on and off without restarting
+
+### Fixed
+- An artist's albums, EPs, singles and top tracks were drawn straight from the backing list rather than the rows on screen. Nothing could narrow those lists before, so it never showed; hiding Atmos releases would have made the list draw rows its own header did not count
+- Resolving an Atmos track took three requests to Tidal instead of one. The first returned the Atmos stream, which was rejected for not being FLAC and re-requested twice over before the lowest tier accepted the identical stream
+
 ## [1.5.0] - 2026-09-10
 
 ### Added

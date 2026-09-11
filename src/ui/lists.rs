@@ -13,7 +13,7 @@ use ratatui::{
 
 use super::*;
 use crate::api::models::{Album, Playlist};
-use crate::app::{App, StatefulList};
+use crate::app::{App, Filterable, StatefulList};
 
 pub(super) fn render_content(f: &mut Frame, app: &App, area: Rect) {
     // The filter box takes a slice off the top rather than floating over the
@@ -50,7 +50,7 @@ pub(super) fn render_content(f: &mut Frame, app: &App, area: Rect) {
         Tab::Albums => render_fav_albums_list(f, app, area),
         Tab::Playlists => render_playlist_list(f, app, area),
         Tab::Favorites => {
-            let title = list_title("Tracks", &app.favorites, app.favorites.items.len(), app);
+            let title = list_title("Tracks", &app.favorites, app);
             render_track_list(f, app, &app.favorites, app.content_focused(), area, &title);
         }
         Tab::Search => render_search_results(f, app, area),
@@ -67,16 +67,20 @@ pub(super) fn sort_suffix(app: &App) -> String {
 
 /// " Tracks (3 of 214) · A-Z · /ts " — an active filter is always named in the
 /// title, so a narrowed list can never look like the whole library.
-fn list_title<T>(name: &str, list: &StatefulList<T>, total: usize, app: &App) -> String {
+///
+/// Both counts come off the list rather than its `total`, which counts rows
+/// Atmos hiding keeps out of reach.
+fn list_title<T: Filterable>(name: &str, list: &StatefulList<T>, app: &App) -> String {
     if list.is_filtered() {
         format!(
-            " {name} ({} of {total}){} · /{} ",
+            " {name} ({} of {}){} · /{} ",
             list.visible_len(),
+            list.unqueried_len(),
             sort_suffix(app),
             list.filter()
         )
     } else {
-        format!(" {name} ({total}){} ", sort_suffix(app))
+        format!(" {name} ({}){} ", list.visible_len(), sort_suffix(app))
     }
 }
 
@@ -118,7 +122,7 @@ pub(super) fn render_artist_list(f: &mut Frame, app: &App, area: Rect) {
         .title(if loading {
             format!(" Artists {spinner} ")
         } else {
-            list_title("Artists", &app.artists, app.artists.total as usize, app)
+            list_title("Artists", &app.artists, app)
         })
         .borders(Borders::TOP)
         .border_style(Style::default().fg(ACCENT));
@@ -165,12 +169,7 @@ pub(super) fn render_fav_albums_list(f: &mut Frame, app: &App, area: Rect) {
         .title(if loading {
             format!(" Albums {spinner} ")
         } else {
-            list_title(
-                "Albums",
-                &app.fav_albums,
-                app.fav_albums.total as usize,
-                app,
-            )
+            list_title("Albums", &app.fav_albums, app)
         })
         .borders(Borders::TOP)
         .border_style(Style::default().fg(ACCENT));
@@ -220,12 +219,7 @@ pub(super) fn render_playlist_list(f: &mut Frame, app: &App, area: Rect) {
         .title(if loading {
             format!(" Playlists {spinner} ")
         } else {
-            list_title(
-                "Playlists",
-                &app.playlists,
-                app.playlists.total as usize,
-                app,
-            )
+            list_title("Playlists", &app.playlists, app)
         })
         .borders(Borders::TOP)
         .border_style(Style::default().fg(ACCENT));
@@ -316,7 +310,7 @@ pub(super) fn album_row(
     );
     cells.push(Cell::fixed(
         album
-            .quality_badge()
+            .quality_badge(app.atmos)
             .map(|b| format!(" [{b}]"))
             .unwrap_or_default(),
         8,
@@ -407,7 +401,7 @@ pub(super) fn track_row(
     cells.push(Cell::fixed(track.duration_display(), 6, style).right());
     cells.push(Cell::fixed(
         track
-            .quality_badge()
+            .quality_badge(app.atmos)
             .map(|b| format!(" [{b}]"))
             .unwrap_or_default(),
         8,

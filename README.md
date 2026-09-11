@@ -294,6 +294,21 @@ optional — a config from an older version loads fine and picks up the defaults
 | `volume`                                                              | `0`–`100`                                                | `100`        |
 | `shuffle`                                                             | `true` / `false`                                         | `false`      |
 | `queue_visible`                                                       | `true` / `false`                                         | `true`       |
+| `atmos`                                                               | `true` / `false`                                         | `false`      |
+
+`atmos` picks which mix Riptide asks Tidal for on a release that has a Dolby
+Atmos version. Off requests the stereo master, which arrives as FLAC. On
+requests the Atmos mix, which arrives as E-AC-3 — mpv decodes its 5.1 core, so
+it is genuine surround on a surround setup and a lossy downmix of an otherwise
+lossless release on two speakers. Tracks with no Atmos mix are unaffected
+either way. Change it with `Shift+S` rather than by hand.
+
+With `atmos` off, releases Tidal holds *only* as an Atmos mix are hidden from
+lists and search, as they are in the official apps: they would play as ordinary
+stereo FLAC while showing an `ATMOS` badge, and the catalogue lists the stereo
+release separately anyway. Releases carrying both mixes stay, badged for the mix
+you will actually get. Nothing is removed from your library — turn Atmos back on
+and they reappear.
 
 `null` for a sort means "never chosen", which sorts alphabetically. Note that
 `ByArtist` only applies to the Tracks and Albums tabs; the Artists and Playlists tabs offer name and date only.
@@ -396,12 +411,20 @@ Press `?` in the player to view all keybinds. Here's the complete reference:
 | `p`         | Previous track  |
 | `z`         | Toggle shuffle  |
 | `t`         | Show/hide queue |
+| `Shift+S`   | Settings        |
 | `U`         | Update to latest release |
 | `+ or =`    | Volume Up       |
 | `-`         | Volume Down     |
 | `Esc`       | Back/Go up      |
 
 These work everywhere, including while the queue is focused.
+
+### Settings
+
+`Shift+S` opens the settings modal: Dolby Atmos, shuffle, the queue panel,
+volume and Last.fm scrobbling, over a read-only summary of the signed-in
+account. `↑↓` moves, `←→` changes the selected row, `Enter` flips a toggle and
+`Esc` closes. Changes apply immediately and are saved when Riptide exits.
 
 ### Filtering
 

@@ -473,9 +473,10 @@ impl App {
             }
 
             ApiResponse::SearchTracks(page) => {
+                let tracks = self.shown_tracks(page.tracks);
                 if self.search.tracks.is_empty() {
                     // Initial search response
-                    self.search.tracks = page.tracks;
+                    self.search.tracks = tracks;
                     if let Some(next_url) = &page.next_url {
                         self.search.tracks_awaiting_page2 = true;
                         let _ = self.api_tx.send(ApiRequest::SearchTracksNext {
@@ -491,7 +492,7 @@ impl App {
                     }
                 } else {
                     // Pagination response - append
-                    self.search.tracks.extend(page.tracks);
+                    self.search.tracks.extend(tracks);
                     if let Some(next_url) = &page.next_url {
                         let _ = self.api_tx.send(ApiRequest::SearchTracksNext {
                             next_url: next_url.clone(),
@@ -627,9 +628,7 @@ impl App {
                     self.now_playing.next_prefetched = None;
                     self.now_playing.mpv_exhausted = false;
                     if let Some(next) = self.now_playing.queue.get(idx + 1) {
-                        let _ = self
-                            .api_tx
-                            .send(ApiRequest::ResolveStreamUrl { track_id: next.id });
+                        self.resolve_stream(next.id);
                     }
                 } else if self.now_playing.queue.get(idx + 1).map(|t| t.id) == Some(track_id)
                     && !self.now_playing.mpv_exhausted
@@ -860,14 +859,10 @@ impl App {
                         );
                         self.now_playing.active = false;
                         if let Some(current) = self.now_playing.queue.get(next_idx) {
-                            let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl {
-                                track_id: current.id,
-                            });
+                            self.resolve_stream(current.id);
                         }
                     } else if let Some(next) = self.now_playing.queue.get(next_idx + 1) {
-                        let _ = self
-                            .api_tx
-                            .send(ApiRequest::ResolveStreamUrl { track_id: next.id });
+                        self.resolve_stream(next.id);
                     }
 
                     if let Some(current) = self.now_playing.queue.get(next_idx) {

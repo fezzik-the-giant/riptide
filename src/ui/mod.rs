@@ -58,6 +58,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         .with(Overlays::SORT, app.sort_palette.active)
         .with(Overlays::ARTIST_PICKER, app.artist_selection.active)
         .with(Overlays::HELP, app.help_active)
+        .with(Overlays::SETTINGS, app.settings.active)
         .with(Overlays::STATUS, app.status.is_some());
     prepare_image_frame(app.art_fullscreen, overlays);
 
@@ -109,6 +110,10 @@ fn render_overlays(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         render_help_modal(f, app, area);
     }
 
+    if app.settings.active {
+        render_settings_modal(f, app, area);
+    }
+
     if app.update.active {
         render_update_modal(f, app, area);
     }
@@ -127,6 +132,8 @@ fn render_overlays(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
 // ── Artist selection modal ────────────────────────────────────────────────────
 
 // ── Help modal ────────────────────────────────────────────────────────────────
+
+// ── Settings modal ────────────────────────────────────────────────────────────
 
 // ── Main content area ─────────────────────────────────────────────────────────
 

@@ -70,7 +70,7 @@ pub(super) fn render_album_detail(
         .map(|a| a.name.as_str())
         .unwrap_or("");
 
-    let quality_badge = detail.album.quality_badge();
+    let quality_badge = detail.album.quality_badge(app.atmos);
 
     let mut meta_lines = Vec::new();
 
@@ -131,7 +131,7 @@ pub(super) fn render_album_detail(
     let title = if detail.tracks.loading {
         format!(" Tracks {spinner} ")
     } else {
-        format!(" Tracks ({}) ", detail.tracks.items.len())
+        format!(" Tracks ({}) ", detail.tracks.visible_len())
     };
     render_track_list(f, app, &detail.tracks, true, cols[1], &title);
 }

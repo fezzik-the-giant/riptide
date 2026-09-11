@@ -157,6 +157,10 @@ impl KeybindGroup {
                     action: "Show/hide queue",
                 },
                 Keybind {
+                    key: "Shift+S",
+                    action: "Settings",
+                },
+                Keybind {
                     key: "U",
                     action: "Update to latest release",
                 },
@@ -275,6 +279,10 @@ impl KeybindGroup {
                 Keybind {
                     key: "t",
                     action: "Show/hide queue",
+                },
+                Keybind {
+                    key: "Shift+S",
+                    action: "Settings",
                 },
                 Keybind {
                     key: "Esc",

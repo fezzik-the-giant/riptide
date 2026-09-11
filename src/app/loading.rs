@@ -5,6 +5,49 @@ use super::{App, View};
 use crate::api::ApiRequest;
 
 impl App {
+    /// Run the search box's current query, replacing whatever is on screen.
+    ///
+    /// All three panes are cleared first: a response only appends when its pane
+    /// is already populated, so leaving the old results in place would make the
+    /// new ones read as a second page of the previous query.
+    pub(crate) fn submit_search(&mut self) {
+        let query = self.search.query.clone();
+        if query.is_empty() {
+            return;
+        }
+        self.search.loading = true;
+        self.search.tracks_awaiting_page2 = true;
+        self.search.artists_awaiting_page2 = true;
+        self.search.playlists_awaiting_page2 = true;
+        self.search.track_sel = 0;
+        self.search.artist_sel = 0;
+        self.search.playlist_sel = 0;
+        self.search.tracks.clear();
+        self.search.artists.clear();
+        self.search.playlists.clear();
+        self.search.reset_viewports();
+        self.search.pane = crate::search::SearchPane::Tracks;
+        let _ = self.api_tx.send(ApiRequest::SearchTracks {
+            query: query.clone(),
+        });
+        let _ = self.api_tx.send(ApiRequest::SearchArtistsMain {
+            query: query.clone(),
+        });
+        let _ = self.api_tx.send(ApiRequest::SearchPlaylistsMain { query });
+    }
+
+    /// Re-run the query behind the results on screen, if any.
+    ///
+    /// Search results are a plain `Vec` whose selection indexes it directly, so
+    /// unlike the library lists they cannot hide rows in place — the Atmos
+    /// filter is applied as results arrive. Asking Tidal again is what brings
+    /// them into line with a setting that changed since.
+    pub(crate) fn refresh_search(&mut self) {
+        if !self.search.query.is_empty() && self.search.has_results() {
+            self.submit_search();
+        }
+    }
+
     pub fn load_artists(&mut self) {
         if self.artists.loading || self.artists.exhausted {
             return;

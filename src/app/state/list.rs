@@ -11,11 +11,22 @@ use super::*;
 pub trait Filterable {
     /// Text the filter query is matched against, lowercased.
     fn filter_text(&self) -> String;
+
+    /// Whether this row is a Dolby Atmos mix and nothing else, and so has
+    /// nothing to show for itself once Atmos is off. Artists and playlists have
+    /// no mix of their own, hence the default.
+    fn is_atmos_only(&self) -> bool {
+        false
+    }
 }
 
 impl Filterable for Track {
     fn filter_text(&self) -> String {
         format!("{} {}", self.title, self.all_artist_names()).to_lowercase()
+    }
+
+    fn is_atmos_only(&self) -> bool {
+        Track::is_atmos_only(self)
     }
 }
 
@@ -26,6 +37,10 @@ impl Filterable for Artist {
 }
 
 impl Filterable for Album {
+    fn is_atmos_only(&self) -> bool {
+        Album::is_atmos_only(self)
+    }
+
     fn filter_text(&self) -> String {
         match &self.artist {
             Some(artist) => format!("{} {}", self.title, artist.name).to_lowercase(),
@@ -49,12 +64,13 @@ pub struct StatefulList<T> {
     pub exhausted: bool,
     pub total: u32,
     pub pagination_cursor: Option<String>,
-    /// Live filter query as typed. Empty means "show everything", and that is
-    /// a fast path: `matches` is never consulted, so lists that are never
-    /// filtered cost nothing and a stale `matches` cannot be reached.
+    /// Live filter query as typed. Empty means "match everything".
     filter: String,
-    /// Indices into `items` that match `filter`. Only meaningful while `filter`
-    /// is non-empty; keep it in step with `items` via `refilter`.
+    /// Hide rows that exist only as a Dolby Atmos mix, mirroring the Atmos
+    /// setting being off. Set at construction and whenever the setting changes.
+    hide_atmos: bool,
+    /// Indices into `items` the visible rows map onto. Only meaningful while
+    /// [`StatefulList::narrowed`]; keep it in step with `items` via `refilter`.
     matches: Vec<usize>,
     viewport: ListViewport,
 }
@@ -129,6 +145,7 @@ impl<T> Default for StatefulList<T> {
             total: 0,
             pagination_cursor: None,
             filter: String::new(),
+            hide_atmos: false,
             matches: Vec::new(),
             viewport: ListViewport::default(),
         }
@@ -136,21 +153,28 @@ impl<T> Default for StatefulList<T> {
 }
 
 impl<T> StatefulList<T> {
+    /// Whether `matches` is in use. A list with no query and Atmos showing reads
+    /// `items` directly, so the common case costs nothing and a stale `matches`
+    /// cannot be reached.
+    fn narrowed(&self) -> bool {
+        !self.filter.is_empty() || self.hide_atmos
+    }
+
     /// How many rows are on screen. `selected` indexes this sequence, not
     /// `items`, so every caller works the same whether or not a filter is on.
     pub fn visible_len(&self) -> usize {
-        if self.filter.is_empty() {
-            self.items.len()
-        } else {
+        if self.narrowed() {
             self.matches.len()
+        } else {
+            self.items.len()
         }
     }
 
     pub fn get_visible(&self, index: usize) -> Option<&T> {
-        if self.filter.is_empty() {
-            self.items.get(index)
-        } else {
+        if self.narrowed() {
             self.matches.get(index).and_then(|&i| self.items.get(i))
+        } else {
+            self.items.get(index)
         }
     }
 
@@ -203,6 +227,15 @@ impl<T> StatefulList<T> {
     pub fn selected_item(&self) -> Option<&T> {
         self.get_visible(self.selected)
     }
+
+    /// Every visible row, in order. For the actions that take a whole list —
+    /// play this album, queue this playlist — which must act on the rows the
+    /// user can see, and in the order `selected` indexes them.
+    pub fn visible_items(&self) -> Vec<&T> {
+        (0..self.visible_len())
+            .filter_map(|i| self.get_visible(i))
+            .collect()
+    }
 }
 
 impl<T: Filterable> StatefulList<T> {
@@ -250,10 +283,32 @@ impl<T: Filterable> StatefulList<T> {
         self.selected = self.selected.min(self.visible_len().saturating_sub(1));
     }
 
+    /// Rows that would show with no query typed. The "of N" in a filtered title
+    /// has to count what clearing the query would reveal — Atmos hiding narrows
+    /// the list before the query does, and is not cleared with it.
+    pub fn unqueried_len(&self) -> usize {
+        if !self.hide_atmos {
+            return self.items.len();
+        }
+        self.items.iter().filter(|i| !i.is_atmos_only()).count()
+    }
+
+    /// Mirror the Atmos setting into this list. Cheap to call with an unchanged
+    /// value, which is what lets every list be reconciled in one sweep.
+    pub fn set_hide_atmos(&mut self, hide: bool) {
+        if self.hide_atmos == hide {
+            return;
+        }
+        self.hide_atmos = hide;
+        self.selected = 0;
+        self.viewport.reset();
+        self.refilter();
+    }
+
     /// Recompute `matches`. Call after anything mutates `items` directly, or the
-    /// indices go stale. Free when no filter is set.
+    /// indices go stale. Free when the list is not narrowed.
     pub fn refilter(&mut self) {
-        if self.filter.is_empty() {
+        if !self.narrowed() {
             self.matches.clear();
             return;
         }
@@ -262,7 +317,8 @@ impl<T: Filterable> StatefulList<T> {
             .items
             .iter()
             .enumerate()
-            .filter(|(_, item)| item.filter_text().contains(&needle))
+            .filter(|(_, item)| !(self.hide_atmos && item.is_atmos_only()))
+            .filter(|(_, item)| needle.is_empty() || item.filter_text().contains(&needle))
             .map(|(i, _)| i)
             .collect();
         self.selected = self.selected.min(self.matches.len().saturating_sub(1));
@@ -281,6 +337,103 @@ mod tests {
         fn filter_text(&self) -> String {
             self.to_string()
         }
+    }
+
+    /// Which tags make a row Atmos-only is `models`' business; what this list
+    /// owes is mapping `selected` past the rows it hides.
+    struct Row {
+        name: &'static str,
+        atmos_only: bool,
+    }
+
+    impl Filterable for Row {
+        fn filter_text(&self) -> String {
+            self.name.to_lowercase()
+        }
+
+        fn is_atmos_only(&self) -> bool {
+            self.atmos_only
+        }
+    }
+
+    fn mixed_list() -> StatefulList<Row> {
+        StatefulList {
+            items: vec![
+                Row {
+                    name: "stereo one",
+                    atmos_only: false,
+                },
+                Row {
+                    name: "atmos one",
+                    atmos_only: true,
+                },
+                Row {
+                    name: "stereo two",
+                    atmos_only: false,
+                },
+                Row {
+                    name: "atmos two",
+                    atmos_only: true,
+                },
+            ],
+            total: 4,
+            ..Default::default()
+        }
+    }
+
+    // ── Atmos visibility ──────────────────────────────────────────────────────
+
+    #[test]
+    fn hiding_atmos_maps_selection_past_the_hidden_rows() {
+        let mut list = mixed_list();
+        list.set_hide_atmos(true);
+
+        assert_eq!(list.visible_len(), 2);
+        assert_eq!(list.selected_item().map(|r| r.name), Some("stereo one"));
+
+        // Without the mapping this lands on the hidden "atmos one".
+        list.next();
+        assert_eq!(list.selected_item().map(|r| r.name), Some("stereo two"));
+        assert_eq!(
+            list.visible_items()
+                .iter()
+                .map(|r| r.name)
+                .collect::<Vec<_>>(),
+            ["stereo one", "stereo two"]
+        );
+    }
+
+    #[test]
+    fn showing_atmos_again_restores_every_row() {
+        let mut list = mixed_list();
+        list.set_hide_atmos(true);
+        list.set_hide_atmos(false);
+
+        assert_eq!(list.visible_len(), 4);
+        assert_eq!(list.selected_item().map(|r| r.name), Some("stereo one"));
+    }
+
+    #[test]
+    fn a_query_and_atmos_hiding_both_apply() {
+        let mut list = mixed_list();
+        list.set_hide_atmos(true);
+        list.edit_filter(|q| q.push_str("two"));
+
+        assert_eq!(list.visible_len(), 1);
+        assert_eq!(list.selected_item().map(|r| r.name), Some("stereo two"));
+    }
+
+    /// The list holds rows it does not draw, so a removal has to be measured
+    /// against `items` while the cursor stays on the visible sequence.
+    #[test]
+    fn removing_a_row_keeps_hidden_rows_accounted_for() {
+        let mut list = mixed_list();
+        list.set_hide_atmos(true);
+        list.remove_where(|row| row.name != "stereo one");
+
+        assert_eq!(list.visible_len(), 1);
+        assert_eq!(list.selected_item().map(|r| r.name), Some("stereo two"));
+        assert_eq!(list.items.len(), 3);
     }
 
     // ── fmt_secs ──────────────────────────────────────────────────────────────

@@ -51,17 +51,44 @@ pub struct MediaMetadata {
 /// spatial audio the next most distinguishing, then plain lossless. `DOLBY_ATMOS`
 /// frequently arrives *without* `LOSSLESS` alongside it, so before it had its own
 /// branch an Atmos release rendered no badge at all.
-fn quality_badge_for(tags: &[String]) -> Option<&'static str> {
+///
+/// With Atmos off the tag is ignored: Tidal serves the stereo master instead, so
+/// an ATMOS badge would promise a mix that will not play. Lists hide those rows
+/// outright — see [`atmos_only`] — but the queue does not, because a track
+/// queued before the setting changed still plays.
+fn quality_badge_for(tags: &[String], atmos_enabled: bool) -> Option<&'static str> {
     let has = |tag: &str| tags.iter().any(|t| t == tag);
     if has("HIRES_LOSSLESS") {
         Some("MAX")
-    } else if has("DOLBY_ATMOS") {
+    } else if atmos_enabled && has("DOLBY_ATMOS") {
         Some("ATMOS")
     } else if has("LOSSLESS") {
         Some("HI-FI")
     } else {
         None
     }
+}
+
+/// True when Tidal holds this entry *only* as a Dolby Atmos mix.
+///
+/// `mediaTags` lists the qualities an entry can be served in, so `DOLBY_ATMOS`
+/// with no lossless tag beside it means there is no stereo mix under this id.
+/// Ask for one anyway — `immersiveaudio=false` — and Tidal answers with a stereo
+/// FLAC, so the row plays as ordinary lossless while advertising Atmos. Those
+/// are the rows worth hiding when Atmos is off; the catalogue carries the stereo
+/// release as its own entry, which stays visible in their place.
+///
+/// Verified against 81 Atmos-bearing search results over 20 queries: this picks
+/// out exactly the entries whose v1 `audioModes` is `["DOLBY_ATMOS"]` alone.
+/// Entries holding both mixes tag `LOSSLESS` or `HIRES_LOSSLESS` alongside and
+/// go on playing lossless stereo with Atmos off, so they are not hidden.
+fn atmos_only(tags: &[String]) -> bool {
+    let has = |tag: &str| tags.iter().any(|t| t == tag);
+    has("DOLBY_ATMOS") && !has("LOSSLESS") && !has("HIRES_LOSSLESS")
+}
+
+fn tags_of(metadata: &Option<MediaMetadata>) -> &[String] {
+    metadata.as_ref().map(|m| m.tags.as_slice()).unwrap_or(&[])
 }
 
 const TIDAL_IMAGE_CDN_PREFIX: &str = "https://resources.tidal.com/images/";
@@ -120,13 +147,13 @@ pub struct Album {
 }
 
 impl Album {
-    pub fn quality_badge(&self) -> Option<&'static str> {
-        quality_badge_for(
-            self.media_metadata
-                .as_ref()
-                .map(|m| m.tags.as_slice())
-                .unwrap_or(&[]),
-        )
+    pub fn quality_badge(&self, atmos_enabled: bool) -> Option<&'static str> {
+        quality_badge_for(tags_of(&self.media_metadata), atmos_enabled)
+    }
+
+    /// See [`atmos_only`].
+    pub fn is_atmos_only(&self) -> bool {
+        atmos_only(tags_of(&self.media_metadata))
     }
     pub fn artist_name(&self) -> &str {
         self.artist.as_ref().map(|a| a.name.as_str()).unwrap_or("")
@@ -183,13 +210,13 @@ impl Track {
         }
     }
 
-    pub fn quality_badge(&self) -> Option<&'static str> {
-        quality_badge_for(
-            self.media_metadata
-                .as_ref()
-                .map(|m| m.tags.as_slice())
-                .unwrap_or(&[]),
-        )
+    pub fn quality_badge(&self, atmos_enabled: bool) -> Option<&'static str> {
+        quality_badge_for(tags_of(&self.media_metadata), atmos_enabled)
+    }
+
+    /// See [`atmos_only`].
+    pub fn is_atmos_only(&self) -> bool {
+        atmos_only(tags_of(&self.media_metadata))
     }
 
     /// Public Tidal share URL, matching the "Copy link" output of the official apps.
@@ -292,6 +319,12 @@ impl BtsManifest {
         self.codecs.as_deref() == Some("flac")
     }
 
+    /// True when the manifest carries a Dolby Atmos mix. Tidal serves these as
+    /// unencrypted E-AC-3, and only when `immersiveaudio=true` was requested.
+    pub fn is_eac3(&self) -> bool {
+        self.codecs.as_deref() == Some("eac3")
+    }
+
     /// True when the manifest codec is an AAC variant.
     #[allow(dead_code)]
     pub fn is_aac(&self) -> bool {
@@ -378,7 +411,7 @@ pub struct Config {
 
 #[cfg(test)]
 mod tests {
-    use super::{cover_art_url, presentation_art_url, quality_badge_for};
+    use super::{atmos_only, cover_art_url, presentation_art_url, quality_badge_for};
 
     fn tags(list: &[&str]) -> Vec<String> {
         list.iter().map(|s| s.to_string()).collect()
@@ -387,11 +420,11 @@ mod tests {
     #[test]
     fn hi_res_outranks_everything() {
         assert_eq!(
-            quality_badge_for(&tags(&["HIRES_LOSSLESS", "LOSSLESS"])),
+            quality_badge_for(&tags(&["HIRES_LOSSLESS", "LOSSLESS"]), true),
             Some("MAX")
         );
         assert_eq!(
-            quality_badge_for(&tags(&["HIRES_LOSSLESS", "DOLBY_ATMOS"])),
+            quality_badge_for(&tags(&["HIRES_LOSSLESS", "DOLBY_ATMOS"]), true),
             Some("MAX")
         );
     }
@@ -400,7 +433,7 @@ mod tests {
     fn atmos_outranks_plain_lossless() {
         // Tidal ships both shapes; verified live against the search endpoint.
         assert_eq!(
-            quality_badge_for(&tags(&["DOLBY_ATMOS", "LOSSLESS"])),
+            quality_badge_for(&tags(&["DOLBY_ATMOS", "LOSSLESS"]), true),
             Some("ATMOS")
         );
     }
@@ -409,18 +442,51 @@ mod tests {
     fn atmos_alone_is_badged() {
         // This set rendered no badge at all before ATMOS had its own branch —
         // Atmos releases often carry no LOSSLESS tag beside it.
-        assert_eq!(quality_badge_for(&tags(&["DOLBY_ATMOS"])), Some("ATMOS"));
+        assert_eq!(
+            quality_badge_for(&tags(&["DOLBY_ATMOS"]), true),
+            Some("ATMOS")
+        );
     }
 
     #[test]
     fn lossless_alone_is_hi_fi() {
-        assert_eq!(quality_badge_for(&tags(&["LOSSLESS"])), Some("HI-FI"));
+        assert_eq!(quality_badge_for(&tags(&["LOSSLESS"]), true), Some("HI-FI"));
     }
 
     #[test]
     fn no_tags_means_no_badge() {
-        assert_eq!(quality_badge_for(&[]), None);
-        assert_eq!(quality_badge_for(&tags(&["SOMETHING_NEW"])), None);
+        assert_eq!(quality_badge_for(&[], true), None);
+        assert_eq!(quality_badge_for(&tags(&["SOMETHING_NEW"]), true), None);
+    }
+
+    /// With Atmos off the tag promises a mix that will not play, so the badge
+    /// falls back to what the remaining tags can actually back.
+    #[test]
+    fn atmos_is_not_badged_while_the_setting_is_off() {
+        assert_eq!(quality_badge_for(&tags(&["DOLBY_ATMOS"]), false), None);
+        assert_eq!(
+            quality_badge_for(&tags(&["DOLBY_ATMOS", "LOSSLESS"]), false),
+            Some("HI-FI")
+        );
+        assert_eq!(
+            quality_badge_for(&tags(&["DOLBY_ATMOS", "HIRES_LOSSLESS"]), false),
+            Some("MAX")
+        );
+    }
+
+    /// The predicate that decides which rows disappear when Atmos is off. The
+    /// dual-mode shape must survive it: those play lossless stereo either way.
+    #[test]
+    fn only_an_atmos_exclusive_entry_is_atmos_only() {
+        assert!(atmos_only(&tags(&["DOLBY_ATMOS"])));
+        assert!(!atmos_only(&tags(&["DOLBY_ATMOS", "LOSSLESS"])));
+        assert!(!atmos_only(&tags(&[
+            "DOLBY_ATMOS",
+            "HIRES_LOSSLESS",
+            "LOSSLESS"
+        ])));
+        assert!(!atmos_only(&tags(&["LOSSLESS"])));
+        assert!(!atmos_only(&[]));
     }
 
     #[test]

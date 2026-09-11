@@ -19,9 +19,7 @@ impl App {
         self.now_playing.shuffle = false;
         self.now_playing.original_queue = Vec::new();
         self.now_playing.clear_source_playlist();
-        let _ = self
-            .api_tx
-            .send(ApiRequest::ResolveStreamUrl { track_id: id });
+        self.resolve_stream(id);
     }
 
     pub fn play_tracks(&mut self, tracks: Vec<Track>, start_index: usize) {
@@ -52,9 +50,7 @@ impl App {
         self.now_playing.active = false;
         self.now_playing.position = 0.0;
         if let Some(id) = track_id {
-            let _ = self
-                .api_tx
-                .send(ApiRequest::ResolveStreamUrl { track_id: id });
+            self.resolve_stream(id);
         }
     }
 
@@ -86,9 +82,7 @@ impl App {
             self.now_playing.active = false;
             self.now_playing.position = 0.0;
             if let Some(track) = self.now_playing.queue.get(next_idx) {
-                let _ = self
-                    .api_tx
-                    .send(ApiRequest::ResolveStreamUrl { track_id: track.id });
+                self.resolve_stream(track.id);
             }
             // No MPRIS push here: `active` is false until the stream URL
             // resolves, and pushing would flash Stopped at clients on every
@@ -104,9 +98,7 @@ impl App {
             self.now_playing.active = false;
             self.now_playing.position = 0.0;
             if let Some(track) = self.now_playing.queue.get(prev_idx) {
-                let _ = self
-                    .api_tx
-                    .send(ApiRequest::ResolveStreamUrl { track_id: track.id });
+                self.resolve_stream(track.id);
             }
         }
     }
@@ -171,8 +163,7 @@ impl App {
     pub(super) fn replace_prefetched_next(&mut self) {
         match self.now_playing.queue.get(self.now_playing.queue_index + 1) {
             Some(next) if self.now_playing.next_prefetched != Some(next.id) => {
-                let track_id = next.id;
-                let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl { track_id });
+                self.resolve_stream(next.id);
             }
             Some(_) => {}
             None => {
@@ -409,9 +400,7 @@ impl App {
         self.now_playing.position = 0.0;
         if let Some(track) = self.now_playing.queue.get(idx) {
             self.now_playing.play_pending = Some(track.id);
-            let _ = self
-                .api_tx
-                .send(ApiRequest::ResolveStreamUrl { track_id: track.id });
+            self.resolve_stream(track.id);
         }
         self.fetch_now_playing_metadata();
         self.push_mpris_state();
@@ -449,9 +438,7 @@ impl App {
             self.now_playing.track = self.now_playing.queue.get(new_idx).cloned();
             self.now_playing.position = 0.0;
             if let Some(track) = self.now_playing.queue.get(new_idx) {
-                let _ = self
-                    .api_tx
-                    .send(ApiRequest::ResolveStreamUrl { track_id: track.id });
+                self.resolve_stream(track.id);
             }
             self.fetch_now_playing_metadata();
         } else if idx == qi + 1 {
@@ -667,7 +654,7 @@ mod tests {
             player_tx,
             mpris_tx,
             lastfm_tx,
-            crate::app::Preferences::default(),
+            &crate::api::models::Config::default(),
         );
         (app, api_rx, player_rx)
     }
@@ -679,7 +666,7 @@ mod tests {
     fn resolved_track_ids(rx: &mut mpsc::UnboundedReceiver<ApiRequest>) -> Vec<u64> {
         let mut ids = Vec::new();
         while let Ok(req) = rx.try_recv() {
-            if let ApiRequest::ResolveStreamUrl { track_id } = req {
+            if let ApiRequest::ResolveStreamUrl { track_id, .. } = req {
                 ids.push(track_id);
             }
         }
@@ -837,7 +824,7 @@ mod tests {
                 progressed = true;
             }
             while let Ok(req) = api_rx.try_recv() {
-                if let ApiRequest::ResolveStreamUrl { track_id } = req {
+                if let ApiRequest::ResolveStreamUrl { track_id, .. } = req {
                     app.handle_api_response(crate::api::ApiResponse::StreamUrl {
                         track_id,
                         url: format!("url-{track_id}"),
@@ -983,7 +970,7 @@ mod tests {
                 break;
             }
             for req in reqs {
-                if let ApiRequest::ResolveStreamUrl { track_id } = req {
+                if let ApiRequest::ResolveStreamUrl { track_id, .. } = req {
                     app.handle_api_response(crate::api::ApiResponse::StreamUrl {
                         track_id,
                         url: format!("url-{track_id}"),
@@ -1025,7 +1012,7 @@ mod tests {
                 break;
             }
             for req in reqs {
-                if let ApiRequest::ResolveStreamUrl { track_id } = req {
+                if let ApiRequest::ResolveStreamUrl { track_id, .. } = req {
                     app.handle_api_response(crate::api::ApiResponse::StreamUrl {
                         track_id,
                         url: format!("url-{track_id}"),
@@ -1365,7 +1352,7 @@ mod tests {
             player_tx,
             mpris_tx,
             lastfm_tx,
-            crate::app::Preferences::default(),
+            &crate::api::models::Config::default(),
         );
         (app, mpris_rx, api_rx, player_rx)
     }

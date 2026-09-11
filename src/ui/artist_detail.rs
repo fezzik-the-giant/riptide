@@ -148,19 +148,19 @@ pub(super) fn render_carousel_tabs(
 ) {
     let labels = [
         (
-            format!("Top Tracks ({})", detail.tracks.items.len()),
+            format!("Top Tracks ({})", detail.tracks.visible_len()),
             detail.focus == ArtistDetailFocus::Tracks,
         ),
         (
-            format!("Albums ({})", detail.albums.items.len()),
+            format!("Albums ({})", detail.albums.visible_len()),
             detail.focus == ArtistDetailFocus::Albums,
         ),
         (
-            format!("EPs ({})", detail.eps.items.len()),
+            format!("EPs ({})", detail.eps.visible_len()),
             detail.focus == ArtistDetailFocus::EPs,
         ),
         (
-            format!("Singles ({})", detail.singles.items.len()),
+            format!("Singles ({})", detail.singles.visible_len()),
             detail.focus == ArtistDetailFocus::Singles,
         ),
     ];
@@ -199,14 +199,10 @@ pub(super) fn render_artist_tracks_full(
     let inner = area;
 
     let height = inner.height as usize;
-    let offset = detail.tracks.scroll_offset(height);
     let items: Vec<ListItem> = detail
         .tracks
-        .items
-        .iter()
-        .enumerate()
-        .skip(offset)
-        .take(height)
+        .visible_window(height)
+        .into_iter()
         .map(|(i, track)| {
             let selected = i == detail.tracks.selected && focused;
             let style = row_style(selected);
@@ -255,14 +251,10 @@ pub(super) fn render_artist_albums(
     let inner = area;
 
     let height = inner.height as usize;
-    let offset = detail.albums.scroll_offset(height);
     let items: Vec<ListItem> = detail
         .albums
-        .items
-        .iter()
-        .enumerate()
-        .skip(offset)
-        .take(height)
+        .visible_window(height)
+        .into_iter()
         .map(|(i, album)| {
             let selected = i == detail.albums.selected && focused;
             let style = row_style(selected);
@@ -295,14 +287,10 @@ pub(super) fn render_artist_eps(
     let inner = area;
 
     let height = inner.height as usize;
-    let offset = detail.eps.scroll_offset(height);
     let items: Vec<ListItem> = detail
         .eps
-        .items
-        .iter()
-        .enumerate()
-        .skip(offset)
-        .take(height)
+        .visible_window(height)
+        .into_iter()
         .map(|(i, album)| {
             let selected = i == detail.eps.selected && focused;
             let style = row_style(selected);
@@ -335,14 +323,10 @@ pub(super) fn render_artist_singles(
     let inner = area;
 
     let height = inner.height as usize;
-    let offset = detail.singles.scroll_offset(height);
     let items: Vec<ListItem> = detail
         .singles
-        .items
-        .iter()
-        .enumerate()
-        .skip(offset)
-        .take(height)
+        .visible_window(height)
+        .into_iter()
         .map(|(i, album)| {
             let selected = i == detail.singles.selected && focused;
             let style = row_style(selected);

@@ -86,6 +86,8 @@ pub enum ApiRequest {
     },
     ResolveStreamUrl {
         track_id: u64,
+        /// Whether to accept a Dolby Atmos mix for this track, when one exists.
+        atmos: bool,
     },
     FetchLyrics {
         track_id: u64,

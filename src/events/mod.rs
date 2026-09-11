@@ -299,6 +299,13 @@ fn handle_key(app: &mut App, key: KeyEvent) {
     // Past the text boxes, letters are commands again.
     let key = vim_arrows(key);
 
+    // The settings modal owns every key while open, so a stray `q` closes it
+    // rather than quitting the app out from under a half-made change.
+    if app.settings.active {
+        handle_settings_input(app, key);
+        return;
+    }
+
     // Fullscreen art is a presentation layer over the active view. Only global
     // controls apply while it is open, so list navigation cannot mutate the
     // view hidden beneath it. It also outranks queue focus so Esc dismisses
@@ -427,6 +434,50 @@ mod tests {
 
     fn press(c: char) -> KeyEvent {
         KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
+    }
+
+    /// With Atmos off the first row of this album is hidden, so `selected` 0
+    /// means the second track. Reading `items[selected]` instead — which every
+    /// detail view did while only the library tabs could be narrowed — plays
+    /// the hidden row.
+    #[test]
+    fn enter_on_an_album_plays_the_row_the_cursor_is_actually_on() {
+        use crate::app::test_support::track_tagged;
+        use crate::app::{AlbumDetail, StatefulList, View};
+
+        let mut t = test_app();
+        assert!(!t.app.atmos);
+        t.app.push_view(View::AlbumDetail(AlbumDetail {
+            album: track_tagged(1, &[]).album,
+            tracks: StatefulList::default(),
+            art_bytes: None,
+            art_loading: false,
+        }));
+        let Some(View::AlbumDetail(detail)) = t.app.view_stack.last_mut() else {
+            panic!("album detail was not pushed");
+        };
+        detail.tracks.items = vec![
+            track_tagged(10, &["DOLBY_ATMOS"]),
+            track_tagged(20, &["LOSSLESS"]),
+        ];
+        detail.tracks.refilter();
+        t.drain_api();
+
+        handle_key(
+            &mut t.app,
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+        );
+
+        assert_eq!(
+            t.app
+                .now_playing
+                .queue
+                .iter()
+                .map(|t| t.id)
+                .collect::<Vec<_>>(),
+            [20],
+            "the hidden Atmos row reached the queue"
+        );
     }
 
     #[test]

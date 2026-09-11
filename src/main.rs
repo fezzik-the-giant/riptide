@@ -177,7 +177,7 @@ fn main() -> Result<()> {
         player_cmd_tx,
         mpris_state_tx,
         lastfm_cmd_tx,
-        config.prefs.clone(),
+        &config,
     );
 
     // Reap any staged files left by a previous cancelled update.
@@ -279,6 +279,7 @@ fn main() -> Result<()> {
     // session's preference changes, which is an acceptable trade for not
     // touching the credential file continuously.
     config.prefs = app.preferences();
+    config.lastfm.enabled = app.lastfm_enabled;
     if let Err(e) = api::auth::save_config(&config) {
         tracing::error!("Failed to save preferences: {e}");
     }

@@ -68,6 +68,35 @@ localhost manifest server in `src/manifest.rs` are load-bearing. Do not remove
 them as "dead v1 code." Full write-up is in the doc comment on
 `get_stream_url` in `src/api/client.rs`.
 
+### Dolby Atmos Is Reachable — via `immersiveaudio`
+
+Unlike hi-res, Atmos is not walled off. `playbackinfopostpaywall` takes an
+`immersiveaudio` parameter, verified live against track 189681882
+(`DOLBY_ATMOS`) and 431291038 (stereo):
+
+| `immersiveaudio` | Atmos track                          | stereo track |
+|------------------|--------------------------------------|--------------|
+| `true`           | `audioMode=DOLBY_ATMOS`, BTS `eac3`  | unchanged    |
+| `false`          | `audioMode=STEREO`, BTS `flac` 16/44 | unchanged    |
+| omitted          | same as `true` — Atmos is the default | unchanged   |
+
+Three consequences the code depends on:
+
+1. **Absence is not `false`.** Omitting the parameter gives Atmos, so
+   `get_stream_url` always sends it. Only the literal `true` enables Atmos —
+   `False`, `0` and junk all read as off.
+2. **It is inert on tracks with no Atmos mix**, so it needs no per-track check.
+3. **The Atmos stream is `encryptionType: NONE`** — plain E-AC-3 that mpv plays
+   directly. ffprobe reports `Dolby Digital Plus + Dolby Atmos`, 5.1, 48 kHz:
+   ffmpeg decodes the core and ignores the JOC objects, so the setting buys real
+   surround on a surround setup and a lossy downmix of an otherwise lossless
+   release on two speakers. That trade is the user's to make, which is why
+   `prefs.atmos` exists and defaults to off.
+
+`BtsManifest::is_eac3()` accepts it on the tier it arrives on. Without that
+branch it fails `is_flac()` and falls through the whole `QUALITIES` chain until
+`HIGH` accepts the identical stream — three requests for one track.
+
 ### Hi-Res Playback Is Unreachable — Do Not Re-Attempt
 
 A `MAX` badge means the release exists in hi-res in Tidal's catalogue. It does not
@@ -391,17 +420,59 @@ The design that satisfies both:
 to preserve. Some of those tests depend on shuffle order — run the suite repeatedly
 when changing this area.
 
-### Filtering Library Lists
+### Narrowing Lists — Every List, Not Just the Library Tabs
 
-`StatefulList::selected` indexes the **visible** rows, not `items`. With a filter
-active they differ, and `matches` holds positions into `items`, so **anything that
-mutates `items` directly must call `refilter()`** or the indices go stale. Use
-`remove_where` for removals — it handles `total`, the refilter and the clamp.
-An empty filter is a fast path that reads `items` directly, so unfiltered lists
-(every detail view) cost nothing.
+`StatefulList::selected` indexes the **visible** rows, not `items`. Two things
+narrow a list and both populate `matches` with positions into `items`:
 
-Reach rows through `selected_item()` / `get_visible()` / `visible_window()`, never
-`items[selected]` — that pairing is what makes a filtered list act on the wrong row.
+1. the filter query, on the library tabs
+2. `hide_atmos`, on every list that can hold a mix — see "Hiding Atmos Rows"
+
+**Anything that mutates `items` directly must call `refilter()`** or the indices
+go stale. Use `remove_where` for removals — it owns `total`, the refilter and the
+clamp. `narrowed()` is the fast-path test: with no query and Atmos showing, the
+accessors read `items` directly and cost nothing.
+
+Reach rows through `selected_item()` / `get_visible()` / `visible_window()` /
+`visible_items()`, never `items[selected]` or a hand-rolled
+`items.iter().skip(offset)`. That pairing makes a narrowed list act on — or draw
+— the wrong row.
+
+This used to be a library-tab concern only, because detail views could not be
+filtered. It is not any more: `hide_atmos` narrows artist, album and playlist
+detail lists too. Fixing that meant rewriting 20 `items.get(selected)` sites in
+`src/events/navigation.rs`, the three "queue the whole list" clones beside them,
+and the four hand-rolled `skip(offset).take(height)` loops in
+`src/ui/artist_detail.rs`, which drew hidden rows while the title counted the
+visible ones. If a new list-shaped view appears, it goes through those accessors
+from the start.
+
+### Hiding Atmos Rows
+
+With Atmos off, an entry Tidal holds *only* as an Atmos mix plays as stereo FLAC
+while advertising ATMOS, so it is hidden — matching the official clients, which
+show the catalogue's separate stereo release in its place. `models::atmos_only`
+is the predicate: `DOLBY_ATMOS` in `mediaTags` with no `LOSSLESS` or
+`HIRES_LOSSLESS` beside it. Entries carrying both mixes keep playing lossless
+stereo when Atmos is off, so they stay — only their badge changes.
+
+`mediaTags` is the only signal available: v2 exposes no `audioModes`. Verified
+against 81 Atmos-bearing search results over 20 queries, the predicate picks out
+exactly the entries whose v1 `audioModes` is `["DOLBY_ATMOS"]` alone.
+
+Two mechanisms, because the two structures give different guarantees:
+
+- **`StatefulList` narrows in place.** `App::apply_atmos_visibility` mirrors the
+  setting into every list, the view stack included, and `App::push_view` calls it
+  so a view opened later cannot miss it. Toggling is instant and refetches
+  nothing.
+- **The search panes drop rows on arrival.** They are plain `Vec`s that
+  `track_sel` indexes directly, so a row present but undrawn would make Enter act
+  on the wrong track. `App::refresh_search` re-runs the query on toggle instead.
+
+The queue is deliberately left alone: what is queued is what plays, and hiding a
+queued row would desync it from mpv. Its badge still drops to the truth, which is
+why `quality_badge` takes the setting.
 
 ## Remaining V1 API Usage & Refactoring Opportunities
 

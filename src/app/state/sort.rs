@@ -49,6 +49,13 @@ pub struct Preferences {
     pub shuffle: bool,
     #[serde(default = "default_queue_visible")]
     pub queue_visible: bool,
+    /// Stream Dolby Atmos mixes where Tidal has them.
+    ///
+    /// Off means `immersiveaudio=false`, which serves the stereo master of an
+    /// Atmos release as FLAC. On serves E-AC-3, which ffmpeg decodes to the 5.1
+    /// core — spatial on a surround setup, a lossy downmix on two speakers.
+    #[serde(default)]
+    pub atmos: bool,
 }
 
 fn default_volume() -> u8 {
@@ -68,6 +75,7 @@ impl Default for Preferences {
             volume: default_volume(),
             shuffle: false,
             queue_visible: default_queue_visible(),
+            atmos: false,
         }
     }
 }

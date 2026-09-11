@@ -43,7 +43,7 @@ pub(crate) fn test_app() -> TestApp {
         player_tx,
         mpris_tx,
         lastfm_tx,
-        crate::app::Preferences::default(),
+        &crate::api::models::Config::default(),
     );
     TestApp {
         app,
@@ -52,6 +52,16 @@ pub(crate) fn test_app() -> TestApp {
         _mpris_rx: mpris_rx,
         _lastfm_rx: lastfm_rx,
     }
+}
+
+/// A track carrying `mediaTags`, for the Atmos visibility rules.
+pub(crate) fn track_tagged(id: u64, tags: &[&str]) -> crate::api::models::Track {
+    use crate::api::models::MediaMetadata;
+    let mut t = track(id);
+    t.media_metadata = Some(MediaMetadata {
+        tags: tags.iter().map(|s| s.to_string()).collect(),
+    });
+    t
 }
 
 pub(crate) fn track(id: u64) -> crate::api::models::Track {

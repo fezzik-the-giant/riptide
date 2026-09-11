@@ -70,6 +70,9 @@ pub enum LastfmCmd {
     },
     Pause,
     Resume,
+    /// Turn scrobbling on or off for the rest of the session, from the
+    /// settings modal. Persisted to config when the app exits.
+    SetEnabled(bool),
 }
 
 /// Events from the Last.fm worker

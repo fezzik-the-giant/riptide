@@ -113,7 +113,7 @@ pub(super) fn render_playlist_detail(
     let title = if detail.tracks.loading {
         format!(" Tracks {spinner} ")
     } else {
-        format!(" Tracks ({}) ", detail.tracks.items.len())
+        format!(" Tracks ({}) ", detail.tracks.visible_len())
     };
     let tracks_focused = detail.focus == PlaylistDetailFocus::Tracks;
     render_track_list(f, app, &detail.tracks, tracks_focused, cols[1], &title);

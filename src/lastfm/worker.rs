@@ -32,17 +32,16 @@ impl LastfmWorker {
         player_evt_rx: mpsc::UnboundedReceiver<PlayerEvent>,
         event_tx: mpsc::UnboundedSender<LastfmEvent>,
     ) -> Self {
-        let client = if config.enabled {
-            match (
-                config.session_key.clone(),
-                config.api_key.clone(),
-                config.api_secret.clone(),
-            ) {
-                (Some(sk), Some(ak), Some(as_)) => Some(LastfmClient::new(sk, ak, as_)),
-                _ => None,
-            }
-        } else {
-            None
+        // Built from the credentials alone rather than from `enabled`, which
+        // the settings modal can flip mid-session: a client that only existed
+        // when scrobbling started enabled would make turning it on need a restart.
+        let client = match (
+            config.session_key.clone(),
+            config.api_key.clone(),
+            config.api_secret.clone(),
+        ) {
+            (Some(sk), Some(ak), Some(as_)) => Some(LastfmClient::new(sk, ak, as_)),
+            _ => None,
         };
 
         Self {
@@ -58,18 +57,12 @@ impl LastfmWorker {
     }
 
     pub async fn run(mut self) {
-        if !self.config.enabled {
-            debug!("Last.fm scrobbling disabled");
-            loop {
-                tokio::select! {
-                    _ = self.cmd_rx.recv() => {},
-                    _ = self.player_evt_rx.recv() => {},
-                }
-            }
-        }
-
         if self.client.is_none() {
-            warn!("Last.fm client not initialized - missing session key or API credentials");
+            if self.config.enabled {
+                warn!("Last.fm client not initialized - missing session key or API credentials");
+            }
+            // Without credentials there is nothing the setting can turn on, so
+            // this loop exists only to keep the channels drained.
             loop {
                 tokio::select! {
                     _ = self.cmd_rx.recv() => {},
@@ -79,8 +72,10 @@ impl LastfmWorker {
         }
 
         debug!("Last.fm scrobbler started");
-        if let Some(ref username) = self.config.username {
-            info!("Last.fm scrobbling enabled for user: {}", username);
+        match (self.config.enabled, &self.config.username) {
+            (true, Some(username)) => info!("Last.fm scrobbling enabled for user: {username}"),
+            (false, _) => debug!("Last.fm scrobbling disabled"),
+            _ => {}
         }
 
         let mut scrobble_ticker = interval(Duration::from_secs(1));
@@ -92,17 +87,25 @@ impl LastfmWorker {
                         Some(c) => c,
                         None => break,
                     };
-                    self.handle_cmd(cmd).await;
+                    // Being switched off gates the scrobbling commands but not
+                    // the one that switches it back on.
+                    if self.config.enabled || matches!(cmd, LastfmCmd::SetEnabled(_)) {
+                        self.handle_cmd(cmd).await;
+                    }
                 }
                 evt = self.player_evt_rx.recv() => {
                     let evt = match evt {
                         Some(e) => e,
                         None => break,
                     };
-                    self.handle_player_event(evt).await;
+                    if self.config.enabled {
+                        self.handle_player_event(evt).await;
+                    }
                 }
                 _ = scrobble_ticker.tick() => {
-                    self.check_scrobble().await;
+                    if self.config.enabled {
+                        self.check_scrobble().await;
+                    }
                 }
             }
         }
@@ -158,6 +161,18 @@ impl LastfmWorker {
             LastfmCmd::Resume => {
                 debug!("Playback resumed");
                 self.is_paused = false;
+            }
+            LastfmCmd::SetEnabled(on) => {
+                if self.config.enabled == on {
+                    return;
+                }
+                self.config.enabled = on;
+                // A track that was playing while scrobbling was off was never
+                // timed from its start, so submitting it would be a guess. The
+                // next track to start is the first one that can be scrobbled.
+                self.current_track = None;
+                self.last_scrobble_track_id = None;
+                debug!("Last.fm scrobbling {}", if on { "on" } else { "off" });
             }
         }
     }

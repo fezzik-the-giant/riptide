@@ -304,14 +304,16 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
             Err(e) => ApiResponse::Error(format!("search artists: {e}")),
         },
 
-        ApiRequest::ResolveStreamUrl { track_id } => match client.get_stream_url(track_id).await {
-            Ok((url, delivered)) => ApiResponse::StreamUrl {
-                track_id,
-                url,
-                delivered,
-            },
-            Err(e) => ApiResponse::Error(e.to_string()),
-        },
+        ApiRequest::ResolveStreamUrl { track_id, atmos } => {
+            match client.get_stream_url(track_id, atmos).await {
+                Ok((url, delivered)) => ApiResponse::StreamUrl {
+                    track_id,
+                    url,
+                    delivered,
+                },
+                Err(e) => ApiResponse::Error(e.to_string()),
+            }
+        }
 
         ApiRequest::FavoriteTrack { track_id } => match client.add_favorite_track(track_id).await {
             Ok(()) => ApiResponse::FavoriteAdded,

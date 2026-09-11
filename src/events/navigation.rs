@@ -118,7 +118,8 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
                 KeyCode::Enter => {
                     if detail.focus == ArtistDetailFocus::Tracks {
                         let idx = detail.tracks.selected;
-                        let tracks = detail.tracks.items.clone();
+                        let tracks: Vec<_> =
+                            detail.tracks.visible_items().into_iter().cloned().collect();
                         Action::PlayTracks(tracks, idx)
                     } else if detail.focus == ArtistDetailFocus::Albums
                         || detail.focus == ArtistDetailFocus::EPs
@@ -142,76 +143,76 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
                         ArtistDetailFocus::EPs => &detail.eps,
                         _ => &detail.singles,
                     };
-                    match list.items.get(list.selected).cloned() {
+                    match list.selected_item().cloned() {
                         Some(album) => Action::QueueAlbum(album, queue_at(&key)),
                         None => return,
                     }
                 }
                 KeyCode::Char('a') if detail.focus == ArtistDetailFocus::Tracks => {
-                    match detail.tracks.items.get(detail.tracks.selected).cloned() {
+                    match detail.tracks.selected_item().cloned() {
                         Some(t) => Action::AddToQueue(t, queue_at(&key)),
                         None => return,
                     }
                 }
                 KeyCode::Char('f') if detail.focus == ArtistDetailFocus::Tracks => {
-                    match detail.tracks.items.get(detail.tracks.selected).cloned() {
+                    match detail.tracks.selected_item().cloned() {
                         Some(t) => Action::ToggleFavoriteTrack(t),
                         None => return,
                     }
                 }
                 KeyCode::Char('f') if detail.focus == ArtistDetailFocus::Albums => {
-                    match detail.albums.items.get(detail.albums.selected).cloned() {
+                    match detail.albums.selected_item().cloned() {
                         Some(a) => Action::ToggleFavoriteAlbum(a),
                         None => return,
                     }
                 }
                 KeyCode::Char('f') if detail.focus == ArtistDetailFocus::EPs => {
-                    match detail.eps.items.get(detail.eps.selected).cloned() {
+                    match detail.eps.selected_item().cloned() {
                         Some(a) => Action::ToggleFavoriteAlbum(a),
                         None => return,
                     }
                 }
                 KeyCode::Char('f') if detail.focus == ArtistDetailFocus::Singles => {
-                    match detail.singles.items.get(detail.singles.selected).cloned() {
+                    match detail.singles.selected_item().cloned() {
                         Some(a) => Action::ToggleFavoriteAlbum(a),
                         None => return,
                     }
                 }
                 KeyCode::Char('f') => Action::ToggleFollowArtist(detail.artist.clone()),
                 KeyCode::Char('r') if detail.focus == ArtistDetailFocus::Tracks => {
-                    match detail.tracks.items.get(detail.tracks.selected).cloned() {
+                    match detail.tracks.selected_item().cloned() {
                         Some(t) => Action::TrackRadio(t),
                         None => return,
                     }
                 }
                 KeyCode::Char('r') => Action::ArtistRadio(detail.artist.clone()),
                 KeyCode::Char('c') if detail.focus == ArtistDetailFocus::Tracks => {
-                    match detail.tracks.items.get(detail.tracks.selected) {
+                    match detail.tracks.selected_item() {
                         Some(t) => Action::CopyUrl(t.share_url()),
                         None => return,
                     }
                 }
                 KeyCode::Char('c') if detail.focus == ArtistDetailFocus::Albums => {
-                    match detail.albums.items.get(detail.albums.selected) {
+                    match detail.albums.selected_item() {
                         Some(a) => Action::CopyUrl(a.share_url()),
                         None => return,
                     }
                 }
                 KeyCode::Char('c') if detail.focus == ArtistDetailFocus::EPs => {
-                    match detail.eps.items.get(detail.eps.selected) {
+                    match detail.eps.selected_item() {
                         Some(a) => Action::CopyUrl(a.share_url()),
                         None => return,
                     }
                 }
                 KeyCode::Char('c') if detail.focus == ArtistDetailFocus::Singles => {
-                    match detail.singles.items.get(detail.singles.selected) {
+                    match detail.singles.selected_item() {
                         Some(a) => Action::CopyUrl(a.share_url()),
                         None => return,
                     }
                 }
                 KeyCode::Char('c') => Action::CopyUrl(detail.artist.share_url()),
                 KeyCode::Char('C') if detail.focus == ArtistDetailFocus::Tracks => {
-                    match detail.tracks.items.get(detail.tracks.selected) {
+                    match detail.tracks.selected_item() {
                         Some(t) => Action::CopyUrl(t.album.share_url()),
                         None => return,
                     }
@@ -285,7 +286,8 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
                 KeyCode::Enter => {
                     if detail.focus == PlaylistDetailFocus::Tracks {
                         let idx = detail.tracks.selected;
-                        let tracks = detail.tracks.items.clone();
+                        let tracks: Vec<_> =
+                            detail.tracks.visible_items().into_iter().cloned().collect();
                         let uuid = detail.playlist.uuid.clone();
                         Action::PlayPlaylistTracks(tracks, idx, uuid)
                     } else {
@@ -294,7 +296,7 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
                 }
                 KeyCode::Char('a') => {
                     if detail.focus == PlaylistDetailFocus::Tracks {
-                        match detail.tracks.items.get(detail.tracks.selected).cloned() {
+                        match detail.tracks.selected_item().cloned() {
                             Some(t) => Action::AddToQueue(t, queue_at(&key)),
                             None => return,
                         }
@@ -304,7 +306,7 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
                 }
                 KeyCode::Char('f') => {
                     if detail.focus == PlaylistDetailFocus::Tracks {
-                        match detail.tracks.items.get(detail.tracks.selected).cloned() {
+                        match detail.tracks.selected_item().cloned() {
                             Some(t) => Action::ToggleFavoriteTrack(t),
                             None => return,
                         }
@@ -314,7 +316,7 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
                 }
                 KeyCode::Char('r') => {
                     if detail.focus == PlaylistDetailFocus::Tracks {
-                        match detail.tracks.items.get(detail.tracks.selected).cloned() {
+                        match detail.tracks.selected_item().cloned() {
                             Some(t) => Action::TrackRadio(t),
                             None => return,
                         }
@@ -324,7 +326,7 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
                 }
                 KeyCode::Char('c') => {
                     if detail.focus == PlaylistDetailFocus::Tracks {
-                        match detail.tracks.items.get(detail.tracks.selected) {
+                        match detail.tracks.selected_item() {
                             Some(t) => Action::CopyUrl(t.share_url()),
                             None => return,
                         }
@@ -356,7 +358,8 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
                     KeyCode::Right | KeyCode::Char('l') => Action::FocusQueue,
                     KeyCode::Enter => {
                         let idx = detail.tracks.selected;
-                        let mut tracks = detail.tracks.items.clone();
+                        let mut tracks: Vec<_> =
+                            detail.tracks.visible_items().into_iter().cloned().collect();
                         // Populate album cover from album detail
                         if let Some(cover) = &detail.album.cover {
                             tracing::debug!(
@@ -370,25 +373,19 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
                         }
                         Action::PlayTracks(tracks, idx)
                     }
-                    KeyCode::Char('a') => {
-                        match detail.tracks.items.get(detail.tracks.selected).cloned() {
-                            Some(t) => Action::AddToQueue(t, queue_at(&key)),
-                            None => return,
-                        }
-                    }
-                    KeyCode::Char('f') => {
-                        match detail.tracks.items.get(detail.tracks.selected).cloned() {
-                            Some(t) => Action::ToggleFavoriteTrack(t),
-                            None => return,
-                        }
-                    }
-                    KeyCode::Char('r') => {
-                        match detail.tracks.items.get(detail.tracks.selected).cloned() {
-                            Some(t) => Action::TrackRadio(t),
-                            None => return,
-                        }
-                    }
-                    KeyCode::Char('c') => match detail.tracks.items.get(detail.tracks.selected) {
+                    KeyCode::Char('a') => match detail.tracks.selected_item().cloned() {
+                        Some(t) => Action::AddToQueue(t, queue_at(&key)),
+                        None => return,
+                    },
+                    KeyCode::Char('f') => match detail.tracks.selected_item().cloned() {
+                        Some(t) => Action::ToggleFavoriteTrack(t),
+                        None => return,
+                    },
+                    KeyCode::Char('r') => match detail.tracks.selected_item().cloned() {
+                        Some(t) => Action::TrackRadio(t),
+                        None => return,
+                    },
+                    KeyCode::Char('c') => match detail.tracks.selected_item() {
                         Some(t) => Action::CopyUrl(t.share_url()),
                         None => return,
                     },

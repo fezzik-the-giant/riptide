@@ -6,6 +6,7 @@ mod loading;
 mod navigation;
 mod playback;
 mod responses;
+mod settings;
 mod state;
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -89,6 +90,17 @@ pub struct App {
     /// Albums and playlists being fetched so their tracks can join the queue.
     pub pending_queue: Vec<PendingQueueAdd>,
 
+    /// Stream Dolby Atmos mixes where Tidal has them. Travels with each stream
+    /// request rather than living on the API client, so a mid-flight change
+    /// cannot leave some requests resolved under the old setting.
+    pub atmos: bool,
+    pub lastfm_enabled: bool,
+    /// Whether Last.fm credentials exist at all. Without them the scrobbling
+    /// row has nothing to turn on, and says so rather than silently doing nothing.
+    pub lastfm_configured: bool,
+    pub account: AccountInfo,
+    pub settings: SettingsState,
+
     pub help_active: bool,
     pub help_scroll: u16,
     pub help_query: String,
@@ -138,8 +150,9 @@ impl App {
         player_tx: mpsc::UnboundedSender<PlayerCmd>,
         mpris_tx: watch::Sender<MprisState>,
         lastfm_tx: mpsc::UnboundedSender<LastfmCmd>,
-        prefs: Preferences,
+        config: &crate::api::models::Config,
     ) -> Self {
+        let prefs = &config.prefs;
         // Self-update plumbing. The check/install thread is NOT started here
         // (App::new is also used in tests, which must stay offline) — main()
         // takes the senders back and spawns the actor.
@@ -182,6 +195,11 @@ impl App {
                 np.shuffle = prefs.shuffle;
                 np
             },
+            atmos: prefs.atmos,
+            lastfm_enabled: config.lastfm.enabled,
+            lastfm_configured: config.lastfm.session_key.is_some(),
+            account: AccountInfo::from_config(config),
+            settings: SettingsState::default(),
             queue_focused: false,
             queue_visible: prefs.queue_visible,
             queue_cursor: 0,
@@ -212,6 +230,7 @@ impl App {
             mpris_tx,
             lastfm_tx,
         };
+        app.apply_atmos_visibility();
         // mpv starts at its own default, so the restored level has to be pushed
         // across rather than just held in state.
         let _ = app.player_tx.send(PlayerCmd::SetVolume(prefs.volume));
@@ -237,6 +256,7 @@ impl App {
             volume: self.now_playing.volume,
             shuffle: self.now_playing.shuffle,
             queue_visible: self.queue_visible,
+            atmos: self.atmos,
         }
     }
 
@@ -370,6 +390,18 @@ impl App {
 
     pub(crate) fn rebuild_favorite_album_ids(&mut self) {
         self.favorite_album_ids = self.fav_albums.items.iter().map(|a| a.id).collect();
+    }
+
+    /// Ask the worker to resolve a playable URL for `track_id`.
+    ///
+    /// The Atmos setting travels with the request because the worker resolves
+    /// requests concurrently — a flag read on the client side could not say
+    /// which of the requests already in flight it applied to.
+    pub(crate) fn resolve_stream(&self, track_id: u64) {
+        let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl {
+            track_id,
+            atmos: self.atmos,
+        });
     }
 
     /// Show/hide the queue panel. Hiding it while it holds focus would strand

@@ -507,8 +507,8 @@ mod tests {
     fn favorite_tracks_carry_quality_badges() {
         let (tracks, _, _) = parse_v2_user_collection_tracks(&collection_page()).unwrap();
         assert_eq!(tracks.len(), 2);
-        assert_eq!(tracks[0].quality_badge(), Some("MAX"));
-        assert_eq!(tracks[1].quality_badge(), Some("HI-FI"));
+        assert_eq!(tracks[0].quality_badge(true), Some("MAX"));
+        assert_eq!(tracks[1].quality_badge(true), Some("HI-FI"));
     }
 
     /// A track's `artists` relationship routinely lists more than one, and the

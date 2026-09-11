@@ -231,7 +231,33 @@ impl ApiClient {
     ///
     /// Consequence: `BASE`, `dash_to_hls`, `build_flac_m3u8` and the localhost
     /// manifest server in `src/manifest.rs` are all load-bearing and must stay.
-    pub async fn get_stream_url(&self, track_id: u64) -> Result<(String, DeliveredQuality)> {
+    ///
+    /// # Dolby Atmos
+    ///
+    /// `atmos` becomes the `immersiveaudio` query parameter. Verified live
+    /// against track 189681882 (`DOLBY_ATMOS`) and 431291038 (stereo):
+    ///
+    /// | immersiveaudio | Atmos track                        | stereo track |
+    /// |----------------|------------------------------------|--------------|
+    /// | `true`         | `audioMode=DOLBY_ATMOS`, BTS `eac3` | unchanged    |
+    /// | `false`        | `audioMode=STEREO`, BTS `flac`      | unchanged    |
+    /// | omitted        | as `true` — Atmos is the default    | unchanged    |
+    ///
+    /// So the parameter is always sent: absence is not the same as `false`, and
+    /// only the literal string `true` enables Atmos — `False`, `0` and junk all
+    /// read as off. It is inert on tracks that have no Atmos mix, which is why
+    /// it needs no per-track check.
+    ///
+    /// The Atmos stream is `encryptionType: NONE`, so it plays directly. ffmpeg
+    /// decodes the E-AC-3 5.1 core and ignores the JOC object metadata, so the
+    /// setting buys real surround on a surround setup and a lossy downmix of a
+    /// lossless-capable release on two speakers. That is the trade the setting
+    /// exists to let the listener make.
+    pub async fn get_stream_url(
+        &self,
+        track_id: u64,
+        atmos: bool,
+    ) -> Result<(String, DeliveredQuality)> {
         // Quality fallback chain for streaming.
         //
         // | Quality          | Manifest MIME type         | Container   | Actual codec  |
@@ -244,6 +270,9 @@ impl ApiClient {
         // HI_RES_LOSSLESS → DASH manifest where codecs MAY be "flac" or "mp4a.40.2".
         // Strategy: try LOSSLESS first (guaranteed FLAC), then HI_RES_LOSSLESS
         // (only if its DASH codec is actually FLAC), then HIGH as last resort.
+        //
+        // An Atmos release with `atmos` on answers every tier with the same BTS
+        // `eac3` manifest, so the chain is decided on the first request.
         const QUALITIES: &[&str] = &["LOSSLESS", "HI_RES_LOSSLESS", "HIGH"];
         let path = format!("/tracks/{track_id}/playbackinfopostpaywall");
         let debug = std::env::var("RIPTIDE_QUALITY_DEBUG").is_ok();
@@ -256,6 +285,7 @@ impl ApiClient {
                 ("audioquality", quality.to_string()),
                 ("playbackmode", "STREAM".to_string()),
                 ("assetpresentation", "FULL".to_string()),
+                ("immersiveaudio", atmos.to_string()),
             ];
             if let Some(sid) = &self.config.session_id {
                 all_params.push(("sessionId", sid.clone()));
@@ -353,6 +383,19 @@ impl ApiClient {
                         }
                         let m3u8 = build_flac_m3u8(track_id, &manifest.urls);
                         return Ok((m3u8, delivered));
+                    }
+
+                    // Atmos, which can only be here because we asked for it.
+                    // It fails the FLAC test above, so without this branch every
+                    // Atmos track was requested three times over before the HIGH
+                    // tier accepted the very stream LOSSLESS had already returned.
+                    if manifest.is_eac3() {
+                        if debug {
+                            eprintln!(
+                                "[quality] track {track_id}: ✓ Dolby Atmos stream accepted ({quality})"
+                            );
+                        }
+                        return Ok((manifest.urls.into_iter().next().unwrap(), delivered));
                     }
 
                     // BTS with non-FLAC codec.

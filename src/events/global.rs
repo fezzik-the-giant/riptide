@@ -46,6 +46,9 @@ pub(super) fn handle_global_key(app: &mut App, key: KeyEvent) -> bool {
         KeyCode::Char('A') | KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::SHIFT) => {
             app.toggle_art_fullscreen();
         }
+        KeyCode::Char('S') | KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            app.settings.active = true;
+        }
         KeyCode::Char('q') | KeyCode::Char('Q') => {
             app.should_quit = true;
         }

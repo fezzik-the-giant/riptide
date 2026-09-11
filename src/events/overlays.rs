@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Fezzik the Giant
 
-//! Input for the modal overlays: command palette, sort picker, help, artist picker.
+//! Input for the modal overlays: command palette, sort picker, help, artist
+//! picker, settings.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -205,6 +206,21 @@ pub(super) fn handle_artist_selection_input(app: &mut App, key: KeyEvent) {
         KeyCode::Enter => {
             app.open_selected_artist_from_selection();
         }
+        _ => {}
+    }
+}
+
+pub(super) fn handle_settings_input(app: &mut App, key: KeyEvent) {
+    let setting = app.settings.selected_setting();
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('S') => {
+            app.settings.active = false;
+        }
+        KeyCode::Up => app.settings.previous(),
+        KeyCode::Down => app.settings.next(),
+        KeyCode::Enter | KeyCode::Char(' ') => app.toggle_setting(setting),
+        KeyCode::Right | KeyCode::Char('l') => app.nudge_setting(setting, true),
+        KeyCode::Left | KeyCode::Char('h') => app.nudge_setting(setting, false),
         _ => {}
     }
 }

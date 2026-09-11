@@ -11,6 +11,7 @@ mod keybinds;
 mod list;
 mod now_playing;
 mod palette;
+mod settings;
 mod sort;
 
 pub use detail::*;
@@ -18,6 +19,7 @@ pub use keybinds::*;
 pub use list::*;
 pub use now_playing::*;
 pub use palette::*;
+pub use settings::*;
 pub use sort::*;
 
 // ── Tab ───────────────────────────────────────────────────────────────────────

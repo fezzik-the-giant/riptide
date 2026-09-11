@@ -5,9 +5,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::api::ApiRequest;
 use crate::app::App;
-use crate::search::SearchPane;
 
 pub(super) fn handle_search_input(app: &mut App, key: KeyEvent) {
     match key.code {
@@ -31,29 +29,8 @@ pub(super) fn handle_search_input(app: &mut App, key: KeyEvent) {
             app.prev_tab();
         }
         KeyCode::Enter => {
-            let query = app.search.query.clone();
             app.search.modal_open = false;
-            if !query.is_empty() {
-                app.search.loading = true;
-                app.search.tracks_awaiting_page2 = true;
-                app.search.artists_awaiting_page2 = true;
-                app.search.playlists_awaiting_page2 = true;
-                app.search.track_sel = 0;
-                app.search.artist_sel = 0;
-                app.search.playlist_sel = 0;
-                app.search.tracks.clear();
-                app.search.artists.clear();
-                app.search.playlists.clear();
-                app.search.reset_viewports();
-                app.search.pane = SearchPane::Tracks;
-                let _ = app.api_tx.send(ApiRequest::SearchTracks {
-                    query: query.clone(),
-                });
-                let _ = app.api_tx.send(ApiRequest::SearchArtistsMain {
-                    query: query.clone(),
-                });
-                let _ = app.api_tx.send(ApiRequest::SearchPlaylistsMain { query });
-            }
+            app.submit_search();
         }
         KeyCode::Backspace => {
             app.search.query.pop();

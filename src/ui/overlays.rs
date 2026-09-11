@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Fezzik the Giant
 
-//! Modal overlays: command palette, sort, artist picker, help, toasts.
+//! Modal overlays: command palette, sort, artist picker, help, settings, toasts.
 
 use ratatui::{
     Frame,
@@ -698,6 +698,150 @@ pub(super) fn render_toast(f: &mut Frame, app: &App, area: Rect) {
     );
 }
 
+// ── Settings modal ────────────────────────────────────────────────────────────
+
+/// Wide enough for the longest row — the Last.fm label beside the command that
+/// configures it — without the value colliding with the label.
+const SETTINGS_MODAL_W: u16 = 54;
+
+pub(super) fn render_settings_modal(f: &mut Frame, app: &App, area: Rect) {
+    use crate::app::{Setting, SettingValue};
+
+    const ROWS_BELOW_LIST: u16 = 6;
+
+    let box_w = SETTINGS_MODAL_W.min(area.width.saturating_sub(4));
+    let box_h =
+        (2 + Setting::ALL.len() as u16 + ROWS_BELOW_LIST).min(area.height.saturating_sub(2));
+
+    let x = area.x + area.width.saturating_sub(box_w) / 2;
+    let y = area.y + area.height.saturating_sub(box_h) / 2;
+    let overlay = Rect::new(
+        x.min(area.right().saturating_sub(box_w)),
+        y.min(area.bottom().saturating_sub(box_h)),
+        box_w.min(area.width),
+        box_h.min(area.height),
+    );
+
+    f.render_widget(Clear, overlay);
+    let block = Block::default()
+        .title(Span::styled(
+            " settings ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(ACCENT));
+    let inner = block.inner(overlay);
+    f.render_widget(block, overlay);
+
+    let mut row_y = inner.y;
+    let mut next_row = |height: u16| -> Option<Rect> {
+        let bottom = inner.y + inner.height;
+        if row_y + height > bottom {
+            return None;
+        }
+        let rect = Rect::new(inner.x, row_y, inner.width, height);
+        row_y += height;
+        Some(rect)
+    };
+
+    for (i, setting) in Setting::ALL.iter().enumerate() {
+        let Some(rect) = next_row(1) else { return };
+        let selected = i == app.settings.selected;
+
+        let (value, value_color) = match app.setting_value(*setting) {
+            SettingValue::Toggle(true) => ("on".to_string(), ACCENT),
+            SettingValue::Toggle(false) => ("off".to_string(), DIM),
+            SettingValue::Percent(pct) => (format!("{pct}%"), Color::White),
+            SettingValue::Unavailable(reason) => (reason.to_string(), DIM),
+        };
+
+        let label = setting.label();
+        let prefix = if selected { " ► " } else { "   " };
+        // One column of right margin, so a value never touches the border.
+        let used = prefix.width() + label.width() + value.width() + 1;
+        let gap = (rect.width as usize).saturating_sub(used).max(1);
+
+        let (row_style, value_style) = if selected {
+            let base = Style::default()
+                .bg(SELECT_BG)
+                .fg(SELECT_FG)
+                .add_modifier(Modifier::BOLD);
+            (base, base)
+        } else {
+            (
+                Style::default().fg(Color::White),
+                Style::default().fg(value_color),
+            )
+        };
+
+        f.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(format!("{prefix}{label}{}", " ".repeat(gap)), row_style),
+                Span::styled(value, value_style),
+                Span::styled(" ", row_style),
+            ]))
+            .style(row_style),
+            rect,
+        );
+    }
+
+    if let Some(rect) = next_row(2) {
+        // Indented by inset rather than by prefix: `trim` strips the leading
+        // spaces off a wrapped line, which left the text flush against the
+        // border while every other line stood off it.
+        f.render_widget(
+            Paragraph::new(app.settings.selected_setting().help())
+                .style(Style::default().fg(DIM))
+                .wrap(Wrap { trim: true }),
+            Rect::new(
+                rect.x + 2,
+                rect.y,
+                rect.width.saturating_sub(3),
+                rect.height,
+            ),
+        );
+    }
+
+    if let Some(rect) = next_row(1) {
+        f.render_widget(
+            Paragraph::new("─".repeat(rect.width as usize)).style(Style::default().fg(DIM)),
+            rect,
+        );
+    }
+
+    if let Some(rect) = next_row(1) {
+        let user = app
+            .account
+            .user_id
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| "—".to_string());
+        f.render_widget(
+            Paragraph::new(format!(
+                "  {} · user {user} · auth gen {}",
+                app.account.country_code, app.account.auth_generation
+            ))
+            .style(Style::default().fg(DIM)),
+            rect,
+        );
+    }
+
+    if let Some(rect) = next_row(1) {
+        f.render_widget(
+            Paragraph::new(format!("  token expires {}", app.account.token_expiry()))
+                .style(Style::default().fg(DIM)),
+            rect,
+        );
+    }
+
+    if let Some(rect) = next_row(1) {
+        f.render_widget(
+            Paragraph::new("  ↑↓ move   ←→ change   enter toggle   esc close")
+                .style(Style::default().fg(DIM)),
+            rect,
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -713,7 +857,7 @@ mod tests {
             player_tx,
             mpris_tx,
             lastfm_tx,
-            crate::app::Preferences::default(),
+            &crate::api::models::Config::default(),
         )
     }
 
@@ -738,6 +882,52 @@ mod tests {
         app.update.available = Some("v1.0.2".to_string());
         app.update.status = crate::app::UpdateStatus::Confirming;
         app
+    }
+
+    fn settings_app() -> App {
+        let mut app = make_app();
+        app.settings.active = true;
+        app
+    }
+
+    #[test]
+    fn settings_modal_shows_every_row_with_its_current_value() {
+        let text = render_modal(&settings_app(), 80, 40);
+
+        for (label, value) in [
+            ("Dolby Atmos", "off"),
+            ("Shuffle", "off"),
+            ("Queue panel", "on"),
+            ("Volume", "100%"),
+            ("Last.fm scrobbling", "run riptide --lastfm-auth"),
+        ] {
+            let row = text
+                .lines()
+                .find(|line| line.contains(label))
+                .unwrap_or_else(|| panic!("no row for {label}: {text}"));
+            assert!(row.contains(value), "{label} did not read {value}: {row}");
+        }
+
+        assert!(
+            text.contains("token expires not signed in"),
+            "account block missing: {text}"
+        );
+    }
+
+    /// The box is clamped to the terminal, so something has to go. Everything
+    /// below the list is context; the settings themselves are the modal.
+    #[test]
+    fn settings_modal_drops_its_footer_before_its_rows() {
+        let text = render_modal(&settings_app(), 80, 10);
+
+        assert!(
+            text.contains("Last.fm scrobbling"),
+            "the last row was dropped before the footer: {text}"
+        );
+        assert!(
+            !text.contains("token expires"),
+            "the footer survived: {text}"
+        );
     }
 
     /// A long query used to push the match count and the Esc hint off the end
