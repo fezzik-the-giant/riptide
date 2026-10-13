@@ -4,6 +4,7 @@
 //! Sort fields, the sort palette, and the preferences persisted to config.
 
 use super::*;
+use crate::visualizer::VisualizerMode;
 
 // ── Sort palette ─────────────────────────────────────────────────────────────
 
@@ -56,6 +57,8 @@ pub struct Preferences {
     /// core — spatial on a surround setup, a lossy downmix on two speakers.
     #[serde(default)]
     pub atmos: bool,
+    #[serde(default)]
+    pub visualizer_mode: VisualizerMode,
 }
 
 fn default_volume() -> u8 {
@@ -76,6 +79,7 @@ impl Default for Preferences {
             shuffle: false,
             queue_visible: default_queue_visible(),
             atmos: false,
+            visualizer_mode: VisualizerMode::Off,
         }
     }
 }

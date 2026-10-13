@@ -752,6 +752,8 @@ pub(super) fn render_settings_modal(f: &mut Frame, app: &App, area: Rect) {
             SettingValue::Toggle(true) => ("on".to_string(), ACCENT),
             SettingValue::Toggle(false) => ("off".to_string(), DIM),
             SettingValue::Percent(pct) => (format!("{pct}%"), Color::White),
+            SettingValue::Choice("Off") => ("off".to_string(), DIM),
+            SettingValue::Choice(label) => (label.to_lowercase(), ACCENT),
             SettingValue::Unavailable(reason) => (reason.to_string(), DIM),
         };
 
@@ -857,6 +859,7 @@ mod tests {
             player_tx,
             mpris_tx,
             lastfm_tx,
+            crate::visualizer::VisualizerLink::for_test().0,
             &crate::api::models::Config::default(),
         )
     }

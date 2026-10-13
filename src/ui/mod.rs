@@ -33,6 +33,7 @@ mod row;
 mod search;
 mod tabs;
 mod theme;
+mod visualizer;
 
 use album_detail::*;
 use art::*;
@@ -50,6 +51,7 @@ use row::*;
 use search::*;
 use tabs::*;
 use theme::*;
+use visualizer::*;
 
 pub fn draw(f: &mut Frame, app: &App) {
     let area = f.area();

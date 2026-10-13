@@ -101,6 +101,8 @@ pub(super) fn handle_global_key(app: &mut App, key: KeyEvent) -> bool {
         KeyCode::Char('n') => app.next_track(),
         KeyCode::Char('p') => app.prev_track(),
         KeyCode::Char('z') => app.toggle_shuffle(),
+        KeyCode::Char('v') => app.set_visualizer_mode(app.visualizer_mode.next()),
+        KeyCode::Char('V') => app.set_visualizer_mode(crate::visualizer::VisualizerMode::Off),
         KeyCode::Char('u') => app.undo_last_removal(),
         // Alt, because a bare `f` everywhere else acts on the row under the
         // cursor. This is the one favourite binding that ignores the cursor and

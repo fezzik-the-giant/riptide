@@ -654,6 +654,7 @@ mod tests {
             player_tx,
             mpris_tx,
             lastfm_tx,
+            crate::visualizer::VisualizerLink::for_test().0,
             &crate::api::models::Config::default(),
         );
         (app, api_rx, player_rx)
@@ -1352,6 +1353,7 @@ mod tests {
             player_tx,
             mpris_tx,
             lastfm_tx,
+            crate::visualizer::VisualizerLink::for_test().0,
             &crate::api::models::Config::default(),
         );
         (app, mpris_rx, api_rx, player_rx)

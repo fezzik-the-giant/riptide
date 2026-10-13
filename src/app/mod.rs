@@ -20,6 +20,7 @@ use crate::lastfm::LastfmCmd;
 use crate::mpris::MprisState;
 use crate::player::PlayerCmd;
 use crate::search::SearchState;
+use crate::visualizer::{SpectrumState, VisualizerLink, VisualizerMode};
 use std::cell::Cell;
 use std::collections::HashSet;
 use tokio::sync::{mpsc, watch};
@@ -138,6 +139,9 @@ pub struct App {
     /// (message, level, Instant when set) — cleared automatically after ~5 s
     pub status: Option<(String, StatusLevel, std::time::Instant)>,
 
+    pub visualizer_mode: VisualizerMode,
+    pub visualizer: VisualizerLink,
+
     pub api_tx: mpsc::UnboundedSender<ApiRequest>,
     pub player_tx: mpsc::UnboundedSender<PlayerCmd>,
     pub mpris_tx: watch::Sender<MprisState>,
@@ -150,6 +154,7 @@ impl App {
         player_tx: mpsc::UnboundedSender<PlayerCmd>,
         mpris_tx: watch::Sender<MprisState>,
         lastfm_tx: mpsc::UnboundedSender<LastfmCmd>,
+        visualizer: VisualizerLink,
         config: &crate::api::models::Config,
     ) -> Self {
         let prefs = &config.prefs;
@@ -225,6 +230,8 @@ impl App {
             tick: 0,
             marquee_epoch: std::time::Instant::now(),
             status: None,
+            visualizer_mode: prefs.visualizer_mode,
+            visualizer,
             api_tx,
             player_tx,
             mpris_tx,
@@ -257,6 +264,7 @@ impl App {
             shuffle: self.now_playing.shuffle,
             queue_visible: self.queue_visible,
             atmos: self.atmos,
+            visualizer_mode: self.visualizer_mode,
         }
     }
 
@@ -307,6 +315,15 @@ impl App {
                 );
                 self.status = None;
             }
+        }
+        let spectrum_rx = &mut self.visualizer.spectrum_rx;
+        let capture_failed = spectrum_rx.has_changed().unwrap_or(false)
+            && matches!(*spectrum_rx.borrow_and_update(), SpectrumState::Unavailable);
+        if capture_failed && self.visualizer_mode != VisualizerMode::Off {
+            self.set_status(
+                "Visualizer unavailable — is cava installed? Press v to retry".to_string(),
+                StatusLevel::Error,
+            );
         }
     }
 

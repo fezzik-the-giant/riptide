@@ -15,6 +15,8 @@ pub(crate) struct TestApp {
     _player_rx: mpsc::UnboundedReceiver<PlayerCmd>,
     _mpris_rx: watch::Receiver<MprisState>,
     _lastfm_rx: mpsc::UnboundedReceiver<LastfmCmd>,
+    pub visualizer_enabled_rx: watch::Receiver<bool>,
+    pub spectrum_tx: watch::Sender<crate::visualizer::SpectrumState>,
 }
 
 impl TestApp {
@@ -38,11 +40,14 @@ pub(crate) fn test_app() -> TestApp {
     let (player_tx, player_rx) = mpsc::unbounded_channel();
     let (mpris_tx, mpris_rx) = watch::channel(MprisState::default());
     let (lastfm_tx, lastfm_rx) = mpsc::unbounded_channel();
+    let (visualizer, visualizer_enabled_rx, spectrum_tx) =
+        crate::visualizer::VisualizerLink::for_test();
     let app = App::new(
         api_tx,
         player_tx,
         mpris_tx,
         lastfm_tx,
+        visualizer,
         &crate::api::models::Config::default(),
     );
     TestApp {
@@ -51,6 +56,8 @@ pub(crate) fn test_app() -> TestApp {
         _player_rx: player_rx,
         _mpris_rx: mpris_rx,
         _lastfm_rx: lastfm_rx,
+        visualizer_enabled_rx,
+        spectrum_tx,
     }
 }
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Fezzik the Giant
 
-//! The now-playing bar: art, lyrics, track info and the waveform.
+//! The now-playing bar: art, lyrics, track info and playback visualization.
 
 use ratatui::{
     Frame,
@@ -13,6 +13,7 @@ use ratatui::{
 
 use super::*;
 use crate::app::App;
+use crate::visualizer::VisualizerMode;
 
 pub(super) fn render_now_playing(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
@@ -24,8 +25,8 @@ pub(super) fn render_now_playing(f: &mut Frame, app: &App, area: Rect) {
     let sections = Layout::vertical([
         Constraint::Min(0),    // art (see below — it also spans the lyrics rows)
         Constraint::Length(1), // gap
-        Constraint::Length(3), // lyrics — sits directly above the waveform row
-        Constraint::Length(4), // track info / waveform / time and volume
+        Constraint::Length(3), // lyrics — sits directly above the visualization row
+        Constraint::Length(4), // track info / visualization / time and volume
     ])
     .split(inner);
 
@@ -141,7 +142,7 @@ pub(super) fn render_now_playing(f: &mut Frame, app: &App, area: Rect) {
     };
     f.render_widget(Paragraph::new(track_info), cols[0]);
 
-    f.render_widget(render_squib(app, cols[1].width), cols[1]);
+    render_progress(f, app, cols[1]);
 
     let time_str = format!(
         "{} / {}",
@@ -254,29 +255,31 @@ pub(super) fn render_lyrics(f: &mut Frame, app: &App, area: Rect) {
     }
 }
 
-/// Animated waveform squib: undulates while playing, flat line while paused.
-/// The played portion is highlighted in ACCENT, the remainder in DIM.
-pub(super) fn render_squib(app: &App, width: u16) -> Paragraph<'static> {
-    const WAVE: [&str; 8] = ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
+/// The progress rail, with the spectrum stacked above it when a visualizer
+/// mode is on. With it off the rail is centred, so the row does not read as
+/// an empty band waiting for something to appear.
+fn render_progress(f: &mut Frame, app: &App, area: Rect) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
 
-    let ratio = app.now_playing.progress_ratio();
-    let played_w = ((width as f64 * ratio) as u16).min(width);
-    let playing = app.now_playing.active && !app.now_playing.paused;
-
-    let spans: Vec<Span<'static>> = (0..width)
-        .map(|i| {
-            let color = if i < played_w { ACCENT } else { DIM };
-            let ch: &'static str = if playing {
-                // Sine wave: spatial frequency ~1 cycle per 8 cols, phase advances with tick
-                let phase = i as f64 * 0.8 + app.tick as f64 * 0.35;
-                let t = (phase.sin() + 1.0) / 2.0; // 0.0 – 1.0
-                WAVE[(t * 7.99) as usize]
-            } else {
-                "▄" // flat mid-height line when paused or idle
-            };
-            Span::styled(ch, Style::default().fg(color))
-        })
-        .collect();
-
-    Paragraph::new(Line::from(spans))
+    let ratio = (app.now_playing.active && app.now_playing.duration > 0.0)
+        .then(|| app.now_playing.progress_ratio());
+    let rail_y = if app.visualizer_mode == VisualizerMode::Off {
+        area.y + area.height.saturating_sub(1) / 2
+    } else {
+        f.render_widget(
+            Spectrum {
+                mode: app.visualizer_mode,
+                state: &app.visualizer.spectrum_rx.borrow(),
+                tick: app.tick,
+            },
+            Rect::new(area.x, area.y, area.width, area.height - 1),
+        );
+        area.bottom() - 1
+    };
+    f.render_widget(
+        ProgressRail { ratio },
+        Rect::new(area.x, rail_y, area.width, 1),
+    );
 }

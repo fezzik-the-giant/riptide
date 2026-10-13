@@ -35,7 +35,7 @@ A terminal UI music player for Tidal, built with Rust.
   when you want the full width for browsing
 - Gapless playback via mpv
 - Audio quality indicator (Hi-Res, FLAC, MQA, AAC)
-- Animated waveform progress bar
+- Progress bar with an optional music-reactive spectrum above it, drawn from [CAVA](https://github.com/karlstav/cava)
 - Sort any library list by name, artist, or date added — your choice is remembered between sessions and shown in the
   list header
 - Volume, shuffle, and queue visibility persist across restarts
@@ -48,6 +48,7 @@ A terminal UI music player for Tidal, built with Rust.
 - **mpv** — used as the audio backend; must be on your `PATH`
 - A **Tidal** account (HiFi or HiFi Plus recommended for lossless quality)
 - **chafa** — used for terminal graphics support, dependency of ratatui-image
+- **cava** (optional) — enables the music-reactive spectrum visualizer
 
 ### Installing dependecies
 
@@ -56,6 +57,16 @@ A terminal UI music player for Tidal, built with Rust.
 | Linux (Debian/Ubuntu) | `sudo apt install mpv dbus libglib2.0-0 chafa` |
 | Linux (Arch)          | `sudo pacman -S mpv dbus glib2 chafa`          |
 | Linux (Fedora)        | `sudo dnf install mpv dbus glib2 chafa`        |
+
+The spectrum visualizer additionally needs CAVA, which most package managers
+carry as `cava` (`pacman -S cava`, `dnf install cava`, `apt install cava`,
+`brew install cava`). Riptide works normally without it.
+
+Press `v` to cycle through Bars, Outline, Columns, Bricks, Dots and Butterfly,
+and `V` to turn it off. If CAVA is missing or fails to start, the status line
+says so and `v` tries again. CAVA listens to your default output device rather
+than to Riptide alone, so the spectrum also moves for browser audio,
+notifications or another player. Nothing it does can interrupt playback.
 
 ## Installation
 
@@ -256,7 +267,8 @@ It is created automatically on first run. Example:
     "playlists_sort": null,
     "volume": 80,
     "shuffle": false,
-    "queue_visible": true
+    "queue_visible": true,
+    "visualizer_mode": "off"
   }
 }
 ```
@@ -295,6 +307,7 @@ optional — a config from an older version loads fine and picks up the defaults
 | `shuffle`                                                             | `true` / `false`                                         | `false`      |
 | `queue_visible`                                                       | `true` / `false`                                         | `true`       |
 | `atmos`                                                               | `true` / `false`                                         | `false`      |
+| `visualizer_mode`                                                     | `"off"`, `"bars"`, `"outline"`, `"columns"`, `"bricks"`, `"dots"`, `"butterfly"` | `"off"` |
 
 `atmos` picks which mix Riptide asks Tidal for on a release that has a Dolby
 Atmos version. Off requests the stereo master, which arrives as FLAC. On
@@ -411,6 +424,8 @@ Press `?` in the player to view all keybinds. Here's the complete reference:
 | `p`         | Previous track  |
 | `z`         | Toggle shuffle  |
 | `t`         | Show/hide queue |
+| `v`         | Cycle visualizer |
+| `V`         | Turn visualizer off |
 | `Shift+S`   | Settings        |
 | `U`         | Update to latest release |
 | `+ or =`    | Volume Up       |
@@ -422,7 +437,7 @@ These work everywhere, including while the queue is focused.
 ### Settings
 
 `Shift+S` opens the settings modal: Dolby Atmos, shuffle, the queue panel,
-volume and Last.fm scrobbling, over a read-only summary of the signed-in
+the visualizer, volume and Last.fm scrobbling, over a read-only summary of the signed-in
 account. `↑↓` moves, `←→` changes the selected row, `Enter` flips a toggle and
 `Esc` closes. Changes apply immediately and are saved when Riptide exits.
 

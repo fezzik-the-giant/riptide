@@ -5,6 +5,7 @@
 
 use super::{App, Setting, SettingValue, StatusLevel, View};
 use crate::lastfm::LastfmCmd;
+use crate::visualizer::{SpectrumState, VisualizerMode};
 
 impl App {
     /// Push a detail view, bringing its lists into line with the Atmos setting.
@@ -58,6 +59,7 @@ impl App {
             Setting::Atmos => SettingValue::Toggle(self.atmos),
             Setting::Shuffle => SettingValue::Toggle(self.now_playing.shuffle),
             Setting::QueuePanel => SettingValue::Toggle(self.queue_visible),
+            Setting::Visualizer => SettingValue::Choice(self.visualizer_mode.label()),
             Setting::Volume => SettingValue::Percent(self.now_playing.volume),
             Setting::Scrobbling if !self.lastfm_configured => {
                 SettingValue::Unavailable("run riptide --lastfm-auth")
@@ -71,6 +73,7 @@ impl App {
     pub(crate) fn toggle_setting(&mut self, setting: Setting) {
         match self.setting_value(setting) {
             SettingValue::Toggle(on) => self.set_setting(setting, !on),
+            SettingValue::Choice(_) => self.step_choice(setting, true),
             SettingValue::Percent(_) => {}
             SettingValue::Unavailable(reason) => {
                 self.set_status(format!("{}: {reason}", setting.label()), StatusLevel::Info)
@@ -91,6 +94,7 @@ impl App {
                 self.set_volume_percent(next);
             }
             SettingValue::Toggle(on) if on != forward => self.set_setting(setting, forward),
+            SettingValue::Choice(_) => self.step_choice(setting, forward),
             _ => {}
         }
     }
@@ -106,7 +110,7 @@ impl App {
                     self.toggle_queue_visible();
                 }
             }
-            Setting::Volume => {}
+            Setting::Visualizer | Setting::Volume => {}
             Setting::Scrobbling => {
                 self.lastfm_enabled = on;
                 let _ = self.lastfm_tx.send(LastfmCmd::SetEnabled(on));
@@ -116,6 +120,44 @@ impl App {
                 );
             }
         }
+    }
+
+    fn step_choice(&mut self, setting: Setting, forward: bool) {
+        if setting == Setting::Visualizer {
+            let mode = self.visualizer_mode;
+            self.set_visualizer_mode(if forward {
+                mode.next()
+            } else {
+                mode.previous()
+            });
+        }
+    }
+
+    /// Only crossing Off starts or stops CAVA: switching between two drawn
+    /// modes is a render-side change, and restarting the child for it would
+    /// blank the spectrum for the length of CAVA's start-up.
+    ///
+    /// A failed capture is the exception. The worker parks after a failure
+    /// rather than respawning blindly, so any mode change re-sends `true` to
+    /// wake it — that is what makes `v` a retry.
+    pub(crate) fn set_visualizer_mode(&mut self, mode: VisualizerMode) {
+        let was_on = self.visualizer_mode != VisualizerMode::Off;
+        let is_on = mode != VisualizerMode::Off;
+        let retrying = is_on
+            && matches!(
+                *self.visualizer.spectrum_rx.borrow(),
+                SpectrumState::Unavailable
+            );
+        self.visualizer_mode = mode;
+        if was_on != is_on || retrying {
+            let _ = self.visualizer.enabled_tx.send(is_on);
+        }
+        let verb = if retrying {
+            "Retrying visualizer"
+        } else {
+            "Visualizer"
+        };
+        self.set_status(format!("{verb}: {}", mode.label()), StatusLevel::Info);
     }
 
     /// The playing track keeps the stream it already resolved — swapping it
@@ -319,5 +361,39 @@ mod tests {
             t.app.nudge_setting(Setting::Volume, false);
         }
         assert_eq!(t.app.now_playing.volume, 0);
+    }
+
+    #[test]
+    fn switching_between_drawn_modes_leaves_capture_running() {
+        let mut t = test_app();
+
+        t.app.toggle_setting(Setting::Visualizer);
+        assert_eq!(t.app.visualizer_mode, VisualizerMode::Bars);
+        assert!(*t.visualizer_enabled_rx.borrow_and_update());
+
+        t.app.nudge_setting(Setting::Visualizer, true);
+        assert_eq!(t.app.visualizer_mode, VisualizerMode::Outline);
+        assert!(!t.visualizer_enabled_rx.has_changed().unwrap());
+
+        t.app.nudge_setting(Setting::Visualizer, false);
+        t.app.nudge_setting(Setting::Visualizer, false);
+        assert_eq!(t.app.visualizer_mode, VisualizerMode::Off);
+        assert!(!*t.visualizer_enabled_rx.borrow_and_update());
+        assert_eq!(t.app.preferences().visualizer_mode, VisualizerMode::Off);
+    }
+
+    #[test]
+    fn a_failed_capture_is_reported_and_the_next_mode_change_retries_it() {
+        let mut t = test_app();
+        t.app.set_visualizer_mode(VisualizerMode::Bars);
+        assert!(*t.visualizer_enabled_rx.borrow_and_update());
+
+        t.spectrum_tx.send(SpectrumState::Unavailable).unwrap();
+        t.app.tick();
+        assert!(matches!(&t.app.status, Some((_, StatusLevel::Error, _))));
+
+        t.app.set_visualizer_mode(VisualizerMode::Outline);
+        assert!(t.visualizer_enabled_rx.has_changed().unwrap());
+        assert!(*t.visualizer_enabled_rx.borrow_and_update());
     }
 }

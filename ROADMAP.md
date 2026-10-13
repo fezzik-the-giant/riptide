@@ -119,21 +119,21 @@ Worth scoping before designing: restoring the queue is cheap, restoring the
 playback position within a track is a different feature, and restoring either
 one means deciding whether riptide starts playing on launch (it should not).
 
+## Shipped
+
+`CHANGELOG.md` stays the user-facing record of what a release contained; an
+entry moved here only needs the version and a line on what landed, so a later
+session can tell the work is done without reading the changelog.
+
 ### PR #40 — CAVA visualizer
 
 **Issue:** none — tracked as [PR #40](https://github.com/fezzik-the-giant/riptide/pull/40) instead.
+**Version:** next release (under `[Unreleased]` in `CHANGELOG.md`).
 
-@dghelm opened a draft in August 2026 (`feat/cava-visualizer-pr2`, compact
-CAVA-backed visualizers) and it has not moved since. It wants a decision rather
-than more code: finish it with them, or close it so it stops reading as open
-work. The dependency question — whether riptide is willing to want CAVA on the
-`PATH` — is the thing to answer first.
-
-## Shipped
-
-Nothing yet. `CHANGELOG.md` stays the user-facing record of what a release
-contained; an entry moved here only needs the version and a line on what landed,
-so a later session can tell the work is done without reading the changelog.
+@dghelm's draft, finished by the maintainer. The dependency question was settled
+in favour of spawning `cava` as an optional child process: embedding cavacore
+would mean capturing and buffering PCM ourselves for no gain, and a missing
+`cava` costs only the spectrum. The mode also became a `Shift+S` row.
 
 ## Considered and Rejected
 

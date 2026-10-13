@@ -10,15 +10,17 @@ pub enum Setting {
     Atmos,
     Shuffle,
     QueuePanel,
+    Visualizer,
     Volume,
     Scrobbling,
 }
 
 impl Setting {
-    pub const ALL: [Setting; 5] = [
+    pub const ALL: [Setting; 6] = [
         Setting::Atmos,
         Setting::Shuffle,
         Setting::QueuePanel,
+        Setting::Visualizer,
         Setting::Volume,
         Setting::Scrobbling,
     ];
@@ -28,6 +30,7 @@ impl Setting {
             Setting::Atmos => "Dolby Atmos",
             Setting::Shuffle => "Shuffle",
             Setting::QueuePanel => "Queue panel",
+            Setting::Visualizer => "Visualizer",
             Setting::Volume => "Volume",
             Setting::Scrobbling => "Last.fm scrobbling",
         }
@@ -41,6 +44,7 @@ impl Setting {
             Setting::Atmos => "Atmos mixes stream as E-AC-3; off plays the stereo master as FLAC",
             Setting::Shuffle => "Shuffles the current queue, keeping the playing track first",
             Setting::QueuePanel => "Show the queue alongside the library",
+            Setting::Visualizer => "Spectrum above the progress bar; needs cava installed",
             Setting::Volume => "← → adjusts by 5%",
             Setting::Scrobbling => "Submit plays to Last.fm",
         }
@@ -51,6 +55,8 @@ impl Setting {
 pub enum SettingValue {
     Toggle(bool),
     Percent(u8),
+    /// One of several named options, stepped through with Enter and the arrows.
+    Choice(&'static str),
     /// The setting has no value to show and cannot be changed here, with the
     /// reason in place of on/off.
     Unavailable(&'static str),

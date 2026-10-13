@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- A spectrum visualizer above the progress bar, driven by [CAVA](https://github.com/karlstav/cava) (#40). `v` cycles through six styles — Bars, Outline, Columns, Bricks, Dots and Butterfly — and `V` turns it off; it is also a row in `Shift+S`, and the choice is remembered between sessions. CAVA is optional and is only started while a style is on. If it is not installed or stops responding, the status line says so and `v` tries again, and playback carries on regardless. CAVA listens to your default output device, so the spectrum also moves for other audio playing on the machine. Thanks to @dghelm, who designed and built it
+
+### Changed
+- The progress bar is a steady line rather than a sine wave. The old wave moved at the same pace whatever was playing, so it looked like a visualizer without being one
+
 ## [1.6.0] - 2026-10-12
 
 ### Added

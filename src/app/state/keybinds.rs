@@ -157,6 +157,14 @@ impl KeybindGroup {
                     action: "Show/hide queue",
                 },
                 Keybind {
+                    key: "v",
+                    action: "Cycle visualizer",
+                },
+                Keybind {
+                    key: "V",
+                    action: "Turn visualizer off",
+                },
+                Keybind {
                     key: "Shift+S",
                     action: "Settings",
                 },

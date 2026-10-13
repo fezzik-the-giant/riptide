@@ -23,6 +23,7 @@ mod playlist;
 mod search;
 mod ui;
 mod update;
+mod visualizer;
 
 use api::ApiWorker;
 use app::App;
@@ -129,6 +130,8 @@ fn main() -> Result<()> {
     let (lastfm_cmd_tx, lastfm_cmd_rx) = mpsc::unbounded_channel::<lastfm::LastfmCmd>();
     let (_lastfm_evt_tx, _lastfm_evt_rx) = mpsc::unbounded_channel::<lastfm::LastfmEvent>();
 
+    let (visualizer_link, cava_worker) = visualizer::channel(config.prefs.visualizer_mode);
+
     // Spawn async workers on a dedicated Tokio thread.
     // We keep the handle so we can join it on exit and let PlayerWorker kill mpv cleanly.
     let worker_config = config.clone();
@@ -151,7 +154,8 @@ fn main() -> Result<()> {
                     api_worker.run(),
                     player_worker.run(),
                     mpris_server.run(),
-                    lastfm_worker.run()
+                    lastfm_worker.run(),
+                    cava_worker.run()
                 );
             });
         })
@@ -177,6 +181,7 @@ fn main() -> Result<()> {
         player_cmd_tx,
         mpris_state_tx,
         lastfm_cmd_tx,
+        visualizer_link,
         &config,
     );
 

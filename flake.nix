@@ -94,6 +94,7 @@
             rustToolchain
             pkgs.rust-analyzer
             pkgs.cargo-edit
+            pkgs.cava
           ];
         };
 
