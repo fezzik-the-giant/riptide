@@ -137,7 +137,7 @@ would mean capturing and buffering PCM ourselves for no gain, and a missing
 
 ### Now-playing bar that scales with the terminal
 
-**Issue:** [#63](https://github.com/fezzik-the-giant/riptide/issues/63) — `In progress`
+**Issue:** [#63](https://github.com/fezzik-the-giant/riptide/issues/63) — `In review`
 **Version:** next release (under `[Unreleased]` in `CHANGELOG.md`).
 
 The bar takes a third of the terminal's height, capped at 30 rows
