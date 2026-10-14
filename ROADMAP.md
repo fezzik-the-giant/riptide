@@ -155,6 +155,26 @@ opening the album fetches its own. The pane sits second in the `Tab` cycle —
 Tracks, Albums, Artists, Playlists — and drops Atmos-only albums on arrival,
 as the tracks pane does.
 
+### Periodic update check
+
+**Issue:** [#68](https://github.com/fezzik-the-giant/riptide/issues/68) — `In review`
+**Version:** next release (under `[Unreleased]` in `CHANGELOG.md`).
+
+The update actor ran one check 3 s after startup and never again, and none at
+all on package-managed installs. `tick` now sends `UpdateCmd::Check` once the
+last result is `UPDATE_RECHECK_INTERVAL` (10 minutes) old — six requests an hour
+against GitHub's unauthenticated limit of 60 per IP. It skips an open dialog
+and a staged install. A failed check keeps the release it already knew about,
+and the footer leads with the notice so a narrow terminal truncates the hint
+instead.
+
+Package-managed installs check too. The actor reports the `InstallMethod`, and
+`InstallMethod::upgrade_hint` words the footer and `U` for it — `U` handles
+those installs before `check_done`, so a found release can never open the
+installer over a binary a package manager owns. The same change fixed COPR
+installs being classed as `Script`: ownership is now asked of `rpm -qf` after
+`pacman -Qo`, both under `LC_ALL=C` so their "not owned" text is English.
+
 ## Considered and Rejected
 
 Nothing yet. Two standing decisions live in `AGENTS.md` rather than here,

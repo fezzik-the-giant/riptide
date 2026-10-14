@@ -157,6 +157,17 @@ pub(super) fn handle_global_key(app: &mut App, key: KeyEvent) -> bool {
                 // than falling through to "up to date", which would name the
                 // version the user is still running.
                 app.open_update_dialog_in_state(UpdateStatus::Done);
+            } else if let Some(method) = app.update.install_method
+                && !app.update.self_updatable()
+            {
+                // Ahead of `check_done`: these installs check too, and a found
+                // release must not open a dialog that would install over a
+                // binary the package manager owns.
+                let msg = match &app.update.available {
+                    Some(tag) => format!("Riptide {tag} is out — {}", method.upgrade_hint()),
+                    None => "Updates are handled by your package manager".to_string(),
+                };
+                app.set_status(msg, crate::app::StatusLevel::Info);
             } else if app.update.check_done {
                 if app.update.available.is_some() {
                     app.open_update_dialog_in_state(UpdateStatus::Confirming);
@@ -168,11 +179,6 @@ pub(super) fn handle_global_key(app: &mut App, key: KeyEvent) -> bool {
                 } else {
                     app.open_update_dialog_in_state(UpdateStatus::UpToDate);
                 }
-            } else if app.update.self_updatable == Some(false) {
-                app.set_status(
-                    "Updates are handled by your package manager".to_string(),
-                    crate::app::StatusLevel::Info,
-                );
             } else {
                 // Either the actor has not resolved the install method yet or
                 // the first check is still in flight; both are momentary and
@@ -204,7 +210,7 @@ mod tests {
     #[test]
     fn u_does_not_claim_a_package_manager_before_the_actor_reports() {
         let mut t = test_app();
-        // self_updatable is None for the first seconds of every session, while
+        // install_method is None for the first seconds of every session, while
         // the actor resolves the install method off the first frame.
         press_u(&mut t.app);
         let (msg, _, _) = t.app.status.clone().expect("U must give some feedback");
@@ -213,6 +219,19 @@ mod tests {
             "an unresolved install method must not be reported as one: {msg}"
         );
         assert!(!t.app.update.active);
+    }
+
+    #[test]
+    fn u_on_a_package_managed_install_never_opens_the_installer() {
+        let mut t = test_app();
+        t.app.update.install_method = Some(crate::update::InstallMethod::Pacman);
+        t.app.set_update_available(Ok(Some("v9.9.9".into())));
+
+        press_u(&mut t.app);
+
+        assert!(!t.app.update.active);
+        let (msg, _, _) = t.app.status.clone().expect("U must give some feedback");
+        assert_eq!(msg, "Riptide v9.9.9 is out — update with your AUR helper");
     }
 
     #[test]

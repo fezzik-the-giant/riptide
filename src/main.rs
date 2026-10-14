@@ -203,20 +203,19 @@ fn main() -> Result<()> {
                 let result_tx = actor.result_tx;
                 std::thread::sleep(std::time::Duration::from_secs(3));
 
-                // install_method is deferred to this thread so a stuck pacman
+                // install_method is deferred to this thread so a stuck package
                 // db never delays the first frame. A panic here is not fatal —
                 // we treat the binary as self-updatable and let the check fail
-                // cleanly if the environment is odd.
+                // cleanly if the environment is odd. Package-managed installs
+                // still check, so the footer can tell them a release is out;
+                // only installing is theirs to refuse.
                 let method = std::panic::catch_unwind(update::install_method)
                     .unwrap_or(update::InstallMethod::Script);
-                if method != update::InstallMethod::Script {
-                    tracing::debug!("self-update disabled for this install method");
-                    let _ = checking_tx.send(app::UpdatePhase::NotSelfUpdatable);
-                    return;
-                }
+                tracing::debug!("update actor: install method {method:?}");
+                let _ = checking_tx.send(app::UpdatePhase::Resolved(method));
 
                 let _ = checking_tx.send(app::UpdatePhase::Checking);
-                let initial = std::panic::catch_unwind(update::check_for_update_assuming_script)
+                let initial = std::panic::catch_unwind(update::check_for_update)
                     .unwrap_or_else(|_| Err("update check panicked".to_string()));
                 update::sending_check(&check_tx, initial);
 
@@ -226,10 +225,16 @@ fn main() -> Result<()> {
                     match cmd {
                         UpdateCmd::Check => {
                             let _ = checking_tx.send(app::UpdatePhase::Checking);
-                            let r =
-                                std::panic::catch_unwind(update::check_for_update_assuming_script)
-                                    .unwrap_or_else(|_| Err("update check panicked".to_string()));
+                            let r = std::panic::catch_unwind(update::check_for_update)
+                                .unwrap_or_else(|_| Err("update check panicked".to_string()));
                             update::sending_check(&check_tx, r);
+                        }
+                        UpdateCmd::Install if method != update::InstallMethod::Script => {
+                            let refusal =
+                                format!("installed via {method:?} — {}", method.upgrade_hint());
+                            if result_tx.send(Err(refusal)).is_err() {
+                                break;
+                            }
                         }
                         UpdateCmd::Install => {
                             // Catch panics so the TUI never hangs in Working.

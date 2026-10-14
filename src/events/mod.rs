@@ -190,8 +190,10 @@ pub fn run_app(
 
         // Drain self-update channel: availability check result + install result
         while let Ok(phase) = app.checking_rx.try_recv() {
-            app.update.self_updatable = Some(phase == UpdatePhase::Checking);
-            app.update.checking = phase == UpdatePhase::Checking;
+            match phase {
+                UpdatePhase::Resolved(method) => app.update.install_method = Some(method),
+                UpdatePhase::Checking => app.update.checking = true,
+            }
         }
         while let Ok(result) = app.update_rx.try_recv() {
             // A result landing on an open Failed modal is the user's manual
@@ -202,11 +204,13 @@ pub fn run_app(
                 && app.update.checking;
             app.set_update_available(result);
             if retry_check {
-                if app.update.available.is_some() {
+                // The error goes first: a failed check keeps the release an
+                // earlier one found, so `available` alone would read as success.
+                if let Some(err) = app.update.check_error.clone() {
+                    app.update.error = Some(err);
+                } else if app.update.available.is_some() {
                     app.update.status = UpdateStatus::Confirming;
                     app.update.error = None;
-                } else if let Some(err) = app.update.check_error.clone() {
-                    app.update.error = Some(err);
                 } else {
                     app.update.status = UpdateStatus::UpToDate;
                 }
@@ -417,6 +421,7 @@ mod tests {
     use super::*;
     use crate::api::models::Artist;
     use crate::app::test_support::{TestApp, test_app};
+    use crate::update::InstallMethod;
     use crossterm::event::KeyModifiers;
 
     fn app_on_artists_tab() -> TestApp {
@@ -493,7 +498,7 @@ mod tests {
         handle_update_input(&mut t.app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
         assert!(!t.app.update.active);
         // The staged binary outlives the modal, so the state that drives the
-        // footer hint and `U` has to as well.
+        // footer notice and `U` has to as well.
         assert_eq!(t.app.update.status, UpdateStatus::Done);
         assert_eq!(t.app.update.available.as_deref(), Some("v9.9.9"));
 
@@ -503,6 +508,71 @@ mod tests {
         );
         assert!(t.app.update.active);
         assert_eq!(t.app.update.status, UpdateStatus::Done);
+    }
+
+    /// An app whose startup check found nothing, with the actor's command
+    /// channel in hand to see what the TUI asks of it.
+    fn checked_app() -> (TestApp, tokio::sync::mpsc::UnboundedReceiver<UpdateCmd>) {
+        let mut t = test_app();
+        let cmd_rx = t.app.take_update_actor().unwrap().cmd_rx;
+        t.app.update.install_method = Some(InstallMethod::Script);
+        t.app.set_update_available(Ok(None));
+        (t, cmd_rx)
+    }
+
+    fn age_last_check(app: &mut App) {
+        app.update.last_check =
+            Some(std::time::Instant::now() - crate::app::UPDATE_RECHECK_INTERVAL);
+    }
+
+    fn rechecks_when(arrange: fn(&mut App)) -> bool {
+        let (mut t, mut cmd_rx) = checked_app();
+        arrange(&mut t.app);
+        age_last_check(&mut t.app);
+        t.app.tick();
+        cmd_rx.try_recv().is_ok()
+    }
+
+    #[test]
+    fn a_stale_check_is_rerun_once() {
+        let (mut t, mut cmd_rx) = checked_app();
+
+        t.app.tick();
+        assert!(cmd_rx.try_recv().is_err(), "rechecked before the interval");
+
+        age_last_check(&mut t.app);
+        t.app.tick();
+        t.app.tick();
+        assert_eq!(cmd_rx.try_recv().ok(), Some(UpdateCmd::Check));
+        assert!(
+            cmd_rx.try_recv().is_err(),
+            "a check in flight was sent again"
+        );
+        assert!(t.app.update.checking);
+    }
+
+    #[test]
+    fn no_recheck_where_a_result_could_not_help() {
+        assert!(!rechecks_when(|a| a.update.active = true));
+        assert!(!rechecks_when(|a| a.update.status = UpdateStatus::Done));
+    }
+
+    #[test]
+    fn package_managed_installs_recheck_too() {
+        assert!(rechecks_when(
+            |a| a.update.install_method = Some(InstallMethod::Pacman)
+        ));
+    }
+
+    #[test]
+    fn a_failed_recheck_keeps_the_known_release() {
+        let (mut t, _cmd_rx) = checked_app();
+        t.app.set_update_available(Ok(Some("v9.9.9".into())));
+
+        t.app.set_update_available(Err("rate limited".into()));
+
+        assert_eq!(t.app.update.available.as_deref(), Some("v9.9.9"));
+        assert_eq!(t.app.update.check_error.as_deref(), Some("rate limited"));
     }
 
     #[test]
