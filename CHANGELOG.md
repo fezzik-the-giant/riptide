@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - The now-playing bar grows and shrinks with the terminal instead of always taking 16 rows (#63). It takes a third of the height, so on a tall terminal the cover art is bigger and more lyrics fit beside it, up to a 30-row bar. On a short one, where the cover would only be a thumbnail, the bar drops the cover and lyrics and keeps just the track info, leaving the rest of the screen to the list
+- The queue pane hides itself when the terminal is too narrow for it, instead of taking 26 columns the list needs (#65). Below 86 columns your track list keeps its artist column rather than shrinking to numbers and durations, and the queue comes back as soon as the terminal is wide enough again. Your queue setting is untouched; turning the queue on while the terminal is too narrow says so on the status line
 - The progress bar is a steady line rather than a sine wave. The old wave moved at the same pace whatever was playing, so it looked like a visualizer without being one
 
 ### Fixed

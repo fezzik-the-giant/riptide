@@ -30,6 +30,18 @@ use tokio::sync::{mpsc, watch};
 /// Embedded rather than read from `assets/` at runtime: that path resolved
 /// against the working directory, so it only ever loaded when the binary was
 /// launched from the repo root, and silently showed nothing once installed.
+pub const QUEUE_W: u16 = 26;
+/// Narrower than this, a track row drops its artist column.
+const LIST_MIN_W: u16 = 60;
+
+/// Whether the queue pane can sit beside the list without crowding it. The
+/// pane collapses below this width rather than shrinking — a queue too narrow
+/// to read a title in is no use, and neither is a list that has lost its
+/// artists.
+pub fn queue_fits(terminal_cols: u16) -> bool {
+    terminal_cols >= LIST_MIN_W + QUEUE_W
+}
+
 const DEFAULT_ART: &[u8] = include_bytes!("../../assets/wave-logo-320-transparent.png");
 
 // ── App ───────────────────────────────────────────────────────────────────────
@@ -82,6 +94,9 @@ pub struct App {
 
     pub queue_focused: bool,
     pub queue_visible: bool,
+    /// Last width the frame was drawn at, so focus can follow the queue pane
+    /// when it collapses. `u16::MAX` until the first draw: assume it fits.
+    terminal_width: u16,
     pub queue_cursor: usize,
     queue_viewport: ListViewport,
 
@@ -207,6 +222,7 @@ impl App {
             settings: SettingsState::default(),
             queue_focused: false,
             queue_visible: prefs.queue_visible,
+            terminal_width: u16::MAX,
             queue_cursor: 0,
             queue_viewport: ListViewport::default(),
             last_removal: None,
@@ -426,6 +442,23 @@ impl App {
     pub(crate) fn toggle_queue_visible(&mut self) {
         self.queue_visible = !self.queue_visible;
         if !self.queue_visible {
+            self.queue_focused = false;
+        } else if !self.queue_shown() {
+            self.set_status(
+                "Queue hidden — terminal too narrow".to_string(),
+                StatusLevel::Info,
+            );
+        }
+    }
+
+    /// The setting, as it applies at the current width.
+    pub(crate) fn queue_shown(&self) -> bool {
+        self.queue_visible && queue_fits(self.terminal_width)
+    }
+
+    pub fn set_terminal_width(&mut self, cols: u16) {
+        self.terminal_width = cols;
+        if !self.queue_shown() {
             self.queue_focused = false;
         }
     }

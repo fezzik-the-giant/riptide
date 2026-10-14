@@ -74,8 +74,6 @@ pub(super) fn row_accent_style(is_selected: bool) -> Style {
     }
 }
 
-pub(super) const QUEUE_W: u16 = 26;
-
 pub(super) const SPINNER: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 pub(super) fn spinner_char(tick: u64) -> char {
