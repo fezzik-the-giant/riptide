@@ -119,6 +119,26 @@ Worth scoping before designing: restoring the queue is cheap, restoring the
 playback position within a track is a different feature, and restoring either
 one means deciding whether riptide starts playing on launch (it should not).
 
+### Now-playing bar that scales with the terminal
+
+**Issue:** [#63](https://github.com/fezzik-the-giant/riptide/issues/63) — `Backlog`
+
+The now-playing bar is a fixed `Constraint::Length(16)` in `src/ui/mod.rs`,
+whatever the terminal's height. On a short terminal it takes most of the screen
+from the list; on a tall one the cover stays at 10 rows and the extra height all
+goes to the list, though the lyrics beside the cover would happily use it.
+
+The bar's inner layout already follows its height — the cover is sized from the
+rows above the track info and the lyrics centre on whatever rows they are given
+(`src/ui/now_playing.rs`) — so the change is choosing the height, not reflowing
+the bar.
+
+To settle first: the smallest and largest heights, and what drives the choice in
+between (a share of the terminal, or whatever leaves the list a minimum number of
+rows). Below some height the cover is not worth drawing at all, and the bar
+should probably drop to just its four rows of track info rather than squeeze the
+art to a thumbnail.
+
 ## Shipped
 
 `CHANGELOG.md` stays the user-facing record of what a release contained; an

@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - The progress bar is a steady line rather than a sine wave. The old wave moved at the same pace whatever was playing, so it looked like a visualizer without being one
 
+### Fixed
+- Lyrics now fill the space beside the cover art instead of three rows at its foot, showing several lines either side of the one being sung. Long lines were also cut off mid-word: the lyrics were squeezed in from both sides by the cover's width, leaving well under half the bar. They now use everything to the right of the cover, a current line too long for that wraps onto a second row, and the lines around it end in `…` rather than being sliced
+
 ## [1.6.0] - 2026-10-12
 
 ### Added
