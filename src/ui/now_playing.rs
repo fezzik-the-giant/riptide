@@ -21,6 +21,26 @@ use crate::visualizer::VisualizerMode;
 const LYRICS_MIN_W: u16 = 20;
 const LYRICS_GAP: u16 = 3;
 
+/// Track info, visualization, time and volume.
+const INFO_H: u16 = 4;
+const BORDER_H: u16 = 1;
+/// Shorter than this the cover is a thumbnail, and the rows are worth more to
+/// the list.
+const COVER_MIN_H: u16 = 6;
+const BAR_MAX_H: u16 = 30;
+
+/// A third of the terminal, so the cover and lyrics grow with it — unless that
+/// leaves too little for a cover, in which case the bar keeps only its border
+/// and track info.
+pub(super) fn now_playing_height(terminal_rows: u16) -> u16 {
+    let share = terminal_rows / 3;
+    if share < BORDER_H + COVER_MIN_H + INFO_H {
+        BORDER_H + INFO_H
+    } else {
+        share.min(BAR_MAX_H)
+    }
+}
+
 pub(super) fn render_now_playing(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .borders(Borders::TOP)
@@ -28,35 +48,24 @@ pub(super) fn render_now_playing(f: &mut Frame, app: &App, area: Rect) {
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let sections = Layout::vertical([
-        Constraint::Min(0),    // art, with the lyrics beside it
-        Constraint::Length(1), // gap
-        Constraint::Length(4), // track info / visualization / time and volume
-    ])
-    .split(inner);
+    let (top, info) = if inner.height > INFO_H {
+        let sections =
+            Layout::vertical([Constraint::Min(0), Constraint::Length(INFO_H)]).split(inner);
+        (Some(sections[0]), sections[1])
+    } else {
+        (None, inner)
+    };
 
     let cols = Layout::horizontal([
         Constraint::Percentage(35),
         Constraint::Percentage(30),
         Constraint::Percentage(35),
     ])
-    .split(sections[2]);
+    .split(info);
 
-    // Width is twice the height because terminal cells are about half as wide as
-    // tall, which keeps the cover square.
-    let top = sections[0];
-    let art_w = (top.height * 2).min(cols[0].width);
-    render_now_playing_art(f, app, Rect::new(top.x, top.y, art_w, top.height));
-
-    // Narrow terminals fall back to the full width — overlap is better than a
-    // two-word column.
-    let inset = art_w + LYRICS_GAP;
-    let lyrics_area = if top.width > inset + LYRICS_MIN_W {
-        Rect::new(top.x + inset, top.y, top.width - inset, top.height)
-    } else {
-        top
-    };
-    render_lyrics(f, app, lyrics_area);
+    if let Some(top) = top {
+        render_cover_and_lyrics(f, app, top, cols[0].width);
+    }
 
     let track_info: Vec<Line> = match &app.now_playing.track {
         Some(t) => {
@@ -149,6 +158,31 @@ pub(super) fn render_now_playing(f: &mut Frame, app: &App, area: Rect) {
             .style(Style::default().fg(DIM)),
         cols[2],
     );
+}
+
+/// The cover is never wider than the track info column beneath it.
+fn render_cover_and_lyrics(f: &mut Frame, app: &App, top: Rect, max_art_w: u16) {
+    let art_w = cover_cols(top.height, cell_size()).min(max_art_w);
+    render_now_playing_art(f, app, Rect::new(top.x, top.y, art_w, top.height));
+
+    // Narrow terminals fall back to the full width — overlap is better than a
+    // two-word column.
+    let inset = art_w + LYRICS_GAP;
+    let lyrics_area = if top.width > inset + LYRICS_MIN_W {
+        Rect::new(top.x + inset, top.y, top.width - inset, top.height)
+    } else {
+        top
+    };
+    render_lyrics(f, app, lyrics_area);
+}
+
+/// Columns for a square cover a third of a row shorter than `rows`, on the
+/// terminal's actual cell size. A whole blank row under the cover is too much
+/// gap and none leaves it touching the track info; `Fit` keeps the square and
+/// top-aligns it, so a box this narrow stops it short by a few pixels instead.
+fn cover_cols(rows: u16, (cell_w, cell_h): (u16, u16)) -> u16 {
+    let edge_px = u32::from(rows) * u32::from(cell_h) - u32::from(cell_h / 3);
+    (edge_px / u32::from(cell_w)) as u16
 }
 
 pub(super) fn render_now_playing_art(f: &mut Frame, app: &App, area: Rect) {
@@ -308,6 +342,23 @@ fn render_progress(f: &mut Frame, app: &App, area: Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_cover_is_square_and_stops_short_of_the_track_info() {
+        assert_eq!(cover_cols(10, (8, 16)), 19);
+        assert_eq!(cover_cols(10, (8, 20)), 24);
+        assert_eq!(cover_cols(10, (9, 20)), 21);
+    }
+
+    #[test]
+    fn the_bar_takes_a_third_of_the_terminal_or_collapses_to_its_info() {
+        assert_eq!(now_playing_height(24), 5);
+        assert_eq!(now_playing_height(32), 5);
+        assert_eq!(now_playing_height(33), 11);
+        assert_eq!(now_playing_height(48), 16);
+        assert_eq!(now_playing_height(72), 24);
+        assert_eq!(now_playing_height(100), 30);
+    }
 
     #[test]
     fn the_current_line_wraps_at_a_word_then_ellipsizes() {
