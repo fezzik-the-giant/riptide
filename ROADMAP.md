@@ -133,7 +133,7 @@ track info.
 
 ### Queue pane that collapses on narrow terminals
 
-**Issue:** [#65](https://github.com/fezzik-the-giant/riptide/issues/65) — `In review`
+**Issue:** [#65](https://github.com/fezzik-the-giant/riptide/issues/65) — `Done`
 **Version:** next release (under `[Unreleased]` in `CHANGELOG.md`).
 
 The queue pane hides whenever showing it would leave the list under 60 columns
@@ -145,7 +145,7 @@ cannot stay in, or move into, a pane that is not on screen.
 
 ### Album results in search
 
-**Issue:** [#55](https://github.com/fezzik-the-giant/riptide/issues/55) — `In review`
+**Issue:** [#55](https://github.com/fezzik-the-giant/riptide/issues/55) — `Done`
 **Version:** next release (under `[Unreleased]` in `CHANGELOG.md`).
 
 Albums needed their own `/searchResults` request, like the other three panes:
@@ -157,7 +157,7 @@ as the tracks pane does.
 
 ### Periodic update check
 
-**Issue:** [#68](https://github.com/fezzik-the-giant/riptide/issues/68) — `In review`
+**Issue:** [#68](https://github.com/fezzik-the-giant/riptide/issues/68) — `Done`
 **Version:** next release (under `[Unreleased]` in `CHANGELOG.md`).
 
 The update actor ran one check 3 s after startup and never again, and none at
