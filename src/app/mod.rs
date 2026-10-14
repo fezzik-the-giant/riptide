@@ -42,6 +42,12 @@ pub fn queue_fits(terminal_cols: u16) -> bool {
     terminal_cols >= LIST_MIN_W + QUEUE_W
 }
 
+/// How often a running session asks GitHub for a newer release. Six requests an
+/// hour is a tenth of the unauthenticated API allowance, which is per IP and so
+/// shared with every other riptide behind the same NAT.
+pub(crate) const UPDATE_RECHECK_INTERVAL: std::time::Duration =
+    std::time::Duration::from_secs(10 * 60);
+
 const DEFAULT_ART: &[u8] = include_bytes!("../../assets/wave-logo-320-transparent.png");
 
 // ── App ───────────────────────────────────────────────────────────────────────
@@ -341,6 +347,24 @@ impl App {
                 StatusLevel::Error,
             );
         }
+        self.recheck_update_if_due();
+    }
+
+    /// Ask the update actor for a fresh check once the last one is
+    /// `UPDATE_RECHECK_INTERVAL` old. Waiting on `check_done` leaves the first
+    /// check to the actor's own startup run. An open dialog or a staged
+    /// install has nothing a new result could improve.
+    fn recheck_update_if_due(&mut self) {
+        let u = &self.update;
+        let due = u.check_done
+            && !u.checking
+            && !u.active
+            && u.status != UpdateStatus::Done
+            && u.last_check
+                .is_some_and(|at| at.elapsed() >= UPDATE_RECHECK_INTERVAL);
+        if due && self.update_cmd_tx.send(UpdateCmd::Check).is_ok() {
+            self.update.checking = true;
+        }
     }
 
     pub(crate) fn set_status(&mut self, msg: String, level: StatusLevel) {
@@ -352,21 +376,28 @@ impl App {
         self.update_actor.take()
     }
 
-    /// Record the background update-check outcome; sets the footer hint on a
+    /// Record the background update-check outcome; sets the footer notice on a
     /// found release, or surfaces a check failure instead of "up to date".
+    ///
+    /// A failure leaves `available` alone: with checks repeating every few
+    /// minutes, one dropped connection or rate-limited request would otherwise
+    /// take down a notice for a release that has not gone anywhere.
     pub(crate) fn set_update_available(&mut self, result: Result<Option<String>, String>) {
         match result {
             Ok(tag) => {
+                if let Some(new) = &tag
+                    && tag != self.update.available
+                {
+                    tracing::info!("update available: {new}");
+                }
                 self.update.available = tag;
                 self.update.check_error = None;
             }
-            Err(e) => {
-                self.update.available = None;
-                self.update.check_error = Some(e);
-            }
+            Err(e) => self.update.check_error = Some(e),
         }
         self.update.checking = false;
         self.update.check_done = true;
+        self.update.last_check = Some(std::time::Instant::now());
     }
 
     /// Open the update dialog in a specific state (Confirming for an available

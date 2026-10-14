@@ -3,6 +3,7 @@
 
 use crate::api::models::*;
 use crate::playlist::PlaylistDetail;
+use crate::update::InstallMethod;
 use std::cell::Cell;
 use std::collections::HashMap;
 
@@ -121,8 +122,9 @@ pub enum UpdateStatus {
 /// deferred off the first frame and can take seconds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpdatePhase {
-    /// This install is package-managed; no check will ever run.
-    NotSelfUpdatable,
+    /// How this binary was installed, which decides whether `U` may install
+    /// a release or only point at the package manager.
+    Resolved(InstallMethod),
     /// An availability check is in flight.
     Checking,
 }
@@ -137,14 +139,17 @@ pub enum UpdateCmd {
 }
 
 pub struct UpdateState {
-    /// Newer tag detected (e.g. "v0.14.0"). Drives the footer hint.
+    /// Newer tag detected (e.g. "v0.14.0"). Drives the footer notice.
     pub available: Option<String>,
-    /// True while the background check (3 s after startup) has not yet completed.
+    /// True while a background check is in flight.
     pub checking: bool,
     /// True once the first background check produced any outcome (found,
     /// none, or failed). Prevents pressing `U` from reporting "up to date"
     /// before a check has actually happened for this install type.
     pub check_done: bool,
+    /// When the most recent check finished, whatever its outcome. The
+    /// periodic re-check counts from here.
+    pub last_check: Option<std::time::Instant>,
     /// Update dialog open.
     pub active: bool,
     pub status: UpdateStatus,
@@ -154,26 +159,31 @@ pub struct UpdateState {
     /// recent check errored. Lets `U` say "check failed" instead of
     /// misreporting "up to date".
     pub check_error: Option<String>,
-    /// Whether self-update applies to this install, once the actor has
-    /// resolved it. `None` until then — pressing `U` in that window must not
-    /// claim either answer.
-    pub self_updatable: Option<bool>,
+    /// How this binary was installed, once the actor has resolved it. `None`
+    /// until then — pressing `U` in that window must not claim either answer.
+    pub install_method: Option<InstallMethod>,
+}
+
+impl UpdateState {
+    /// True for an install riptide may overwrite itself; any other belongs to
+    /// a package manager, which `U` points at instead.
+    pub fn self_updatable(&self) -> bool {
+        self.install_method == Some(InstallMethod::Script)
+    }
 }
 
 impl Default for UpdateState {
     fn default() -> Self {
         Self {
             available: None,
-            // `checking` starts false so non-self-update installs never show
-            // a stale "Checking…" state; main() flips it to true just before
-            // a background check is actually spawned (Script installs only).
             checking: false,
             check_done: false,
+            last_check: None,
             active: false,
             status: UpdateStatus::Confirming,
             error: None,
             check_error: None,
-            self_updatable: None,
+            install_method: None,
         }
     }
 }

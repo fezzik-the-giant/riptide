@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025 Ryan Cohan
+// Copyright (C) 2025 Fezzik the Giant
 
 //! Self-update support for installations made outside a package manager.
 //!
-//! Enabled only when the running binary is not managed by pacman, Nix, or
-//! Cargo — i.e. it was placed on disk via `install.sh` or a manual download
+//! Enabled only when the running binary is not managed by pacman, rpm, Nix,
+//! or Cargo — i.e. it was placed on disk via `install.sh` or a manual download
 //! from GitHub Releases. See [`install_method`].
 
 use anyhow::{Context, Result, bail};
@@ -19,12 +19,28 @@ const GITHUB_REPO: &str = "fezzik-the-giant/riptide";
 pub enum InstallMethod {
     /// Owned by pacman (AUR `riptide` package). Updated via yay/paru.
     Pacman,
+    /// Owned by rpm (Fedora COPR package). Updated via dnf.
+    Rpm,
     /// Inside `/nix/store`. Managed by the user's flake. Read-only — never updatable.
     Nix,
     /// Inside `~/.cargo/bin`. Updated via `cargo install`.
     Cargo,
     /// Placed by `install.sh` or a manual release download. Self-update applies.
     Script,
+}
+
+impl InstallMethod {
+    /// How a user of this install gets a newer release, worded to follow
+    /// "Riptide vX.Y.Z available — ".
+    pub fn upgrade_hint(self) -> &'static str {
+        match self {
+            InstallMethod::Pacman => "update with your AUR helper",
+            InstallMethod::Rpm => "update with dnf",
+            InstallMethod::Nix => "update your flake input",
+            InstallMethod::Cargo => "update with cargo install",
+            InstallMethod::Script => "press U to upgrade",
+        }
+    }
 }
 
 /// Information parsed from a GitHub release JSON payload.
@@ -300,31 +316,31 @@ fn is_under_nix_store(path: &Path) -> bool {
     path.starts_with("/nix/store")
 }
 
-/// Linux only: true when pacman owns `path` (i.e. it came from an AUR/ALPM package).
-/// Conservative on ambiguous failures: only a definitive "No package owns"
-/// response is treated as not-owned; db-lock or timeout is assumed owned to
-/// avoid overwriting a package-managed binary. A missing `pacman` binary
-/// (spawn failure) is treated as not-owned — on non-Arch systems there is no
-/// pacman to own anything. The query is executed on a helper thread with a
-/// 2 s bound so a stuck ALPM db cannot stall the caller.
+/// Linux only: true when `manager` (`pacman`, `rpm`) owns `path`, asked with
+/// `manager query_flag path`. Conservative on ambiguous failures: only output
+/// containing `not_owned` counts as not-owned; db-lock or timeout is assumed
+/// owned to avoid overwriting a package-managed binary. A missing `manager`
+/// binary (spawn failure) is treated as not-owned — on a distro without it
+/// there is nothing for it to own. `LC_ALL=C` because both tools translate
+/// their "not owned" message, and a translated one would read as ambiguous.
+/// The query runs on a helper thread with a 2 s bound so a stuck package db
+/// cannot stall the caller.
 #[cfg(target_os = "linux")]
-fn is_pacman_owned(path: &Path) -> bool {
+fn is_package_owned(manager: &str, query_flag: &str, not_owned: &str, path: &Path) -> bool {
     use std::process::Stdio;
     use std::sync::mpsc as std_mpsc;
     use std::time::Duration;
 
-    let path = path.to_path_buf();
     let (tx, rx) = std_mpsc::channel();
-    // Resolve pacman's path on the leading thread so spawn failure is distinguishable.
-    let path_for_query = path.clone();
+    let mut command = std::process::Command::new(manager);
+    command
+        .arg(query_flag)
+        .arg(path)
+        .env("LC_ALL", "C")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     let query = std::thread::spawn(move || {
-        let out = std::process::Command::new("pacman")
-            .arg("-Qo")
-            .arg(&path_for_query)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output();
-        let _ = tx.send(out);
+        let _ = tx.send(command.output());
     });
     let out = match rx.recv_timeout(Duration::from_secs(2)) {
         Ok(o) => o,
@@ -333,7 +349,7 @@ fn is_pacman_owned(path: &Path) -> bool {
             // still be alive) and fall through to conservative ownership.
             drop(query);
             tracing::warn!(
-                "pacman -Qo timed out for {}; assuming pacman-owned",
+                "{manager} {query_flag} timed out for {}; assuming package-owned",
                 path.display()
             );
             return true;
@@ -346,12 +362,11 @@ fn is_pacman_owned(path: &Path) -> bool {
             let stderr = String::from_utf8_lossy(&out.stderr);
             let stdout = String::from_utf8_lossy(&out.stdout);
             let combined = format!("{stderr} {stdout}");
-            if combined.contains("No package owns") {
+            if combined.contains(not_owned) {
                 false
             } else {
-                // Ambiguous failure (db locked, pacman missing, etc.) — assume owned to stay safe.
                 tracing::warn!(
-                    "pacman -Qo failed ambiguously for {}: {combined}; assuming pacman-owned",
+                    "{manager} {query_flag} failed ambiguously for {}: {combined}; assuming package-owned",
                     path.display()
                 );
                 true
@@ -456,8 +471,9 @@ pub fn cleanup_stale_artifacts() {
 
 /// Classify an installation given the resolved path of the running binary.
 /// Heuristics over the path; touches the filesystem to canonicalize Nix
-/// symlinks and to confirm the binary exists before asking pacman, and (on
-/// Linux) shells out to `pacman -Qo` as the tie-breaker.
+/// symlinks and to confirm the binary exists before asking the package
+/// managers, and (on Linux) shells out to `pacman -Qo` and `rpm -qf` as the
+/// tie-breakers.
 fn install_method_from_path(exe: &Path) -> InstallMethod {
     if is_under_nix_store(exe) {
         return InstallMethod::Nix;
@@ -465,11 +481,17 @@ fn install_method_from_path(exe: &Path) -> InstallMethod {
     if is_under_cargo_bin(exe) {
         return InstallMethod::Cargo;
     }
-    // pacman is the tie-breaker for paths that match no convention; only ask
-    // it about real files to avoid a slow negative lookup for synthetic paths.
+    // The package managers are the tie-breaker for paths that match no
+    // convention; only ask them about real files to avoid a slow negative
+    // lookup for synthetic paths.
     #[cfg(target_os = "linux")]
-    if exe.exists() && is_pacman_owned(exe) {
-        return InstallMethod::Pacman;
+    if exe.exists() {
+        if is_package_owned("pacman", "-Qo", "No package owns", exe) {
+            return InstallMethod::Pacman;
+        }
+        if is_package_owned("rpm", "-qf", "is not owned by any package", exe) {
+            return InstallMethod::Rpm;
+        }
     }
     InstallMethod::Script
 }
@@ -790,6 +812,9 @@ pub fn run_update_cli() -> Result<()> {
         InstallMethod::Pacman => {
             bail!("installed via pacman/AUR — update with your AUR helper (e.g. `yay -Syu`)")
         }
+        InstallMethod::Rpm => {
+            bail!("installed via dnf/COPR — update with `sudo dnf upgrade riptide`")
+        }
         InstallMethod::Nix => {
             bail!("installed via Nix — update the riptide input/flake instead")
         }
@@ -823,7 +848,7 @@ pub(crate) fn sending_check(
     }
 }
 
-pub(crate) fn check_for_update_assuming_script() -> Result<Option<String>, String> {
+pub(crate) fn check_for_update() -> Result<Option<String>, String> {
     let release = latest_release().map_err(|e| {
         tracing::warn!("update check failed: {e:#}");
         format!("{e:#}")
@@ -1276,6 +1301,23 @@ mod tests {
         if !is_under_cargo_bin(&exe) {
             assert_eq!(install_method_from_path(&exe), InstallMethod::Script);
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn package_ownership_only_trusts_a_definite_not_owned() {
+        let path = Path::new("/usr/bin/riptide");
+        assert!(!is_package_owned(
+            "riptide-no-such-manager",
+            "-Qo",
+            "nope",
+            path
+        ));
+        // The script only prints the marker under the C locale, which is the
+        // locale every query has to run in for the marker to be English.
+        let not_owned = Path::new(r#"[ "$LC_ALL" = C ] && echo nope; exit 1"#);
+        assert!(!is_package_owned("sh", "-c", "nope", not_owned));
+        assert!(is_package_owned("sh", "-c", "nope", Path::new("exit 1")));
     }
 
     // ── download_to_file ──────────────────────────────────────────────────
