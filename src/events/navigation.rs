@@ -526,6 +526,12 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
                         app.play_track(track);
                     }
                 }
+                SearchPane::Albums => {
+                    let idx = app.search.album_sel;
+                    if let Some(album) = app.search.albums.get(idx).cloned() {
+                        app.open_album(album);
+                    }
+                }
                 SearchPane::Artists => {
                     let idx = app.search.artist_sel;
                     if let Some(artist) = app.search.artists.get(idx).cloned() {
@@ -556,6 +562,11 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
                     app.queue_album(&album, queue_at(&key));
                 }
             }
+            Tab::Search if app.search.pane == SearchPane::Albums => {
+                if let Some(album) = app.search.albums.get(app.search.album_sel).cloned() {
+                    app.queue_album(&album, queue_at(&key));
+                }
+            }
             Tab::Playlists => {
                 if let Some(playlist) = app.playlists.selected_item().cloned() {
                     app.queue_playlist(&playlist, queue_at(&key));
@@ -582,6 +593,11 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
             Tab::Search if app.search.pane == SearchPane::Tracks => {
                 if let Some(track) = app.search.tracks.get(app.search.track_sel).cloned() {
                     app.toggle_favorite_track(&track);
+                }
+            }
+            Tab::Search if app.search.pane == SearchPane::Albums => {
+                if let Some(album) = app.search.albums.get(app.search.album_sel).cloned() {
+                    app.toggle_favorite_album(&album);
                 }
             }
             Tab::Search if app.search.pane == SearchPane::Artists => {
@@ -646,6 +662,16 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
                     .tracks
                     .get(app.search.track_sel)
                     .map(|t| t.share_url())
+                {
+                    app.copy_url(url);
+                }
+            }
+            Tab::Search if app.search.pane == SearchPane::Albums => {
+                if let Some(url) = app
+                    .search
+                    .albums
+                    .get(app.search.album_sel)
+                    .map(|a| a.share_url())
                 {
                     app.copy_url(url);
                 }

@@ -484,9 +484,7 @@ impl App {
                         });
                     } else {
                         self.search.tracks_awaiting_page2 = false;
-                        if !self.search.artists_awaiting_page2
-                            && !self.search.playlists_awaiting_page2
-                        {
+                        if self.search.all_settled() {
                             self.search.loading = false;
                         }
                     }
@@ -499,14 +497,28 @@ impl App {
                         });
                     } else {
                         self.search.tracks_awaiting_page2 = false;
-                        if !self.search.artists_awaiting_page2
-                            && !self.search.playlists_awaiting_page2
-                        {
+                        if self.search.all_settled() {
                             self.search.loading = false;
                         }
                     }
                 }
                 self.search.tracks_next_url = page.next_url;
+            }
+
+            ApiResponse::SearchAlbumsResults(page) => {
+                let albums = self.shown_albums(page.albums);
+                self.search.albums.extend(albums);
+                if let Some(next_url) = &page.next_url {
+                    let _ = self.api_tx.send(ApiRequest::SearchAlbumsNext {
+                        next_url: next_url.clone(),
+                    });
+                } else {
+                    self.search.albums_awaiting_page2 = false;
+                    if self.search.all_settled() {
+                        self.search.loading = false;
+                    }
+                }
+                self.search.albums_next_url = page.next_url;
             }
 
             ApiResponse::SearchArtistsResults(page) => {
@@ -520,9 +532,7 @@ impl App {
                         });
                     } else {
                         self.search.artists_awaiting_page2 = false;
-                        if !self.search.tracks_awaiting_page2
-                            && !self.search.playlists_awaiting_page2
-                        {
+                        if self.search.all_settled() {
                             self.search.loading = false;
                         }
                     }
@@ -535,9 +545,7 @@ impl App {
                         });
                     } else {
                         self.search.artists_awaiting_page2 = false;
-                        if !self.search.tracks_awaiting_page2
-                            && !self.search.playlists_awaiting_page2
-                        {
+                        if self.search.all_settled() {
                             self.search.loading = false;
                         }
                     }
@@ -556,8 +564,7 @@ impl App {
                         });
                     } else {
                         self.search.playlists_awaiting_page2 = false;
-                        if !self.search.tracks_awaiting_page2 && !self.search.artists_awaiting_page2
-                        {
+                        if self.search.all_settled() {
                             self.search.loading = false;
                         }
                     }
@@ -570,8 +577,7 @@ impl App {
                         });
                     } else {
                         self.search.playlists_awaiting_page2 = false;
-                        if !self.search.tracks_awaiting_page2 && !self.search.artists_awaiting_page2
-                        {
+                        if self.search.all_settled() {
                             self.search.loading = false;
                         }
                     }
