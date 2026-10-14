@@ -145,7 +145,7 @@ cannot stay in, or move into, a pane that is not on screen.
 
 ### Album results in search
 
-**Issue:** [#55](https://github.com/fezzik-the-giant/riptide/issues/55) — `In progress`
+**Issue:** [#55](https://github.com/fezzik-the-giant/riptide/issues/55) — `In review`
 **Version:** next release (under `[Unreleased]` in `CHANGELOG.md`).
 
 Albums needed their own `/searchResults` request, like the other three panes:
