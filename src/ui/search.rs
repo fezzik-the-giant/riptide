@@ -129,6 +129,10 @@ pub(super) fn render_search_carousel_tabs(f: &mut Frame, app: &App, area: Rect) 
             app.search.pane == SearchPane::Tracks,
         ),
         (
+            format!("Albums ({})", app.search.albums.len()),
+            app.search.pane == SearchPane::Albums,
+        ),
+        (
             format!("Artists ({})", app.search.artists.len()),
             app.search.pane == SearchPane::Artists,
         ),
@@ -144,6 +148,7 @@ pub(super) fn render_search_carousel_tabs(f: &mut Frame, app: &App, area: Rect) 
 
     match app.search.pane {
         SearchPane::Tracks => render_search_pane_tracks(f, app, inner),
+        SearchPane::Albums => render_search_pane_albums(f, app, inner),
         SearchPane::Artists => render_search_pane_artists(f, app, inner),
         SearchPane::Playlists => render_search_pane_playlists(f, app, inner),
     }
@@ -178,6 +183,36 @@ pub(super) fn render_search_pane_tracks(f: &mut Frame, app: &App, area: Rect) {
     if items.is_empty() {
         f.render_widget(
             Paragraph::new("No tracks")
+                .style(Style::default().fg(DIM))
+                .alignment(Alignment::Center),
+            area,
+        );
+    } else {
+        f.render_widget(List::new(items), area);
+    }
+}
+
+pub(super) fn render_search_pane_albums(f: &mut Frame, app: &App, area: Rect) {
+    let sel = app.search.album_sel;
+    let height = area.height as usize;
+    let offset = app.search.album_scroll_offset(height);
+    let items: Vec<ListItem> = app
+        .search
+        .albums
+        .iter()
+        .enumerate()
+        .skip(offset)
+        .take(height)
+        .map(|(i, album)| {
+            let selected = i == sel && app.content_focused();
+            let style = row_style(selected);
+            ListItem::new(album_row(app, album, area.width, selected, true, style))
+        })
+        .collect();
+
+    if items.is_empty() {
+        f.render_widget(
+            Paragraph::new("No albums")
                 .style(Style::default().fg(DIM))
                 .alignment(Alignment::Center),
             area,

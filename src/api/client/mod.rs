@@ -25,7 +25,7 @@ mod search;
 mod streaming;
 mod tracks;
 
-pub use search::{SearchArtistPage, SearchPlaylistPage, SearchTrackPage};
+pub use search::{SearchAlbumPage, SearchArtistPage, SearchPlaylistPage, SearchTrackPage};
 
 const BASE: &str = "https://api.tidal.com/v1";
 const OPENAPI_BASE: &str = "https://openapi.tidal.com/v2";

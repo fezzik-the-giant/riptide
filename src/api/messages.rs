@@ -3,7 +3,7 @@
 
 //! The request/response messages exchanged with the API worker.
 
-use crate::api::client::{SearchArtistPage, SearchPlaylistPage, SearchTrackPage};
+use crate::api::client::{SearchAlbumPage, SearchArtistPage, SearchPlaylistPage, SearchTrackPage};
 use crate::api::models::*;
 
 // ── Request / Response types ──────────────────────────────────────────────────
@@ -66,6 +66,9 @@ pub enum ApiRequest {
     SearchTracks {
         query: String,
     },
+    SearchAlbumsMain {
+        query: String,
+    },
     SearchArtistsMain {
         query: String,
     },
@@ -73,6 +76,9 @@ pub enum ApiRequest {
         query: String,
     },
     SearchTracksNext {
+        next_url: String,
+    },
+    SearchAlbumsNext {
         next_url: String,
     },
     SearchArtistsNext {
@@ -204,6 +210,7 @@ pub enum ApiResponse {
         cover: Option<String>,
     },
     SearchTracks(SearchTrackPage),
+    SearchAlbumsResults(SearchAlbumPage),
     SearchArtistsResults(SearchArtistPage),
     SearchPlaylistsResults(SearchPlaylistPage),
     StreamUrl {

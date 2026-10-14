@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Fezzik the Giant
 
-//! Search across tracks, artists and playlists.
+//! Search across tracks, albums, artists and playlists.
 //!
 //! The v2 search endpoint returns two different shapes: the initial request
 //! nests results under a `searchResults` object with relationships, while
@@ -35,6 +35,79 @@ pub struct SearchPlaylistPage {
     #[allow(dead_code)]
     pub total: u32,
     pub next_url: Option<String>,
+}
+
+#[derive(Debug)]
+pub struct SearchAlbumPage {
+    pub albums: Vec<Album>,
+    pub next_url: Option<String>,
+}
+
+fn parse_search_album_page(api_resp: &serde_json::Value) -> Result<SearchAlbumPage> {
+    let data_arr = api_resp["data"]
+        .as_array()
+        .context("unexpected search albums response structure")?;
+    let (album_refs, next_url) = match data_arr.first() {
+        Some(first) if first.get("relationships").is_some() => {
+            let rels = &first["relationships"]["albums"];
+            (
+                rels["data"].as_array().context("missing albums data")?,
+                rels["links"]["next"].as_str().map(String::from),
+            )
+        }
+        _ => (
+            data_arr,
+            api_resp["links"]["next"].as_str().map(String::from),
+        ),
+    };
+
+    let album_map = build_included_map(api_resp, "albums");
+    let artist_map = build_artist_map(api_resp);
+
+    let albums: Vec<Album> = album_refs
+        .iter()
+        .filter_map(|r| {
+            let id_str = r["id"].as_str()?;
+            let album_obj = album_map.get(id_str)?;
+            let attrs = album_obj["attributes"].as_object()?;
+            Some(Album {
+                id: id_str.parse().ok()?,
+                title: attrs.get("title")?.as_str()?.to_string(),
+                number_of_tracks: attrs
+                    .get("numberOfItems")
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as u32),
+                release_date: attrs
+                    .get("releaseDate")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                cover: None,
+                artist: extract_artist_from_album(album_obj, &artist_map)
+                    .map(|name| ArtistRef { name }),
+                media_metadata: extract_media_metadata(attrs),
+                added_at: None,
+                album_type: attrs
+                    .get("albumType")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+            })
+        })
+        .collect();
+
+    if albums.len() < album_refs.len() {
+        tracing::warn!(
+            "search albums: {} of {} results missing from included",
+            album_refs.len() - albums.len(),
+            album_refs.len()
+        );
+    }
+    tracing::debug!(
+        "search albums page: {} albums, more: {}",
+        albums.len(),
+        next_url.is_some()
+    );
+
+    Ok(SearchAlbumPage { albums, next_url })
 }
 
 fn parse_search_track_page(api_resp: &serde_json::Value) -> Result<SearchTrackPage> {
@@ -424,6 +497,35 @@ impl ApiClient {
         parse_search_playlist_page(&body)
     }
 
+    pub async fn search_albums(&self, query: &str) -> Result<SearchAlbumPage> {
+        tracing::debug!("=== executing v2 search for albums: '{}' ===", query);
+        let url = format!("{OPENAPI_BASE}/searchResults");
+
+        let mut all_params: Vec<(&str, String)> = vec![
+            ("filter[query]", query.to_string()),
+            ("countryCode", self.config.country_code.clone()),
+        ];
+        if let Some(sid) = &self.config.session_id {
+            all_params.push(("sessionId", sid.clone()));
+        }
+        all_params.push(("include", "albums.artists".to_string()));
+
+        let token = self.access_token().await?;
+        let body = self
+            .http
+            .get(&url)
+            .bearer_auth(&token)
+            .query(&all_params)
+            .send()
+            .await
+            .context("HTTP request failed")?
+            .json::<serde_json::Value>()
+            .await
+            .context("failed to parse search albums response")?;
+
+        parse_search_album_page(&body)
+    }
+
     pub async fn search_tracks_next(&self, next_url: &str) -> Result<SearchTrackPage> {
         let sep = if next_url.contains('?') { "&" } else { "?" };
         let url = format!(
@@ -463,6 +565,22 @@ impl ApiClient {
         parse_search_artist_page(&body)
     }
 
+    pub async fn search_albums_next(&self, next_url: &str) -> Result<SearchAlbumPage> {
+        let sep = if next_url.contains('?') { "&" } else { "?" };
+        let url = format!("{OPENAPI_BASE}{next_url}{sep}include=albums.artists");
+        let body = self
+            .http
+            .get(&url)
+            .bearer_auth(&self.access_token().await?)
+            .send()
+            .await
+            .context("HTTP request failed")?
+            .json()
+            .await
+            .context("failed to parse search albums response")?;
+        parse_search_album_page(&body)
+    }
+
     pub async fn search_playlists_next(&self, next_url: &str) -> Result<SearchPlaylistPage> {
         let sep = if next_url.contains('?') { "&" } else { "?" };
         let url = format!("{OPENAPI_BASE}{next_url}{sep}include=playlists", sep = sep);
@@ -477,5 +595,83 @@ impl ApiClient {
             .await
             .context("failed to parse search playlists response")?;
         parse_search_playlist_page(&body)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Trimmed from a live `/searchResults?include=albums.artists` response. The
+    /// `included` array is not in result order — the relationship data is.
+    const FIRST_PAGE: &str = r#"{
+      "data": [{
+        "id": "2Lem3lJg",
+        "type": "searchResults",
+        "relationships": {
+          "albums": {
+            "data": [
+              {"id": "20115556", "type": "albums"},
+              {"id": "191871116", "type": "albums"}
+            ],
+            "links": {"next": "/searchResults/2Lem3lJg/relationships/albums?countryCode=US&page%5Bcursor%5D=3nI1Esi"}
+          }
+        }
+      }],
+      "included": [
+        {"id": "191871116", "type": "albums",
+         "attributes": {"title": "Random Access Memories (R.A.M)", "albumType": "EP", "numberOfItems": 4, "releaseDate": "2021-07-22", "mediaTags": ["LOSSLESS"]},
+         "relationships": {"artists": {"data": [{"id": "27300885", "type": "artists"}]}}},
+        {"id": "20115556", "type": "albums",
+         "attributes": {"title": "Random Access Memories", "albumType": "ALBUM", "numberOfItems": 13, "releaseDate": "2013-05-20", "mediaTags": ["HIRES_LOSSLESS", "LOSSLESS"]},
+         "relationships": {"artists": {"data": [{"id": "8847", "type": "artists"}]}}},
+        {"id": "27300885", "type": "artists", "attributes": {"name": "Lambda Musique"}},
+        {"id": "8847", "type": "artists", "attributes": {"name": "Daft Punk"}}
+      ]
+    }"#;
+
+    /// A cursor page from `/searchResults/{id}/relationships/albums`: the rows sit
+    /// flat in `data` and the next link moves to top-level `links`.
+    const CURSOR_PAGE: &str = r#"{
+      "data": [{"id": "60258234", "type": "albums"}],
+      "links": {"next": "/searchResults/2Lem3lJg/relationships/albums?page%5Bcursor%5D=3nI1F0y"},
+      "included": [
+        {"id": "60258234", "type": "albums",
+         "attributes": {"title": "Discovery", "numberOfItems": 14, "mediaTags": ["LOSSLESS"]},
+         "relationships": {"artists": {"data": [{"id": "8847", "type": "artists"}]}}},
+        {"id": "8847", "type": "artists", "attributes": {"name": "Daft Punk"}}
+      ]
+    }"#;
+
+    #[test]
+    fn first_album_page_keeps_result_order_and_resolves_artists() {
+        let page = parse_search_album_page(&serde_json::from_str(FIRST_PAGE).unwrap()).unwrap();
+
+        let titles: Vec<_> = page.albums.iter().map(|a| a.title.as_str()).collect();
+        assert_eq!(
+            titles,
+            ["Random Access Memories", "Random Access Memories (R.A.M)"]
+        );
+        let daft_punk = &page.albums[0];
+        assert_eq!(daft_punk.id, 20115556);
+        assert_eq!(daft_punk.artist.as_ref().unwrap().name, "Daft Punk");
+        assert_eq!(daft_punk.number_of_tracks, Some(13));
+        assert_eq!(daft_punk.release_date.as_deref(), Some("2013-05-20"));
+        assert_eq!(daft_punk.album_type.as_deref(), Some("ALBUM"));
+        assert_eq!(
+            daft_punk.media_metadata.as_ref().unwrap().tags,
+            ["HIRES_LOSSLESS", "LOSSLESS"]
+        );
+        assert!(page.next_url.unwrap().ends_with("page%5Bcursor%5D=3nI1Esi"));
+    }
+
+    #[test]
+    fn cursor_album_page_reads_flat_rows_and_top_level_next() {
+        let page = parse_search_album_page(&serde_json::from_str(CURSOR_PAGE).unwrap()).unwrap();
+
+        assert_eq!(page.albums.len(), 1);
+        assert_eq!(page.albums[0].title, "Discovery");
+        assert_eq!(page.albums[0].artist.as_ref().unwrap().name, "Daft Punk");
+        assert!(page.next_url.unwrap().ends_with("page%5Bcursor%5D=3nI1F0y"));
     }
 }

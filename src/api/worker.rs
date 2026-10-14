@@ -268,6 +268,11 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
             Err(e) => ApiResponse::Error(format!("search tracks: {e}")),
         },
 
+        ApiRequest::SearchAlbumsMain { query } => match client.search_albums(&query).await {
+            Ok(page) => ApiResponse::SearchAlbumsResults(page),
+            Err(e) => ApiResponse::Error(format!("search albums: {e}")),
+        },
+
         ApiRequest::SearchArtistsMain { query } => match client.search_artists(&query).await {
             Ok(page) => ApiResponse::SearchArtistsResults(page),
             Err(e) => ApiResponse::Error(format!("search artists: {e}")),
@@ -282,6 +287,13 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
             match client.search_tracks_next(&next_url).await {
                 Ok(page) => ApiResponse::SearchTracks(page),
                 Err(e) => ApiResponse::Error(format!("search tracks pagination: {e}")),
+            }
+        }
+
+        ApiRequest::SearchAlbumsNext { next_url } => {
+            match client.search_albums_next(&next_url).await {
+                Ok(page) => ApiResponse::SearchAlbumsResults(page),
+                Err(e) => ApiResponse::Error(format!("search albums pagination: {e}")),
             }
         }
 

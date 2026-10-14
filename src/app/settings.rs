@@ -34,6 +34,17 @@ impl App {
         tracks.into_iter().filter(|t| !t.is_atmos_only()).collect()
     }
 
+    /// [`Self::shown_tracks`] for the search albums pane.
+    pub(crate) fn shown_albums(
+        &self,
+        albums: Vec<crate::api::models::Album>,
+    ) -> Vec<crate::api::models::Album> {
+        if self.atmos {
+            return albums;
+        }
+        albums.into_iter().filter(|a| !a.is_atmos_only()).collect()
+    }
+
     /// Mirror the Atmos setting into every list that can hold a mix, the views
     /// already on the stack included. Lists do not track the setting themselves;
     /// this is the one place that tells them, and telling one twice is free.

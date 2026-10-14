@@ -27,7 +27,7 @@ A terminal UI music player for Tidal, built with Rust.
 ## Features
 
 - Browse your Tidal library: tracks, artists, playlists, and albums
-- Full-text search across tracks, artists, and playlists
+- Full-text search across tracks, albums, artists, and playlists
 - Synchronized lyrics
 - Album art in the now-playing bar and detail views (quality determined by terminal graphics protocol)
 - Artist pictures and biography

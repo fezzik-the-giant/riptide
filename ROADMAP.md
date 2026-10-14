@@ -41,23 +41,6 @@ touch, touch the other before you move on.
 
 ## Candidates
 
-### Album results in search
-
-**Issue:** [#55](https://github.com/fezzik-the-giant/riptide/issues/55) — `Backlog`
-
-`SearchPane` in `src/search/state.rs` has three variants — Tracks, Artists,
-Playlists — and `src/api/client/search.rs` has no `search_albums` beside
-`search_tracks` / `search_artists` / `search_playlists`. Finding a record by
-name means finding the artist first and scrolling their discography.
-
-Everything the fourth pane needs already exists: `album_row` in
-`src/ui/lists.rs` draws the rows, the `*_next` cursor methods show the paging
-shape, and `a` / `Alt+a` already queue a whole album from other views.
-
-Two things to settle before building: whether the v2 search endpoint returns
-albums in the same multi-type response the other panes parse or needs its own
-request, and where a fourth pane goes in the `Tab` cycle.
-
 ### Repeat / loop mode
 
 **Issue:** [#56](https://github.com/fezzik-the-giant/riptide/issues/56) — `Backlog`
@@ -159,6 +142,18 @@ and up (`queue_fits` in `src/app/mod.rs`). It stays 26 columns when shown;
 widening it on wide terminals was left out. The saved `queue_visible` setting is
 unchanged by the collapse. `App` learns the width before each draw so focus
 cannot stay in, or move into, a pane that is not on screen.
+
+### Album results in search
+
+**Issue:** [#55](https://github.com/fezzik-the-giant/riptide/issues/55) — `In progress`
+**Version:** next release (under `[Unreleased]` in `CHANGELOG.md`).
+
+Albums needed their own `/searchResults` request, like the other three panes:
+`include=albums.artists`, repeated on every cursor page or those return bare
+ids. Track counts come from `numberOfItems`; covers are not requested, because
+opening the album fetches its own. The pane sits second in the `Tab` cycle —
+Tracks, Albums, Artists, Playlists — and drops Atmos-only albums on arrival,
+as the tracks pane does.
 
 ## Considered and Rejected
 

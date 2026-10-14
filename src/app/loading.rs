@@ -7,7 +7,7 @@ use crate::api::ApiRequest;
 impl App {
     /// Run the search box's current query, replacing whatever is on screen.
     ///
-    /// All three panes are cleared first: a response only appends when its pane
+    /// All four panes are cleared first: a response only appends when its pane
     /// is already populated, so leaving the old results in place would make the
     /// new ones read as a second page of the previous query.
     pub(crate) fn submit_search(&mut self) {
@@ -17,17 +17,23 @@ impl App {
         }
         self.search.loading = true;
         self.search.tracks_awaiting_page2 = true;
+        self.search.albums_awaiting_page2 = true;
         self.search.artists_awaiting_page2 = true;
         self.search.playlists_awaiting_page2 = true;
         self.search.track_sel = 0;
+        self.search.album_sel = 0;
         self.search.artist_sel = 0;
         self.search.playlist_sel = 0;
         self.search.tracks.clear();
+        self.search.albums.clear();
         self.search.artists.clear();
         self.search.playlists.clear();
         self.search.reset_viewports();
         self.search.pane = crate::search::SearchPane::Tracks;
         let _ = self.api_tx.send(ApiRequest::SearchTracks {
+            query: query.clone(),
+        });
+        let _ = self.api_tx.send(ApiRequest::SearchAlbumsMain {
             query: query.clone(),
         });
         let _ = self.api_tx.send(ApiRequest::SearchArtistsMain {

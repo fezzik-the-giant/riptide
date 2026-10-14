@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - A spectrum visualizer above the progress bar, driven by [CAVA](https://github.com/karlstav/cava) (#40). `v` cycles through six styles — Bars, Outline, Columns, Bricks, Dots and Butterfly — and `V` turns it off; it is also a row in `Shift+S`, and the choice is remembered between sessions. CAVA is optional and is only started while a style is on. If it is not installed or stops responding, the status line says so and `v` tries again, and playback carries on regardless. CAVA listens to your default output device, so the spectrum also moves for other audio playing on the machine. Thanks to @dghelm, who designed and built it
+- Search has an Albums pane, so you can find a record by name instead of finding the artist and scrolling their discography (#55). It sits between Tracks and Artists in the `Tab` cycle. `Enter` opens the album, `a` / `Alt+a` queue it, `f` adds it to or removes it from your albums, and `c` copies its link. With Atmos off, albums Tidal holds only as an Atmos mix are left out, as they are everywhere else
 
 ### Changed
 - The now-playing bar grows and shrinks with the terminal instead of always taking 16 rows (#63). It takes a third of the height, so on a tall terminal the cover art is bigger and more lyrics fit beside it, up to a 30-row bar. On a short one, where the cover would only be a thumbnail, the bar drops the cover and lyrics and keeps just the track info, leaving the rest of the screen to the list
