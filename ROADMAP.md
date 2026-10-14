@@ -119,26 +119,6 @@ Worth scoping before designing: restoring the queue is cheap, restoring the
 playback position within a track is a different feature, and restoring either
 one means deciding whether riptide starts playing on launch (it should not).
 
-### Now-playing bar that scales with the terminal
-
-**Issue:** [#63](https://github.com/fezzik-the-giant/riptide/issues/63) — `Backlog`
-
-The now-playing bar is a fixed `Constraint::Length(16)` in `src/ui/mod.rs`,
-whatever the terminal's height. On a short terminal it takes most of the screen
-from the list; on a tall one the cover stays at 10 rows and the extra height all
-goes to the list, though the lyrics beside the cover would happily use it.
-
-The bar's inner layout already follows its height — the cover is sized from the
-rows above the track info and the lyrics centre on whatever rows they are given
-(`src/ui/now_playing.rs`) — so the change is choosing the height, not reflowing
-the bar.
-
-To settle first: the smallest and largest heights, and what drives the choice in
-between (a share of the terminal, or whatever leaves the list a minimum number of
-rows). Below some height the cover is not worth drawing at all, and the bar
-should probably drop to just its four rows of track info rather than squeeze the
-art to a thumbnail.
-
 ## Shipped
 
 `CHANGELOG.md` stays the user-facing record of what a release contained; an
@@ -154,6 +134,19 @@ session can tell the work is done without reading the changelog.
 in favour of spawning `cava` as an optional child process: embedding cavacore
 would mean capturing and buffering PCM ourselves for no gain, and a missing
 `cava` costs only the spectrum. The mode also became a `Shift+S` row.
+
+### Now-playing bar that scales with the terminal
+
+**Issue:** [#63](https://github.com/fezzik-the-giant/riptide/issues/63) — `In progress`
+**Version:** next release (under `[Unreleased]` in `CHANGELOG.md`).
+
+The bar takes a third of the terminal's height, capped at 30 rows
+(`now_playing_height` in `src/ui/now_playing.rs`). Below 11 rows — a 6-row
+cover plus border and info — it collapses to just the border and the track
+info, dropping cover and lyrics rather than squeezing the art to a thumbnail.
+A 48-row terminal gets the old fixed 16. The cover is sized from the
+terminal's real cell size, so it fills its rows and sits directly on the
+track info.
 
 ## Considered and Rejected
 

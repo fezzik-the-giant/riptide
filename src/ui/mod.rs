@@ -71,10 +71,10 @@ pub fn draw(f: &mut Frame, app: &App) {
     }
 
     let rows = Layout::vertical([
-        Constraint::Length(3),  // tab bar (boxed active tab needs 3 rows)
-        Constraint::Min(0),     // content + queue
-        Constraint::Length(16), // now-playing bar (art stacked above track info)
-        Constraint::Length(1),  // help hint
+        Constraint::Length(3), // tab bar (boxed active tab needs 3 rows)
+        Constraint::Min(0),    // content + queue
+        Constraint::Length(now_playing_height(area.height)),
+        Constraint::Length(1), // help hint
     ])
     .split(area);
 
