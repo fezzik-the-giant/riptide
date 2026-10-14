@@ -137,7 +137,7 @@ would mean capturing and buffering PCM ourselves for no gain, and a missing
 
 ### Now-playing bar that scales with the terminal
 
-**Issue:** [#63](https://github.com/fezzik-the-giant/riptide/issues/63) — `In review`
+**Issue:** [#63](https://github.com/fezzik-the-giant/riptide/issues/63) — `Done`
 **Version:** next release (under `[Unreleased]` in `CHANGELOG.md`).
 
 The bar takes a third of the terminal's height, capped at 30 rows
@@ -147,6 +147,18 @@ info, dropping cover and lyrics rather than squeezing the art to a thumbnail.
 A 48-row terminal gets the old fixed 16. The cover is sized from the
 terminal's real cell size, so it fills its rows and sits directly on the
 track info.
+
+### Queue pane that collapses on narrow terminals
+
+**Issue:** [#65](https://github.com/fezzik-the-giant/riptide/issues/65) — `In review`
+**Version:** next release (under `[Unreleased]` in `CHANGELOG.md`).
+
+The queue pane hides whenever showing it would leave the list under 60 columns
+— what a track row needs to keep its artist column — so it shows at 86 columns
+and up (`queue_fits` in `src/app/mod.rs`). It stays 26 columns when shown;
+widening it on wide terminals was left out. The saved `queue_visible` setting is
+unchanged by the collapse. `App` learns the width before each draw so focus
+cannot stay in, or move into, a pane that is not on screen.
 
 ## Considered and Rejected
 

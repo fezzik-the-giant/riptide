@@ -13,7 +13,9 @@ use ratatui::{
 };
 
 use crate::api::models::Track;
-use crate::app::{App, ArtistDetailFocus, KeybindGroup, StatusLevel, Tab, View};
+use crate::app::{
+    App, ArtistDetailFocus, KeybindGroup, QUEUE_W, StatusLevel, Tab, View, queue_fits,
+};
 use crate::playlist::PlaylistDetailFocus;
 use crate::search::SearchPane;
 
@@ -80,7 +82,7 @@ pub fn draw(f: &mut Frame, app: &App) {
 
     render_tab_bar(f, app, rows[0]);
 
-    if app.queue_visible {
+    if app.queue_visible && queue_fits(area.width) {
         let cols =
             Layout::horizontal([Constraint::Min(0), Constraint::Length(QUEUE_W)]).split(rows[1]);
         render_content(f, app, cols[0]);

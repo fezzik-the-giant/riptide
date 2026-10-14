@@ -149,7 +149,7 @@ mod tests {
         t.app.queue_visible = true;
         std::mem::forget(t.api_rx);
 
-        let (w, h) = (80u16, 24u16);
+        let (w, h) = (100u16, 24u16);
         let library = 0..w - super::QUEUE_W;
         let queue = w - super::QUEUE_W..w;
 

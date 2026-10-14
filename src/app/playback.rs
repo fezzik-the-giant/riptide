@@ -379,7 +379,7 @@ impl App {
     pub fn focus_queue(&mut self) {
         // Nothing to focus when the panel is collapsed — the cursor would land
         // in a pane the user cannot see.
-        if !self.queue_visible || self.now_playing.queue.is_empty() {
+        if !self.queue_shown() || self.now_playing.queue.is_empty() {
             return;
         }
         self.queue_focused = true;
@@ -1277,6 +1277,45 @@ mod tests {
         let ids_after: Vec<u64> = app.now_playing.queue.iter().map(|t| t.id).collect();
         assert_eq!(ids_before, ids_after);
         assert_eq!(app.queue_cursor, 0);
+    }
+
+    // ── Queue collapse ────────────────────────────────────────────────────────
+
+    #[test]
+    fn the_queue_fits_once_the_list_keeps_its_minimum_width() {
+        assert!(!super::super::queue_fits(85));
+        assert!(super::super::queue_fits(86));
+    }
+
+    #[test]
+    fn a_narrowed_terminal_releases_and_refuses_queue_focus() {
+        let mut app = make_app();
+        app.queue_visible = true;
+        app.play_tracks((1..=3).map(track).collect(), 0);
+        app.focus_queue();
+
+        app.set_terminal_width(80);
+        assert!(!app.queue_focused);
+        app.focus_queue();
+        assert!(!app.queue_focused);
+        assert!(app.queue_visible, "the saved setting is not the collapse");
+
+        app.set_terminal_width(120);
+        app.focus_queue();
+        assert!(app.queue_focused);
+    }
+
+    #[test]
+    fn turning_the_queue_on_too_narrow_says_why_it_stays_hidden() {
+        let mut app = make_app();
+        app.queue_visible = false;
+        app.set_terminal_width(80);
+
+        app.toggle_queue_visible();
+
+        assert!(app.queue_visible);
+        let (msg, _, _) = app.status.as_ref().expect("no status shown");
+        assert!(msg.contains("too narrow"), "{msg}");
     }
 
     // ── Queue removal ─────────────────────────────────────────────────────────

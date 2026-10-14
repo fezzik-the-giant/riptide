@@ -141,6 +141,9 @@ pub fn run_app(
             break;
         }
 
+        if let Ok(size) = terminal.size() {
+            app.set_terminal_width(size.width);
+        }
         if let Err(e) = terminal.draw(|f| crate::ui::draw(f, app)) {
             // The signal can land between that check and this draw, and then
             // the write fails with EIO. Closing a terminal window is an
