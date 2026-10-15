@@ -102,6 +102,36 @@ Worth scoping before designing: restoring the queue is cheap, restoring the
 playback position within a track is a different feature, and restoring either
 one means deciding whether riptide starts playing on launch (it should not).
 
+### Cheaper Nix CI
+
+**Issue:** [#62](https://github.com/fezzik-the-giant/riptide/issues/62) — `In review` ([PR #70](https://github.com/fezzik-the-giant/riptide/pull/70))
+
+The `nix` job in `.github/workflows/ci.yml` took 4–5 minutes against under one
+for Lint and Test, and ran far more often than it needed to. `ci.yml` fired on
+`push` to every branch *and* on `pull_request`, so each push to a branch with an
+open PR built the same tree twice; PR #69 paid for five full Nix builds, one of
+them for a `ROADMAP.md`-only commit. Its log splits the time as ~1m50 fetching
+store paths, 2m23 building `riptide-deps` (crane's `buildDepsOnly`) and 22 s
+building riptide itself — the expensive part changes only with the lockfiles.
+
+Settled as two changes, neither needing a secret or an outside service:
+
+1. **Triggers:** `push` to `master` plus `pull_request`, and a `concurrency`
+   group that cancels superseded runs everywhere but master. A branch with no PR
+   gets no CI; open a draft PR for that.
+2. **Store cache:** `nix-community/cache-nix-action` keyed on `flake.lock` and
+   `Cargo.lock`, falling back to the latest key on a miss. Only master saves, so
+   PRs restore master's cache and cannot evict it. The flake's filtered `src`
+   already makes Nix's derivation hash decide whether riptide must rebuild,
+   which is the "only when packaging files change" filter without a `paths:`
+   list that could miss a relevant file.
+
+The guarantee from #60 is unchanged: every master commit, and so every `v*`
+tag, has had its flake built. Cachix would pull faster than a GitHub cache
+restore and stays the next step if the restore proves slow. Gradient (suggested
+on the issue) is a self-hosted Hydra-style server — infrastructure out of
+proportion to one flake.
+
 ## Shipped
 
 `CHANGELOG.md` stays the user-facing record of what a release contained; an
