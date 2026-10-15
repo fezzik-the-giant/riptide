@@ -104,7 +104,7 @@ one means deciding whether riptide starts playing on launch (it should not).
 
 ### Cheaper Nix CI
 
-**Issue:** [#62](https://github.com/fezzik-the-giant/riptide/issues/62) — `In progress`
+**Issue:** [#62](https://github.com/fezzik-the-giant/riptide/issues/62) — `In review` ([PR #70](https://github.com/fezzik-the-giant/riptide/pull/70))
 
 The `nix` job in `.github/workflows/ci.yml` took 4–5 minutes against under one
 for Lint and Test, and ran far more often than it needed to. `ci.yml` fired on
