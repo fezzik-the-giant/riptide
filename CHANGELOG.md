@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On Fedora, a COPR install of riptide was treated as one it could update itself (#68). Riptide recognised only pacman, Nix and Cargo installs, so it offered `U` and would have tried to replace `/usr/bin/riptide` behind dnf's back. It now asks rpm who owns the binary and leaves updates to `dnf upgrade`. Package ownership is also checked in the C locale now, so a pacman or rpm answer in another language can no longer be mistaken for an unclear one
 - Lyrics now fill the space beside the cover art instead of three rows at its foot, showing several lines either side of the one being sung. Long lines were also cut off mid-word: the lyrics were squeezed in from both sides by the cover's width, leaving well under half the bar. They now use everything to the right of the cover, a current line too long for that wraps onto a second row, and the lines around it end in `…` rather than being sliced
 
+### Internal
+- CI builds the Nix flake far less often and far faster (#62). It no longer runs twice for every push to a branch with an open PR, a newer push cancels the run it supersedes, and the Nix store is cached so the dependency tree is rebuilt only when `flake.lock` or `Cargo.lock` changes. Every commit on master still has its flake built, so a release cannot ship unbuildable on Nix again (#60)
+
 ## [1.6.0] - 2026-10-12
 
 ### Added

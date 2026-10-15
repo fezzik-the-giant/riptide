@@ -1,9 +1,17 @@
 name: CI
 
+# Not `push` on every branch: with a PR open, each push would run twice over
+# the same tree. PRs cover branches; master is built on push so every commit a
+# tag can land on has had its flake built (#62).
 on:
   push:
-    branches: ['**']
+    branches: [master]
   pull_request:
+
+# Never cancel on master: each commit there must keep its own green build.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
   lint:
@@ -50,11 +58,25 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
+      # Building the dependency tree is ~90% of this job, and it only changes
+      # with the lockfiles. The flake's filtered source makes Nix's own hash
+      # the judge of whether riptide needs rebuilding, so a docs-only commit
+      # costs nothing past the restore. Only master saves: a PR's cache is
+      # scoped to that PR, and the repo's 10 GB limit would evict master's.
+      - uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock', 'Cargo.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          save: ${{ github.ref == 'refs/heads/master' }}
+          purge: true
+          purge-prefixes: nix-${{ runner.os }}-
+          purge-created: 0
+          purge-primary-key: never
+
       # The flake filters its own source, so it can break while `cargo build`
       # stays green: v1.5.0 shipped unbuildable on Nix because the filter
       # dropped the cover art that `src/app/mod.rs` embeds, and nothing here
-      # ever built it to notice (#60). Builds the whole dependency tree from
-      # scratch, so expect this job to be the slow one.
+      # ever built it to notice (#60).
       - name: Build the flake
         run: nix build .#riptide --print-build-logs
 
