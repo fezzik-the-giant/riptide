@@ -61,7 +61,8 @@ tests in `src/app/playback.rs` are where that gets proven.
 
 ### Playlist editing
 
-**Issue:** [#57](https://github.com/fezzik-the-giant/riptide/issues/57) — `Backlog`
+**Issue:** [#57](https://github.com/fezzik-the-giant/riptide/issues/57) — `In progress`,
+delivered as sub-issues #71–#74 (design: `docs/superpowers/specs/2026-10-16-playlist-editing-design.md`)
 
 `src/api/client/playlists.rs` can `save_playlist` and `remove_playlist` —
 add and remove someone else's playlist from the collection — and nothing else.
