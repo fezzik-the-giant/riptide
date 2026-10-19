@@ -474,6 +474,13 @@ It stays applied when you switch tabs, and `Esc` clears it from anywhere on the 
 | `c`        | Copy share link (song)           |
 | `C`        | Copy share link (album/playlist) |
 
+### Playlists
+
+| Key | Action                                                                   |
+|-----|--------------------------------------------------------------------------|
+| `P` | Add the track under the cursor to one of your playlists, or to a new one |
+| `N` | New playlist (Playlists tab)                                             |
+
 The vim directions work anywhere a list does, including the queue, the detail
 views and the help modal — but not while a text box is open, where they are
 just letters.

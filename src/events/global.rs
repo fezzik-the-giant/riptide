@@ -98,6 +98,18 @@ pub(super) fn handle_global_key(app: &mut App, key: KeyEvent) -> bool {
         }
         KeyCode::Char(' ') => app.toggle_pause(),
         KeyCode::Char('t') => app.toggle_queue_visible(),
+        // Before the bare `n`/`p` arms: some terminals spell Shift+p as `p` with
+        // SHIFT, which would otherwise skip tracks.
+        KeyCode::Char('P') | KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            app.open_playlist_picker();
+        }
+        KeyCode::Char('N') | KeyCode::Char('n')
+            if key.modifiers.contains(KeyModifiers::SHIFT)
+                && app.current_tab == crate::app::Tab::Playlists
+                && app.view_stack.is_empty() =>
+        {
+            app.open_name_prompt(None);
+        }
         KeyCode::Char('n') => app.next_track(),
         KeyCode::Char('p') => app.prev_track(),
         KeyCode::Char('z') => app.toggle_shuffle(),

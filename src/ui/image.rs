@@ -39,6 +39,8 @@ impl Overlays {
     pub(super) const HELP: Self = Self(1 << 3);
     pub(super) const STATUS: Self = Self(1 << 4);
     pub(super) const SETTINGS: Self = Self(1 << 5);
+    pub(super) const PLAYLIST_PICKER: Self = Self(1 << 6);
+    pub(super) const NAME_PROMPT: Self = Self(1 << 7);
 
     pub(super) const fn none() -> Self {
         Self(0)

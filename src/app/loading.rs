@@ -77,6 +77,7 @@ impl App {
         }
         self.playlists.loading = true;
         let _ = self.api_tx.send(ApiRequest::LoadPlaylists);
+        let _ = self.api_tx.send(ApiRequest::LoadOwnedPlaylists);
     }
 
     pub fn load_favorites(&mut self) {

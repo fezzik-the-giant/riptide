@@ -12,6 +12,7 @@ mod keybinds;
 mod list;
 mod now_playing;
 mod palette;
+mod playlist_edit;
 mod settings;
 mod sort;
 
@@ -20,6 +21,7 @@ pub use keybinds::*;
 pub use list::*;
 pub use now_playing::*;
 pub use palette::*;
+pub use playlist_edit::*;
 pub use settings::*;
 pub use sort::*;
 

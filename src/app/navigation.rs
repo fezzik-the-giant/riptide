@@ -392,6 +392,7 @@ mod tests {
             description: None,
             cover: Some(format!("https://example.invalid/{n}.jpg")),
             added_at: None,
+            playlist_type: None,
         }
     }
 

@@ -205,6 +205,105 @@ pub(super) fn render_artist_selection_modal(f: &mut Frame, app: &App, area: Rect
     }
 }
 
+/// First row to draw so `selected` stays inside a window of `visible` rows.
+fn picker_scroll(selected: usize, visible: usize) -> usize {
+    if visible == 0 {
+        return 0;
+    }
+    selected.saturating_sub(visible - 1)
+}
+
+const PLAYLIST_PICKER_W: u16 = 48;
+const NAME_PROMPT_W: u16 = 44;
+const NEW_PLAYLIST_ROW: &str = "+ New playlist…";
+
+pub(super) fn render_playlist_picker(f: &mut Frame, app: &App, area: Rect) {
+    let picker = &app.playlist_picker;
+    let box_w = PLAYLIST_PICKER_W.min(area.width.saturating_sub(4));
+    let box_h = (2 + picker.rows() as u16)
+        .min(area.height.saturating_sub(6))
+        .max(3);
+    let x = area.x + area.width.saturating_sub(box_w) / 2;
+    let y = area.y + area.height.saturating_sub(box_h) / 2;
+    let overlay = Rect::new(x, y, box_w.min(area.width), box_h.min(area.height));
+
+    f.render_widget(Clear, overlay);
+    let track = picker
+        .track
+        .as_ref()
+        .map(|t| t.title.as_str())
+        .unwrap_or_default();
+    let title = format!(
+        " add \"{}\" to ",
+        ellipsize(track, box_w.saturating_sub(12))
+    );
+    let block = Block::default()
+        .title(Span::styled(
+            title,
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(ACCENT));
+    let inner = block.inner(overlay);
+    f.render_widget(block, overlay);
+
+    let visible = inner.height as usize;
+    let first = picker_scroll(picker.selected, visible);
+    let labels =
+        std::iter::once(NEW_PLAYLIST_ROW).chain(picker.targets.iter().map(|p| p.title.as_str()));
+    for (row, (i, label)) in labels.enumerate().skip(first).take(visible).enumerate() {
+        let selected = i == picker.selected;
+        let style = if selected {
+            Style::default()
+                .bg(SELECT_BG)
+                .fg(SELECT_FG)
+                .add_modifier(Modifier::BOLD)
+        } else if i == 0 {
+            Style::default().fg(ACCENT)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        let prefix = if selected { " ► " } else { "   " };
+        let text = ellipsize(label, inner.width.saturating_sub(3));
+        f.render_widget(
+            Paragraph::new(format!("{prefix}{text}")).style(style),
+            Rect::new(inner.x, inner.y + row as u16, inner.width, 1),
+        );
+    }
+}
+
+pub(super) fn render_name_prompt(f: &mut Frame, app: &App, area: Rect) {
+    let box_w = NAME_PROMPT_W.min(area.width.saturating_sub(4));
+    let box_h: u16 = 3;
+    let x = area.x + area.width.saturating_sub(box_w) / 2;
+    let y = area.y + area.height.saturating_sub(box_h) / 2;
+    let overlay = Rect::new(x, y, box_w.min(area.width), box_h.min(area.height));
+
+    f.render_widget(Clear, overlay);
+    let block = Block::default()
+        .title(Span::styled(
+            " new playlist ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(ACCENT));
+    let inner = block.inner(overlay);
+    f.render_widget(block, overlay);
+
+    let cursor = cursor_char(app.tick);
+    let shown = ellipsize_head(
+        &app.name_prompt.input,
+        inner.width.saturating_sub(2) as usize,
+    );
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(shown, Style::default().fg(Color::White)),
+            Span::styled(cursor, Style::default().fg(ACCENT)),
+        ])),
+        Rect::new(inner.x + 1, inner.y, inner.width.saturating_sub(1), 1),
+    );
+}
+
 // ── Help modal ────────────────────────────────────────────────────────────────
 
 /// Case-insensitive substring highlight; ASCII fast path, unicode generic via
@@ -846,6 +945,15 @@ pub(super) fn render_settings_modal(f: &mut Frame, app: &App, area: Rect) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_picker_scrolls_just_enough_to_keep_the_selection_visible() {
+        assert_eq!(super::picker_scroll(0, 5), 0);
+        assert_eq!(super::picker_scroll(4, 5), 0);
+        assert_eq!(super::picker_scroll(5, 5), 1);
+        assert_eq!(super::picker_scroll(20, 5), 16);
+        assert_eq!(super::picker_scroll(3, 0), 0);
+    }
+
     use super::*;
     use ratatui::{Terminal, backend::TestBackend};
 

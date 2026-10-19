@@ -86,9 +86,16 @@ pub(super) fn render_playlist_detail(
         sections[0],
     );
 
-    if let Some(count) = detail.playlist.track_count_label() {
+    let kind = detail.playlist.kind(&app.owned_playlist_ids).label();
+    let header = match (kind, detail.playlist.track_count_label()) {
+        ("", None) => None,
+        ("", Some(count)) => Some(count),
+        (kind, None) => Some(kind.to_string()),
+        (kind, Some(count)) => Some(format!("{kind} · {count}")),
+    };
+    if let Some(header) = header {
         f.render_widget(
-            Paragraph::new(count)
+            Paragraph::new(header)
                 .style(Style::default().fg(Color::White))
                 .alignment(Alignment::Center),
             sections[1],

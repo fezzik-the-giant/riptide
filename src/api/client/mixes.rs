@@ -32,6 +32,10 @@ fn mix_from_playlist(
         description: None,
         cover: resolve_cover_art(playlist_obj, artwork_map),
         added_at: None,
+        playlist_type: attrs
+            .get("playlistType")
+            .and_then(|v| v.as_str())
+            .map(String::from),
     })
 }
 

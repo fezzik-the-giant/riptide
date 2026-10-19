@@ -5,6 +5,7 @@
 
 use crate::api::client::{SearchAlbumPage, SearchArtistPage, SearchPlaylistPage, SearchTrackPage};
 use crate::api::models::*;
+use std::collections::HashSet;
 
 // ── Request / Response types ──────────────────────────────────────────────────
 
@@ -121,6 +122,16 @@ pub enum ApiRequest {
     },
     RemovePlaylist {
         uuid: String,
+    },
+    LoadOwnedPlaylists,
+    CreatePlaylist {
+        name: String,
+        /// Set when the playlist is being made from the "add to playlist" picker.
+        then_add: Option<Track>,
+    },
+    AddToPlaylist {
+        playlist: Playlist,
+        track: Track,
     },
     TrackRadio {
         track_id: u64,
@@ -249,6 +260,19 @@ pub enum ApiResponse {
     PlaylistSaved,
     PlaylistRemoved {
         uuid: String,
+    },
+    OwnedPlaylists(HashSet<String>),
+    /// Kept apart from `Error`, which also marks loading Home sections failed;
+    /// this request runs beside Home at startup and must not blank it.
+    OwnedPlaylistsFailed(String),
+    PlaylistCreated {
+        playlist: Playlist,
+        then_add: Option<Track>,
+    },
+    AddedToPlaylist {
+        playlist: Playlist,
+        track: Track,
+        outcome: AddOutcome,
     },
     RadioTracks {
         tracks: Vec<Track>,

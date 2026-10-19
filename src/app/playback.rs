@@ -1946,6 +1946,7 @@ mod tests {
             description: None,
             cover: None,
             added_at: None,
+            playlist_type: None,
         };
 
         app.queue_playlist(&playlist, QueueAt::End);

@@ -540,3 +540,26 @@ Two mechanisms, because the two structures give different guarantees:
 The queue is deliberately left alone: what is queued is what plays, and hiding a
 queued row would desync it from mpv. Its badge still drops to the truth, which is
 why `quality_badge` takes the setting.
+
+### Playlist Editing — Verified API
+
+Every playlist write was exercised live (2026-10-15/16) with throwaway
+playlists; the full table is in
+`docs/superpowers/specs/2026-10-16-playlist-editing-design.md`. The facts the
+code depends on:
+
+- **Ownership comes only from `GET /playlists?filter[owners.id]=me`.** A
+  playlist's `owners` relationship is empty even with `include=owners`, and
+  `playlistType: USER` covers other people's playlists too. `Playlist::kind`
+  takes the owned set as an argument because it arrives in its own response,
+  in either order relative to the library.
+- **A new playlist joins the collection by itself.** `on_playlist_created`
+  inserts it into the library locally for the same reason; no save call follows.
+- **An add answers `200` even when Tidal refuses the track.** The refusal is
+  in `meta.skipped` with a `reason` (seen: `NOT_FOUND`). `parse_add_outcome`
+  checks it first; trusting the status reports tracks as filed when they are not.
+- **Duplicates are allowed, and each entry has its own `meta.itemId`.** Removing
+  and moving an entry both require that `itemId` — a remove without it is
+  `400 Must not be null`.
+- **Write errors carry `errors[0].detail`.** `send_openapi_json` surfaces it,
+  which is what the toast shows.

@@ -28,6 +28,7 @@ impl KeybindGroup {
             Self::global(),
             Self::navigation(),
             Self::queue(),
+            Self::playlists(),
             Self::search(),
             Self::command(),
         ]
@@ -183,6 +184,22 @@ impl KeybindGroup {
                 Keybind {
                     key: "Esc",
                     action: "Back/Go up",
+                },
+            ],
+        }
+    }
+
+    pub fn playlists() -> Self {
+        KeybindGroup {
+            title: "Playlists",
+            binds: &[
+                Keybind {
+                    key: "P",
+                    action: "Add track to a playlist",
+                },
+                Keybind {
+                    key: "N",
+                    action: "New playlist (Playlists tab)",
                 },
             ],
         }
@@ -366,7 +383,7 @@ mod tests {
     #[test]
     fn help_filter_empty_returns_all() {
         let all = KeybindGroup::filtered_groups("");
-        assert_eq!(all.len(), 5);
+        assert_eq!(all.len(), KeybindGroup::all().len());
         assert_eq!(
             KeybindGroup::filtered_bind_count(""),
             KeybindGroup::total_bind_count()

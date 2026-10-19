@@ -238,9 +238,60 @@ pub struct Playlist {
     pub cover: Option<String>,
     #[serde(default, skip_deserializing)]
     pub added_at: Option<String>,
+    #[serde(rename = "playlistType", default)]
+    pub playlist_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlaylistKind {
+    Yours,
+    Tidal,
+    User,
+    Mix,
+    Other,
+}
+
+/// What Tidal did with one track sent to a playlist.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AddOutcome {
+    Added {
+        item_id: String,
+    },
+    /// The request still answered 200; `reason` is Tidal's, e.g. `NOT_FOUND`.
+    Skipped {
+        reason: String,
+    },
+}
+
+impl PlaylistKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            PlaylistKind::Yours => "Yours",
+            PlaylistKind::Tidal => "Tidal",
+            PlaylistKind::User => "User",
+            PlaylistKind::Mix => "Mix",
+            PlaylistKind::Other => "",
+        }
+    }
 }
 
 impl Playlist {
+    /// Ownership is passed in rather than stored: it arrives in its own response,
+    /// in either order relative to the playlists, so a stored value would be
+    /// stale whenever it lands second. `playlistType: USER` alone does not mean
+    /// "yours" — other people's playlists carry it too.
+    pub fn kind(&self, owned: &std::collections::HashSet<String>) -> PlaylistKind {
+        if owned.contains(&self.uuid) {
+            return PlaylistKind::Yours;
+        }
+        match self.playlist_type.as_deref() {
+            Some("EDITORIAL") => PlaylistKind::Tidal,
+            Some("USER") => PlaylistKind::User,
+            Some("MIX") => PlaylistKind::Mix,
+            _ => PlaylistKind::Other,
+        }
+    }
+
     /// Public Tidal share URL, matching the "Copy link" output of the official apps.
     pub fn share_url(&self) -> String {
         format!("https://tidal.com/browse/playlist/{}", self.uuid)
@@ -411,10 +462,44 @@ pub struct Config {
 
 #[cfg(test)]
 mod tests {
-    use super::{atmos_only, cover_art_url, presentation_art_url, quality_badge_for};
+    use super::{
+        Playlist, PlaylistKind, atmos_only, cover_art_url, presentation_art_url, quality_badge_for,
+    };
 
     fn tags(list: &[&str]) -> Vec<String> {
         list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn ownership_outranks_playlist_type() {
+        let owned: std::collections::HashSet<String> = ["mine".to_string()].into();
+        let p = |uuid: &str, ty: Option<&str>| Playlist {
+            uuid: uuid.to_string(),
+            title: String::new(),
+            number_of_tracks: None,
+            description: None,
+            cover: None,
+            added_at: None,
+            playlist_type: ty.map(String::from),
+        };
+        let cases = [
+            (p("mine", Some("USER")), PlaylistKind::Yours),
+            (p("mine", None), PlaylistKind::Yours),
+            (p("other", Some("EDITORIAL")), PlaylistKind::Tidal),
+            (p("other", Some("USER")), PlaylistKind::User),
+            (p("other", Some("MIX")), PlaylistKind::Mix),
+            (p("other", Some("ARTIST")), PlaylistKind::Other),
+            (p("other", None), PlaylistKind::Other),
+        ];
+        for (playlist, want) in cases {
+            assert_eq!(
+                playlist.kind(&owned),
+                want,
+                "{} / {:?}",
+                playlist.uuid,
+                playlist.playlist_type
+            );
+        }
     }
 
     #[test]

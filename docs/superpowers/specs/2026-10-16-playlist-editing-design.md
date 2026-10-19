@@ -72,9 +72,12 @@ skipped, with the reason; `error!` on failure with status and body snippet.
 
 ### Models
 
-- `Playlist` gains `kind: PlaylistKind` — `Yours | Tidal | User | Mix | Other` —
-  derived from `playlistType` plus membership in the owned set. Unknown types
-  (e.g. `ARTIST`, not seen in the test library) map to `Other`.
+- `Playlist` gains `playlist_type: Option<String>` (the raw `playlistType`) and a
+  method `kind(&owned) -> PlaylistKind` — `Yours | Tidal | User | Mix | Other`.
+  Ownership is checked first, then the type. It is computed at render time, not
+  stored, because the playlists and the owned set arrive in separate responses
+  in either order; a stored value would be stale whenever ownership lands second.
+  Unknown types (e.g. `ARTIST`, not seen in the test library) map to `Other`.
 - `Track` gains `playlist_item_id: Option<String>`, `None` except on rows loaded
   from a playlist. It lives on `Track` rather than in a parallel structure because
   playlist rows pass through filtering, Atmos narrowing, `remove_where` and queue
@@ -86,10 +89,11 @@ skipped, with the reason; `error!` on failure with status and body snippet.
 
 - New `ApiRequest`s: `CreatePlaylist { name, then_add: Option<Track> }`,
   `RenamePlaylist`, `DeletePlaylist`, `AddToPlaylist`, `RemoveFromPlaylist`,
-  `MovePlaylistItem`, `LoadOwnedPlaylists`, each with a success and a failure
-  `ApiResponse`.
+  `MovePlaylistItem`, `LoadOwnedPlaylists`, each with a success `ApiResponse`.
+  Failures use the existing `ApiResponse::Error(String)`, which already toasts;
+  the message names the action and carries Tidal's `errors[0].detail`.
 - `LoadOwnedPlaylists` is sent alongside `LoadPlaylists`; `App` keeps
-  `owned_playlist_ids`, from which `kind` is set. If it fails, nothing is treated
+  `owned_playlist_ids`, which `kind` reads. If it fails, nothing is treated
   as owned: edit keys show their "only your own playlists" toast, and an `error!`
   is logged.
 - **Apply on confirm.** Create, rename, delete, add and remove change local state

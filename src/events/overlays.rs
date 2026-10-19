@@ -210,6 +210,31 @@ pub(super) fn handle_artist_selection_input(app: &mut App, key: KeyEvent) {
     }
 }
 
+pub(super) fn handle_playlist_picker_input(app: &mut App, key: KeyEvent) {
+    let picker = &mut app.playlist_picker;
+    match key.code {
+        KeyCode::Esc => *picker = Default::default(),
+        KeyCode::Up => picker.selected = picker.selected.saturating_sub(1),
+        KeyCode::Down if picker.selected + 1 < picker.rows() => picker.selected += 1,
+        KeyCode::Enter => app.pick_playlist(),
+        _ => {}
+    }
+}
+
+pub(super) fn handle_name_prompt_input(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Esc => app.name_prompt = Default::default(),
+        KeyCode::Enter => app.submit_name_prompt(),
+        KeyCode::Backspace => {
+            app.name_prompt.input.pop();
+        }
+        KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.name_prompt.input.push(c)
+        }
+        _ => {}
+    }
+}
+
 pub(super) fn handle_settings_input(app: &mut App, key: KeyEvent) {
     let setting = app.settings.selected_setting();
     match key.code {

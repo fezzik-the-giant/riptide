@@ -3,8 +3,8 @@
 
 //! User playlists and their tracks.
 
-use anyhow::Result;
-use std::collections::HashMap;
+use anyhow::{Context, Result};
+use std::collections::{HashMap, HashSet};
 
 use super::parse::*;
 use super::{ApiClient, OPENAPI_BASE, OpenApiPlaylistAttrs, OpenApiRelPage};
@@ -287,7 +287,119 @@ pub(super) fn parse_playlist_relationship_items(
     Ok((tracks, total, next_url))
 }
 
+pub(super) fn parse_created_playlist(resp: &serde_json::Value) -> Result<Playlist> {
+    let data = &resp["data"];
+    let uuid = data["id"]
+        .as_str()
+        .context("create response carries no data.id")?;
+    let attrs = &data["attributes"];
+    Ok(Playlist {
+        uuid: uuid.to_string(),
+        title: attrs["name"].as_str().unwrap_or_default().to_string(),
+        // The create response has no numberOfItems; a playlist made a moment
+        // ago is empty, and saying so beats rendering no count at all.
+        number_of_tracks: Some(0),
+        description: attrs["description"].as_str().map(String::from),
+        cover: None,
+        // Stands in for the collection's addedAt so "last added" sorts it first.
+        added_at: attrs["createdAt"].as_str().map(String::from),
+        playlist_type: attrs["playlistType"].as_str().map(String::from),
+    })
+}
+
+/// Reads the outcome for a single-track add. `skipped` is checked first because
+/// Tidal answers 200 whether or not it took the track.
+pub(super) fn parse_add_outcome(resp: &serde_json::Value) -> Result<AddOutcome> {
+    if let Some(skipped) = resp["meta"]["skipped"].as_array().and_then(|a| a.first()) {
+        let reason = skipped["reason"].as_str().unwrap_or("UNKNOWN").to_string();
+        return Ok(AddOutcome::Skipped { reason });
+    }
+    let item_id = resp["data"][0]["meta"]["itemId"]
+        .as_str()
+        .context("add response carries neither an itemId nor a skipped entry")?;
+    Ok(AddOutcome::Added {
+        item_id: item_id.to_string(),
+    })
+}
+
+pub(super) fn parse_owned_page(resp: &serde_json::Value) -> (Vec<String>, Option<String>) {
+    let ids = resp["data"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|p| p["id"].as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    let next = resp["links"]["next"].as_str().map(String::from);
+    (ids, next)
+}
+
 impl ApiClient {
+    /// The body matches the shape verified live, `description` included.
+    pub async fn create_playlist(&self, name: &str) -> Result<Playlist> {
+        let body = serde_json::json!({"data": {"type": "playlists", "attributes": {
+            "name": name, "description": "", "accessType": "UNLISTED"
+        }}});
+        let resp = self
+            .send_openapi_json(reqwest::Method::POST, "/playlists", &body)
+            .await?;
+        let playlist = parse_created_playlist(&resp)?;
+        tracing::debug!("created playlist {}", playlist.uuid);
+        Ok(playlist)
+    }
+
+    pub async fn add_to_playlist(&self, uuid: &str, track_id: u64) -> Result<AddOutcome> {
+        let body = serde_json::json!({"data": [{"id": track_id.to_string(), "type": "tracks"}]});
+        let resp = self
+            .send_openapi_json(
+                reqwest::Method::POST,
+                &format!("/playlists/{uuid}/relationships/items"),
+                &body,
+            )
+            .await?;
+        let outcome = parse_add_outcome(&resp)?;
+        match &outcome {
+            AddOutcome::Added { item_id } => {
+                tracing::debug!("added track {track_id} to playlist {uuid} as item {item_id}")
+            }
+            AddOutcome::Skipped { reason } => {
+                tracing::warn!("Tidal skipped track {track_id} for playlist {uuid}: {reason}")
+            }
+        }
+        Ok(outcome)
+    }
+
+    /// The only reliable ownership signal: a playlist's `owners` relationship
+    /// comes back empty even with `include=owners`, and `playlistType: USER`
+    /// covers other people's playlists too.
+    pub async fn get_owned_playlist_ids(&self) -> Result<HashSet<String>> {
+        let token = self.access_token().await?;
+        let mut owned = HashSet::new();
+        let mut next = Some(format!(
+            "/playlists?filter%5Bowners.id%5D=me&countryCode={}",
+            self.config.country_code
+        ));
+        while let Some(path) = next {
+            let resp: serde_json::Value = self
+                .http
+                .get(super::absolute_url(&path))
+                .bearer_auth(&token)
+                .send()
+                .await
+                .context("owned playlists request failed")?
+                .error_for_status()?
+                .json()
+                .await
+                .context("parse owned playlists")?;
+            let (ids, more) = parse_owned_page(&resp);
+            owned.extend(ids);
+            next = more;
+        }
+        tracing::info!("you own {} playlists", owned.len());
+        Ok(owned)
+    }
+
     /// Drains every page of the collection. Callers get the whole thing, so a
     /// forgotten cursor cannot silently truncate the library — which is exactly
     /// what capped this list at one page before.
@@ -342,6 +454,7 @@ impl ApiClient {
                     description: None,
                     cover: None,
                     added_at,
+                    playlist_type: attr.playlist_type.clone(),
                 })
             })
             .collect();
@@ -465,5 +578,70 @@ impl ApiClient {
             next_url.is_some()
         );
         Ok((tracks, total, next_url))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Live `POST /playlists` response (2026-10-15), externalLinks trimmed.
+    const CREATED: &str = r#"{"data":{"id":"7c56e2bc-d5c3-44ef-adeb-57b5b1327d28","type":"playlists","attributes":{"name":"riptide-probe","description":"temporary","bounded":false,"createdAt":"2026-10-15T18:20:19.824299Z","lastModifiedAt":"2026-10-15T18:20:19.822501Z","accessType":"UNLISTED","playlistType":"USER","numberOfFollowers":0}},"links":{"self":"/playlists/7c56e2bc-d5c3-44ef-adeb-57b5b1327d28?countryCode=US"}}"#;
+
+    /// Live single-track add (2026-10-15).
+    const ADDED: &str = r#"{"data":[{"id":"431291038","type":"tracks","meta":{"itemId":"e2df580f-28c7-49ed-950a-e19cb8d761bd","addedAt":"2026-10-15T18:20:28.091909Z"}}],"links":{"self":"/playlists/7c56e2bc-d5c3-44ef-adeb-57b5b1327d28/relationships/items?countryCode=US"},"meta":{"skipped":[]}}"#;
+
+    /// Live add (2026-10-16) where Tidal refused one track but still answered 200.
+    const SKIPPED: &str = r#"{"data":[{"id":"431291038","type":"tracks","meta":{"itemId":"d868dbbb-e6fa-4615-8061-6ebb0ee6e892","addedAt":"2026-10-16T15:05:37.127112Z"}}],"links":{"self":"/playlists/33545e0e-0216-40d9-9f6f-2eb6abde0e11/relationships/items?countryCode=US"},"meta":{"skipped":[{"id":"189681882","type":"tracks","reason":"NOT_FOUND"}]}}"#;
+
+    /// Live `GET /playlists?filter[owners.id]=me` (2026-10-15), attributes trimmed.
+    const OWNED: &str = r#"{"data":[{"id":"8c67ccd0-bd1c-4eae-91d0-c18afa9fa47c","type":"playlists","attributes":{"name":"🔥","playlistType":"USER"}},{"id":"e4658ab2-ac28-41f8-a76b-6fd0b96e1168","type":"playlists","attributes":{"name":"Reya's Jams","playlistType":"USER"}}],"links":{"self":"/playlists?filter%5Bowners.id%5D=me&countryCode=US"}}"#;
+
+    fn json(s: &str) -> serde_json::Value {
+        serde_json::from_str(s).unwrap()
+    }
+
+    #[test]
+    fn a_created_playlist_is_parsed_as_an_empty_user_playlist() {
+        let p = parse_created_playlist(&json(CREATED)).unwrap();
+        assert_eq!(p.uuid, "7c56e2bc-d5c3-44ef-adeb-57b5b1327d28");
+        assert_eq!(p.title, "riptide-probe");
+        assert_eq!(p.number_of_tracks, Some(0));
+        assert_eq!(p.playlist_type.as_deref(), Some("USER"));
+    }
+
+    #[test]
+    fn an_add_yields_the_new_entry_item_id() {
+        assert_eq!(
+            parse_add_outcome(&json(ADDED)).unwrap(),
+            AddOutcome::Added {
+                item_id: "e2df580f-28c7-49ed-950a-e19cb8d761bd".to_string()
+            }
+        );
+    }
+
+    /// Tidal answers 200 even when it refuses the track, so trusting the status
+    /// would tell the user a track was filed when it was not.
+    #[test]
+    fn a_skipped_track_is_never_reported_as_added() {
+        assert_eq!(
+            parse_add_outcome(&json(SKIPPED)).unwrap(),
+            AddOutcome::Skipped {
+                reason: "NOT_FOUND".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn the_owned_page_yields_ids_and_ends_without_a_next_link() {
+        let (ids, next) = parse_owned_page(&json(OWNED));
+        assert_eq!(
+            ids,
+            vec![
+                "8c67ccd0-bd1c-4eae-91d0-c18afa9fa47c".to_string(),
+                "e4658ab2-ac28-41f8-a76b-6fd0b96e1168".to_string()
+            ]
+        );
+        assert_eq!(next, None);
     }
 }

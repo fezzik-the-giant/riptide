@@ -328,6 +328,9 @@ pub(super) fn album_row(
     layout_row(width, cells, phase)
 }
 
+/// Wide enough for the longest label, "Yours"/"Tidal", plus a gap.
+const KIND_BADGE_W: u16 = 6;
+
 pub(super) fn playlist_row(
     app: &App,
     playlist: &Playlist,
@@ -341,6 +344,15 @@ pub(super) fn playlist_row(
         vec![
             Cell::fixed(if is_selected { "▶ " } else { "  " }, 2, style),
             Cell::flex(playlist.title.clone(), 1, 0, style),
+            {
+                let kind = playlist.kind(&app.owned_playlist_ids);
+                let badge_style = if kind == crate::api::models::PlaylistKind::Yours {
+                    row_accent_style(is_selected)
+                } else {
+                    dim
+                };
+                Cell::fixed(kind.label(), KIND_BADGE_W, badge_style)
+            },
             Cell::fixed(playlist.track_count_label().unwrap_or_default(), 11, dim).right(),
             Cell::fixed(
                 if app.favorite_playlist_ids.contains(&playlist.uuid) {
@@ -493,7 +505,29 @@ mod tests {
             description: None,
             cover: None,
             added_at: None,
+            playlist_type: Some("EDITORIAL".to_string()),
         }
+    }
+
+    /// Ownership and the list load are separate responses; the badge has to be
+    /// right whichever lands second.
+    #[test]
+    fn the_badge_follows_ownership_learned_after_the_list_loaded() {
+        let mut t = test_app();
+        std::mem::forget(t.api_rx);
+        let p = playlist("Metal Classics", Some(12));
+        let text = |app: &crate::app::App| {
+            playlist_row(app, &p, 70, false, Style::default())
+                .spans
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect::<String>()
+        };
+        assert!(text(&t.app).contains("Tidal"));
+        t.app
+            .owned_playlist_ids
+            .insert("Metal Classics".to_string());
+        assert!(text(&t.app).contains("Yours"));
     }
 
     /// Search results mix saved and unsaved playlists, and the marker is the only

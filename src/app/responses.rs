@@ -51,7 +51,30 @@ impl App {
                 self.favorite_playlist_ids.remove(&uuid);
             }
 
+            ApiResponse::OwnedPlaylists(ids) => self.owned_playlist_ids = ids,
+
+            ApiResponse::OwnedPlaylistsFailed(msg) => self.set_status(
+                format!("Couldn't load your playlists, so editing is off: {msg}"),
+                StatusLevel::Error,
+            ),
+
+            ApiResponse::PlaylistCreated { playlist, then_add } => {
+                self.on_playlist_created(playlist, then_add)
+            }
+
+            ApiResponse::AddedToPlaylist {
+                playlist,
+                track,
+                outcome,
+            } => self.on_added_to_playlist(playlist, track, outcome),
+
             ApiResponse::Playlists(items, total) => {
+                // A playlist created while this load was in flight is already
+                // listed locally, and Tidal has put it in the collection too.
+                let items = items
+                    .into_iter()
+                    .filter(|p| !self.playlists.items.iter().any(|q| q.uuid == p.uuid))
+                    .collect();
                 self.playlists.append(items, total);
                 self.sort_playlists();
                 self.rebuild_favorite_playlist_ids();

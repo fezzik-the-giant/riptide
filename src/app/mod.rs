@@ -5,6 +5,7 @@ mod library;
 mod loading;
 mod navigation;
 mod playback;
+mod playlist_edit;
 mod responses;
 mod settings;
 mod state;
@@ -85,6 +86,9 @@ pub struct App {
     /// Mirrors `playlists.items` exactly — the two are updated together, so a
     /// removal still in flight never reads as already gone.
     pub favorite_playlist_ids: HashSet<String>,
+    /// Playlists the user can edit. Empty until its request answers, and left
+    /// empty if that fails, so edit keys refuse rather than send doomed writes.
+    pub owned_playlist_ids: HashSet<String>,
     pub search: SearchState,
     pub command: CommandState,
     /// Whether the filter box is open and capturing input. The query itself
@@ -92,6 +96,8 @@ pub struct App {
     pub filter_active: bool,
     pub sort_palette: SortPalette,
     pub artist_selection: ArtistSelection,
+    pub playlist_picker: PlaylistPicker,
+    pub name_prompt: NamePrompt,
     pub tracks_sort: Option<SortField>,
     pub artists_sort: Option<SortField>,
     pub fav_albums_sort: Option<SortField>,
@@ -205,11 +211,14 @@ impl App {
             favorite_album_ids: HashSet::new(),
             favorite_artist_ids: HashSet::new(),
             favorite_playlist_ids: HashSet::new(),
+            owned_playlist_ids: HashSet::new(),
             search: SearchState::default(),
             command: CommandState::default(),
             filter_active: false,
             sort_palette: SortPalette::default(),
             artist_selection: ArtistSelection::default(),
+            playlist_picker: PlaylistPicker::default(),
+            name_prompt: NamePrompt::default(),
             tracks_sort: prefs.tracks_sort,
             artists_sort: prefs.artists_sort,
             fav_albums_sort: prefs.fav_albums_sort,

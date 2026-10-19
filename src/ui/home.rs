@@ -211,6 +211,7 @@ mod tests {
             description: None,
             cover: None,
             added_at: None,
+            playlist_type: None,
         }
     }
 

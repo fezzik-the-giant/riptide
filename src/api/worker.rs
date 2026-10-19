@@ -47,6 +47,12 @@ impl ApiWorker {
     }
 }
 
+/// `{e:#}` keeps the cause under any `.context()`: a dropped connection
+/// otherwise toasts only the context, which says nothing about what went wrong.
+fn write_failed(action: &str, e: &anyhow::Error) -> ApiResponse {
+    ApiResponse::Error(format!("{action}: {e:#}"))
+}
+
 async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse {
     match req {
         ApiRequest::LoadArtists => match client.get_favorite_artists_v2().await {
@@ -371,6 +377,32 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
             Err(e) => ApiResponse::Error(format!("remove playlist: {e}")),
         },
 
+        ApiRequest::LoadOwnedPlaylists => match client.get_owned_playlist_ids().await {
+            Ok(ids) => ApiResponse::OwnedPlaylists(ids),
+            Err(e) => {
+                tracing::error!("owned playlists request failed: {e:#}");
+                ApiResponse::OwnedPlaylistsFailed(format!("{e:#}"))
+            }
+        },
+
+        ApiRequest::CreatePlaylist { name, then_add } => {
+            match client.create_playlist(&name).await {
+                Ok(playlist) => ApiResponse::PlaylistCreated { playlist, then_add },
+                Err(e) => write_failed(&format!("Couldn't create '{name}'"), &e),
+            }
+        }
+
+        ApiRequest::AddToPlaylist { playlist, track } => {
+            match client.add_to_playlist(&playlist.uuid, track.id).await {
+                Ok(outcome) => ApiResponse::AddedToPlaylist {
+                    playlist,
+                    track,
+                    outcome,
+                },
+                Err(e) => write_failed(&format!("Couldn't add to '{}'", playlist.title), &e),
+            }
+        }
+
         ApiRequest::TrackRadio { track_id } => match client.get_track_radio(track_id).await {
             Ok(page) => ApiResponse::RadioTracks { tracks: page.items },
             Err(e) => ApiResponse::Error(format!("radio: {e}")),
@@ -504,6 +536,18 @@ fn strip_wimplinks(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// A dropped connection reaches the worker as context wrapped around the
+    /// cause; the toast must carry the cause, not just "openapi write failed".
+    #[test]
+    fn a_write_failure_toast_names_the_underlying_cause() {
+        let e = anyhow::anyhow!("connection reset by peer").context("openapi write failed");
+        let super::ApiResponse::Error(msg) = super::write_failed("Couldn't add to 'Mine'", &e)
+        else {
+            panic!("not an error response")
+        };
+        assert!(msg.contains("connection reset by peer"), "{msg}");
+    }
+
     use super::*;
 
     // ── parse_lrc ─────────────────────────────────────────────────────────────

@@ -62,6 +62,8 @@ pub(super) struct OpenApiPlaylistAttrs {
     name: String,
     #[serde(rename = "numberOfItems")]
     number_of_items: Option<u32>,
+    #[serde(rename = "playlistType")]
+    playlist_type: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -260,6 +262,42 @@ impl ApiClient {
         Ok(())
     }
 
+    /// Writes whose response the caller needs. Unlike `post_openapi_json`, a
+    /// failure carries Tidal's own `errors[0].detail`, which is what the toast
+    /// shows — `error_for_status` would reduce it to a bare status code.
+    async fn send_openapi_json(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        let token = self.access_token().await?;
+        let url = format!("{OPENAPI_BASE}{path}");
+        let resp = self
+            .http
+            .request(method, &url)
+            .bearer_auth(&token)
+            .query(&[("countryCode", &self.config.country_code)])
+            .json(body)
+            .send()
+            .await
+            .context("openapi write failed")?;
+        let status = resp.status();
+        let bytes = resp.bytes().await?;
+        if !status.is_success() {
+            let snippet: String = String::from_utf8_lossy(&bytes).chars().take(200).collect();
+            tracing::error!("openapi write {path} returned {status}: {snippet}");
+            anyhow::bail!(
+                "{}",
+                error_detail(&bytes).unwrap_or_else(|| format!("HTTP {status}"))
+            );
+        }
+        if bytes.is_empty() {
+            return Ok(serde_json::Value::Null);
+        }
+        Ok(serde_json::from_slice(&bytes)?)
+    }
+
     // ── Artists ───────────────────────────────────────────────────────────────
 
     // ── Playlists ─────────────────────────────────────────────────────────────
@@ -293,6 +331,11 @@ impl ApiClient {
         tracing::debug!("Fetched {} bytes", bytes.len());
         Ok(bytes.to_vec())
     }
+}
+
+fn error_detail(body: &[u8]) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_slice(body).ok()?;
+    v["errors"][0]["detail"].as_str().map(String::from)
 }
 
 /// Resolve a JSON:API `links.next` value against the v2 base.
@@ -383,5 +426,17 @@ mod token_tests {
         // missing timestamp into a request storm.
         let unknown = TokenState::new("t".into(), None);
         assert!(!unknown.needs_refresh());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_write_error_surfaces_tidal_s_own_detail() {
+        let body = br#"{"errors":[{"code":"INVALID_REQUEST_BODY","detail":"Must not be null","source":{"pointer":"data/0/meta"}}]}"#;
+        assert_eq!(error_detail(body).as_deref(), Some("Must not be null"));
+        assert_eq!(error_detail(b"<html>bad gateway</html>"), None);
     }
 }

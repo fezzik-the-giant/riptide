@@ -285,6 +285,11 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    if app.name_prompt.active {
+        handle_name_prompt_input(app, key);
+        return;
+    }
+
     if app.filter_active {
         handle_filter_input(app, key);
         return;
@@ -310,6 +315,13 @@ fn handle_key(app: &mut App, key: KeyEvent) {
     // rather than quitting the app out from under a half-made change.
     if app.settings.active {
         handle_settings_input(app, key);
+        return;
+    }
+
+    // After `vim_arrows`, so j/k reach the picker as Up/Down; ahead of queue
+    // focus, so a picker opened from the queue keeps its keys.
+    if app.playlist_picker.active {
+        handle_playlist_picker_input(app, key);
         return;
     }
 
@@ -423,6 +435,58 @@ mod tests {
     use crate::app::test_support::{TestApp, test_app};
     use crate::update::InstallMethod;
     use crossterm::event::KeyModifiers;
+
+    fn favorites_with_one_owned_playlist() -> TestApp {
+        let mut t = test_app();
+        t.app.current_tab = Tab::Favorites;
+        t.app
+            .favorites
+            .append_page(vec![crate::app::test_support::track(7)], None);
+        t.app.owned_playlist_ids.insert("mine".to_string());
+        t
+    }
+
+    /// Some terminals report Shift+p as a lowercase `p` carrying SHIFT, which
+    /// the bare `p` arm would read as "previous track".
+    #[test]
+    fn shift_p_opens_the_picker_however_the_terminal_spells_it() {
+        for code in [KeyCode::Char('P'), KeyCode::Char('p')] {
+            let mut t = favorites_with_one_owned_playlist();
+            handle_key(&mut t.app, KeyEvent::new(code, KeyModifiers::SHIFT));
+            assert!(t.app.playlist_picker.active, "{code:?}");
+        }
+    }
+
+    #[test]
+    fn letters_typed_into_the_name_prompt_stay_letters() {
+        let mut t = favorites_with_one_owned_playlist();
+        t.app.open_name_prompt(None);
+        for c in "jk qP".chars() {
+            handle_key(
+                &mut t.app,
+                KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE),
+            );
+        }
+        assert_eq!(t.app.name_prompt.input, "jk qP");
+        assert!(!t.app.should_quit);
+        assert!(!t.app.playlist_picker.active);
+    }
+
+    #[test]
+    fn shift_n_opens_the_name_prompt_only_on_the_playlists_tab() {
+        let mut t = favorites_with_one_owned_playlist();
+        handle_key(
+            &mut t.app,
+            KeyEvent::new(KeyCode::Char('N'), KeyModifiers::SHIFT),
+        );
+        assert!(!t.app.name_prompt.active);
+        t.app.current_tab = Tab::Playlists;
+        handle_key(
+            &mut t.app,
+            KeyEvent::new(KeyCode::Char('N'), KeyModifiers::SHIFT),
+        );
+        assert!(t.app.name_prompt.active);
+    }
 
     fn app_on_artists_tab() -> TestApp {
         let mut t = test_app();

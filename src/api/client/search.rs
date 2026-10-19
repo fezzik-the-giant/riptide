@@ -388,6 +388,9 @@ fn parse_search_playlist_page(api_resp: &serde_json::Value) -> Result<SearchPlay
                     description,
                     cover: None,
                     added_at: None,
+                    playlist_type: item["attributes"]["playlistType"]
+                        .as_str()
+                        .map(String::from),
                 };
                 playlist_map.insert(uuid, playlist);
             }
