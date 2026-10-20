@@ -330,6 +330,11 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    if app.playlist_move.is_some() {
+        handle_move_input(app, key);
+        return;
+    }
+
     // Fullscreen art is a presentation layer over the active view. Only global
     // controls apply while it is open, so list navigation cannot mutate the
     // view hidden beneath it. It also outranks queue focus so Esc dismisses
@@ -626,6 +631,48 @@ mod tests {
             KeyEvent::new(KeyCode::Char('d'), KeyModifiers::SHIFT),
         );
         assert_eq!(t.app.now_playing.queue.len(), 2);
+    }
+
+    #[test]
+    fn move_mode_ignores_every_key_but_arrows_enter_and_esc() {
+        use crate::api::models::Track;
+        let mut t = playlists_tab_with_one_owned_playlist();
+        let mine = t.app.playlists.items[0].clone();
+        t.app.open_playlist(mine);
+        let rows = ["a", "b"].map(|id| Track {
+            playlist_item_id: Some(id.to_string()),
+            ..crate::app::test_support::track(1)
+        });
+        if let Some(crate::app::View::PlaylistDetail(d)) = t.app.view_stack.last_mut() {
+            d.tracks.append_page(rows.to_vec(), None);
+        }
+        t.drain_api();
+        let order = |t: &crate::app::test_support::TestApp| {
+            let Some(crate::app::View::PlaylistDetail(d)) = t.app.view_stack.last() else {
+                panic!("detail closed")
+            };
+            d.tracks
+                .items
+                .iter()
+                .map(|t| t.playlist_item_id.clone().unwrap())
+                .collect::<Vec<_>>()
+        };
+
+        handle_key(&mut t.app, press('m'));
+        assert!(t.app.playlist_move.is_some());
+        for c in ['q', 'd', 'm'] {
+            handle_key(&mut t.app, press(c));
+        }
+        assert!(t.app.playlist_move.is_some());
+        assert!(!t.app.should_quit);
+        assert!(t.api_requests().is_empty());
+
+        handle_key(&mut t.app, press('j'));
+        assert_eq!(order(&t), ["b", "a"]);
+        handle_key(&mut t.app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(order(&t), ["a", "b"]);
+        assert!(t.app.playlist_move.is_none());
+        assert!(t.api_requests().is_empty());
     }
 
     fn press(c: char) -> KeyEvent {

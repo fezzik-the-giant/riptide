@@ -51,7 +51,15 @@ pub(super) fn render_content(f: &mut Frame, app: &App, area: Rect) {
         Tab::Playlists => render_playlist_list(f, app, area),
         Tab::Favorites => {
             let title = list_title("Tracks", &app.favorites, app);
-            render_track_list(f, app, &app.favorites, app.content_focused(), area, &title);
+            render_track_list(
+                f,
+                app,
+                &app.favorites,
+                app.content_focused(),
+                None,
+                area,
+                &title,
+            );
         }
         Tab::Search => render_search_results(f, app, area),
     }
@@ -436,6 +444,7 @@ pub(super) fn render_track_list(
     app: &App,
     tracks: &crate::app::StatefulList<Track>,
     focused: bool,
+    held_entry: Option<&str>,
     area: Rect,
     title: &str,
 ) {
@@ -461,9 +470,14 @@ pub(super) fn render_track_list(
                 .as_ref()
                 .map(|t| t.id == track.id)
                 .unwrap_or(false);
-            let style = row_style(is_selected);
+            let held = held_entry.is_some() && track.playlist_item_id.as_deref() == held_entry;
+            let style = if held {
+                row_style(true).add_modifier(Modifier::REVERSED)
+            } else {
+                row_style(is_selected)
+            };
             // `i` stays 0-based for selection; only the displayed ordinal is 1-based.
-            let ordinal = format!("{:>3}. ", i + 1);
+            let ordinal = format!("{:>3}{} ", i + 1, if held { '↕' } else { '.' });
             ListItem::new(track_row(
                 app,
                 track,
@@ -615,6 +629,7 @@ mod tests {
                     &t.app,
                     &t.app.favorites,
                     true,
+                    None,
                     Rect::new(0, 0, w, h),
                     " Tracks ",
                 )

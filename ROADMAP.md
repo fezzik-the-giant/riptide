@@ -59,25 +59,6 @@ that is already playing, and repeat-queue means the track after the last one is
 the first one, which `TrackEnded` currently treats as the end. The `FakeMpv`
 tests in `src/app/playback.rs` are where that gets proven.
 
-### Playlist editing
-
-**Issue:** [#57](https://github.com/fezzik-the-giant/riptide/issues/57) — `In progress`,
-delivered as sub-issues #71–#74 (design: `docs/superpowers/specs/2026-10-16-playlist-editing-design.md`)
-
-`src/api/client/playlists.rs` can `save_playlist` and `remove_playlist` —
-add and remove someone else's playlist from the collection — and nothing else.
-There is no create, no add-track-to-playlist, no remove-track-from-playlist. A
-track can be favorited but not filed.
-
-Likely the largest user-facing win of anything here, and the only entry with an
-unverified API. The v2 write endpoints have to be confirmed against the live API
-before any design: whether `/playlists` takes a POST, whether items move through
-`/playlists/{id}/relationships/items` the way `userCollection*` relationships do,
-and what a created playlist's response carries. Ask before assuming field names.
-
-The UI question is separate and also open: a picker over the user's own
-playlists, filtered to the ones they can write to.
-
 ### Seek from the keyboard
 
 **Issue:** [#58](https://github.com/fezzik-the-giant/riptide/issues/58) — `Backlog`
@@ -206,6 +187,19 @@ tag, has had its flake built. Cachix would pull faster than a GitHub cache
 restore and stays the next step if the restore proves slow. Gradient (suggested
 on the issue) is a self-hosted Hydra-style server — infrastructure out of
 proportion to one flake.
+
+### Playlist editing
+
+**Issue:** [#57](https://github.com/fezzik-the-giant/riptide/issues/57) — `Done`,
+delivered as sub-issues #71–#74 (design: `docs/superpowers/specs/2026-10-16-playlist-editing-design.md`)
+**Version:** next release (under `[Unreleased]` in `CHANGELOG.md`).
+
+Your own playlists can be created (`N`, or `+ New playlist…` in the `P` picker),
+filled from any track row (`P`), and edited: `d` removes an entry, `m` moves one,
+`R` renames and `D` deletes after a confirmation. Every write was verified live
+first; the facts the code depends on are in `AGENTS.md` under "Playlist Editing —
+Verified API". Ownership comes from a separate `filter[owners.id]=me` request,
+which is also what the Playlists tab's `Yours` badge reads.
 
 ## Considered and Rejected
 

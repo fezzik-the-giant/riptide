@@ -9,9 +9,23 @@ use crate::api::models::{AddOutcome, Playlist, Track};
 use crate::search::SearchPane;
 
 use super::{
-    App, ArtistDetailFocus, NamePrompt, NameTarget, PlaylistDetailFocus, PlaylistPicker,
-    StatusLevel, Tab, View,
+    App, ArtistDetailFocus, NamePrompt, NameTarget, PlaylistDetailFocus, PlaylistMove,
+    PlaylistPicker, StatefulList, StatusLevel, Tab, View,
 };
+
+fn entry_position(tracks: &StatefulList<Track>, item_id: &str) -> Option<usize> {
+    tracks
+        .items
+        .iter()
+        .position(|t| t.playlist_item_id.as_deref() == Some(item_id))
+}
+
+fn entry_after(tracks: &StatefulList<Track>, at: usize) -> Option<String> {
+    tracks
+        .items
+        .get(at + 1)
+        .and_then(|t| t.playlist_item_id.clone())
+}
 
 impl App {
     /// The track a row-level command acts on in the current context, or `None`
@@ -300,6 +314,166 @@ impl App {
             }
         }
         self.set_status(format!("Renamed to '{name}'"), StatusLevel::Info);
+    }
+
+    pub(crate) fn start_move(&mut self) {
+        let Some(View::PlaylistDetail(d)) = self.view_stack.last() else {
+            return;
+        };
+        if d.focus != PlaylistDetailFocus::Tracks {
+            return;
+        }
+        // A drop beside a hidden row, or past rows still to arrive, would land
+        // somewhere the user did not choose. Every entry needs its id because
+        // the drop names its neighbour by it.
+        let refusal = if !self.owned_playlist_ids.contains(&d.playlist.uuid) {
+            Some(("Only your own playlists can be edited", StatusLevel::Info))
+        } else if !d.tracks.exhausted {
+            Some(("Wait for the playlist to finish loading", StatusLevel::Info))
+        } else if d.tracks.visible_len() != d.tracks.items.len() {
+            Some((
+                "Show Atmos (Shift+S) to reorder: some tracks here are hidden",
+                StatusLevel::Info,
+            ))
+        } else if d.tracks.items.iter().any(|t| t.playlist_item_id.is_none()) {
+            Some((
+                "Tidal sent no entry ids for this playlist, so it can't be reordered",
+                StatusLevel::Error,
+            ))
+        } else {
+            None
+        };
+        if let Some((msg, level)) = refusal {
+            self.set_status(msg.to_string(), level);
+            return;
+        }
+        let at = d.tracks.selected;
+        let Some(item_id) = d
+            .tracks
+            .items
+            .get(at)
+            .and_then(|t| t.playlist_item_id.clone())
+        else {
+            return;
+        };
+        self.playlist_move = Some(PlaylistMove {
+            item_id,
+            origin_next: entry_after(&d.tracks, at),
+        });
+    }
+
+    pub(crate) fn step_move(&mut self, down: bool) {
+        let (Some(m), Some(View::PlaylistDetail(d))) =
+            (&self.playlist_move, self.view_stack.last_mut())
+        else {
+            return;
+        };
+        let Some(from) = entry_position(&d.tracks, &m.item_id) else {
+            return;
+        };
+        let to = if down {
+            from + 1
+        } else {
+            let Some(to) = from.checked_sub(1) else {
+                return;
+            };
+            to
+        };
+        if to >= d.tracks.items.len() {
+            return;
+        }
+        d.tracks.items.swap(from, to);
+        d.tracks.refilter();
+        d.tracks.selected = to;
+    }
+
+    pub(crate) fn cancel_move(&mut self) {
+        let Some(m) = self.playlist_move.take() else {
+            return;
+        };
+        let Some(View::PlaylistDetail(d)) = self.view_stack.last_mut() else {
+            return;
+        };
+        let Some(from) = entry_position(&d.tracks, &m.item_id) else {
+            return;
+        };
+        let row = d.tracks.items.remove(from);
+        let to = match &m.origin_next {
+            None => Some(d.tracks.items.len()),
+            Some(next) => entry_position(&d.tracks, next),
+        };
+        match to {
+            Some(to) => {
+                d.tracks.items.insert(to, row);
+                d.tracks.refilter();
+                d.tracks.selected = to;
+            }
+            // Its old neighbour was removed meanwhile, so there is no local
+            // answer to where it was; Tidal still has the original order.
+            None => {
+                d.tracks.items.insert(from, row);
+                let uuid = d.playlist.uuid.clone();
+                self.reload_playlist(&uuid);
+            }
+        }
+    }
+
+    pub(crate) fn drop_move(&mut self) {
+        let Some(m) = self.playlist_move.take() else {
+            return;
+        };
+        let Some(View::PlaylistDetail(d)) = self.view_stack.last() else {
+            return;
+        };
+        let Some(at) = entry_position(&d.tracks, &m.item_id) else {
+            return;
+        };
+        let before = entry_after(&d.tracks, at);
+        if before == m.origin_next {
+            return;
+        }
+        let _ = self.api_tx.send(ApiRequest::MovePlaylistItem {
+            playlist: d.playlist.clone(),
+            track: d.tracks.items[at].clone(),
+            item_id: m.item_id,
+            before,
+        });
+    }
+
+    /// Refetches the open view of `uuid`, the only sound recovery once the local
+    /// order may differ from Tidal's.
+    fn reload_playlist(&mut self, uuid: &str) {
+        let Some(View::PlaylistDetail(d)) = self.view_stack.last_mut() else {
+            return;
+        };
+        if d.playlist.uuid != uuid {
+            return;
+        }
+        self.playlist_move = None;
+        d.tracks = StatefulList::default();
+        d.tracks.loading = true;
+        self.apply_atmos_visibility();
+        let _ = self.api_tx.send(ApiRequest::LoadPlaylistTracks {
+            uuid: uuid.to_string(),
+            next_url: None,
+        });
+    }
+
+    pub(crate) fn on_playlist_item_moved(&mut self, _playlist: Playlist, track: Track) {
+        self.set_status(format!("Moved '{}'", track.title), StatusLevel::Info);
+    }
+
+    pub(crate) fn on_playlist_item_move_failed(
+        &mut self,
+        playlist: Playlist,
+        track: Track,
+        error: String,
+    ) {
+        self.reload_playlist(&playlist.uuid);
+        self.set_status(
+            format!("Couldn't move '{}': {error}", track.title),
+            StatusLevel::Error,
+        );
     }
 
     pub(crate) fn open_delete_confirm(&mut self) {
@@ -833,5 +1007,173 @@ mod tests {
             t.app.playlists.selected_item().map(|p| p.uuid.as_str()),
             Some("z")
         );
+    }
+
+    fn abc() -> TestApp {
+        own_playlist_open_with(vec![row(1, "a"), row(2, "b"), row(3, "c")])
+    }
+
+    fn ids(t: &TestApp) -> Vec<String> {
+        open_rows(t).into_iter().map(Option::unwrap).collect()
+    }
+
+    fn detail_mut(t: &mut TestApp) -> &mut crate::app::PlaylistDetail {
+        let Some(View::PlaylistDetail(d)) = t.app.view_stack.last_mut() else {
+            panic!("detail closed")
+        };
+        d
+    }
+
+    #[test]
+    fn dropping_sends_one_move_naming_the_next_row() {
+        let mut t = abc();
+        t.app.start_move();
+        t.app.step_move(true);
+        assert_eq!(ids(&t), ["b", "a", "c"]);
+        assert_eq!(detail_mut(&mut t).tracks.selected, 1);
+        assert!(t.api_requests().is_empty());
+        t.app.drop_move();
+        assert!(t.app.playlist_move.is_none());
+        assert!(matches!(
+            t.api_requests().as_slice(),
+            [ApiRequest::MovePlaylistItem { item_id, before: Some(before), .. }]
+                if item_id == "a" && before == "c"
+        ));
+
+        t.app.start_move();
+        t.app.step_move(true);
+        assert_eq!(ids(&t), ["b", "c", "a"]);
+        t.app.drop_move();
+        assert!(matches!(
+            t.api_requests().as_slice(),
+            [ApiRequest::MovePlaylistItem { item_id, before: None, .. }]
+                if item_id == "a"
+        ));
+    }
+
+    #[test]
+    fn dropping_where_it_started_sends_nothing() {
+        let mut t = abc();
+        t.app.start_move();
+        t.app.step_move(true);
+        t.app.step_move(false);
+        t.app.drop_move();
+        assert!(t.app.playlist_move.is_none());
+        assert!(t.api_requests().is_empty());
+    }
+
+    /// Replaying the old index is wrong once a second move or an add or remove
+    /// has landed in between; only Tidal knows the order now.
+    #[test]
+    fn a_failed_move_reloads_the_playlist_from_tidal() {
+        let mut t = abc();
+        t.app.start_move();
+        t.app.step_move(true);
+        t.app.drop_move();
+        t.drain_api();
+        t.app.start_move();
+        t.app
+            .on_playlist_item_move_failed(own("p", "Mine"), track(1), "Nope".to_string());
+        assert!(t.app.playlist_move.is_none());
+        assert!(open_rows(&t).is_empty());
+        assert!(detail_mut(&mut t).tracks.loading);
+        assert!(matches!(
+            t.api_requests().as_slice(),
+            [ApiRequest::LoadPlaylistTracks { uuid, next_url: None }] if uuid == "p"
+        ));
+        let (msg, level, _) = t.app.status.clone().unwrap();
+        assert_eq!(level, StatusLevel::Error);
+        assert!(msg.contains("Couldn't move"), "{msg}");
+    }
+
+    #[test]
+    fn move_mode_is_refused_only_when_rows_are_really_hidden() {
+        let mut t = abc();
+        detail_mut(&mut t).tracks.set_hide_atmos(true);
+        t.app.start_move();
+        assert!(t.app.playlist_move.is_some());
+        t.app.cancel_move();
+
+        let tracks = &mut detail_mut(&mut t).tracks;
+        tracks.items.push(crate::api::models::Track {
+            playlist_item_id: Some("x".to_string()),
+            ..crate::app::test_support::track_tagged(9, &["DOLBY_ATMOS"])
+        });
+        tracks.refilter();
+        t.app.start_move();
+        assert!(t.app.playlist_move.is_none());
+        let (msg, _, _) = t.app.status.clone().unwrap();
+        assert_eq!(
+            msg,
+            "Show Atmos (Shift+S) to reorder: some tracks here are hidden"
+        );
+    }
+
+    #[test]
+    fn moving_stops_at_both_ends() {
+        let mut t = abc();
+        t.app.start_move();
+        t.app.step_move(false);
+        assert_eq!(ids(&t), ["a", "b", "c"]);
+        t.app.cancel_move();
+        detail_mut(&mut t).tracks.selected = 2;
+        t.app.start_move();
+        t.app.step_move(true);
+        assert_eq!(ids(&t), ["a", "b", "c"]);
+    }
+
+    #[test]
+    fn m_on_someone_elses_playlist_or_a_loading_one_refuses() {
+        let mut t = abc();
+        t.app.owned_playlist_ids.clear();
+        t.app.start_move();
+        assert!(t.app.playlist_move.is_none());
+        assert_eq!(
+            t.app.status.clone().unwrap().0,
+            "Only your own playlists can be edited"
+        );
+
+        let mut t = abc();
+        detail_mut(&mut t).tracks.exhausted = false;
+        t.app.start_move();
+        assert!(t.app.playlist_move.is_none());
+        assert_eq!(
+            t.app.status.clone().unwrap().0,
+            "Wait for the playlist to finish loading"
+        );
+    }
+
+    #[test]
+    fn a_view_pushed_mid_move_puts_the_row_back_first() {
+        let mut t = abc();
+        t.app.start_move();
+        t.app.step_move(true);
+        t.app.open_artist(crate::api::models::Artist {
+            id: 1,
+            name: "Someone".to_string(),
+            added_at: None,
+        });
+        assert!(t.app.playlist_move.is_none());
+        t.app.go_back();
+        assert_eq!(ids(&t), ["a", "b", "c"]);
+    }
+
+    #[test]
+    fn a_removal_landing_mid_move_leaves_cancel_and_drop_honest() {
+        let mut t =
+            own_playlist_open_with(vec![row(1, "a"), row(2, "b"), row(3, "c"), row(4, "d")]);
+        detail_mut(&mut t).tracks.selected = 2;
+        t.app.start_move();
+        t.app
+            .on_removed_from_playlist(own("p", "Mine"), row(1, "a"), "a".to_string());
+        t.app.drop_move();
+        assert!(t.api_requests().is_empty());
+
+        detail_mut(&mut t).tracks.selected = 1;
+        t.app.start_move();
+        t.app
+            .on_removed_from_playlist(own("p", "Mine"), row(2, "b"), "b".to_string());
+        t.app.cancel_move();
+        assert_eq!(ids(&t), ["c", "d"]);
     }
 }

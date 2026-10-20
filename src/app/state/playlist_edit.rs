@@ -37,6 +37,14 @@ impl Default for NameTarget {
     }
 }
 
+/// Positions are kept as entry ids, never indices: a remove or add response
+/// landing mid-move shifts every index but no entry.
+pub struct PlaylistMove {
+    pub item_id: String,
+    /// The entry it started in front of; `None` when it started last.
+    pub origin_next: Option<String>,
+}
+
 #[derive(Default)]
 pub struct NamePrompt {
     pub active: bool,

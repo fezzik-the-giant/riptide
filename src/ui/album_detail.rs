@@ -133,5 +133,5 @@ pub(super) fn render_album_detail(
     } else {
         format!(" Tracks ({}) ", detail.tracks.visible_len())
     };
-    render_track_list(f, app, &detail.tracks, true, cols[1], &title);
+    render_track_list(f, app, &detail.tracks, true, None, cols[1], &title);
 }

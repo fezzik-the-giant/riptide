@@ -419,6 +419,23 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
             Err(e) => write_failed(&format!("Couldn't remove from '{}'", playlist.title), &e),
         },
 
+        ApiRequest::MovePlaylistItem {
+            playlist,
+            track,
+            item_id,
+            before,
+        } => match client
+            .move_in_playlist(&playlist.uuid, track.id, &item_id, before.as_deref())
+            .await
+        {
+            Ok(()) => ApiResponse::PlaylistItemMoved { playlist, track },
+            Err(e) => ApiResponse::PlaylistItemMoveFailed {
+                playlist,
+                track,
+                error: format!("{e:#}"),
+            },
+        },
+
         ApiRequest::RenamePlaylist { playlist, name } => {
             match client.rename_playlist(&playlist.uuid, &name).await {
                 Ok(()) => ApiResponse::PlaylistRenamed { playlist, name },

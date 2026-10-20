@@ -74,6 +74,16 @@ impl App {
                 item_id,
             } => self.on_removed_from_playlist(playlist, track, item_id),
 
+            ApiResponse::PlaylistItemMoved { playlist, track } => {
+                self.on_playlist_item_moved(playlist, track)
+            }
+
+            ApiResponse::PlaylistItemMoveFailed {
+                playlist,
+                track,
+                error,
+            } => self.on_playlist_item_move_failed(playlist, track, error),
+
             ApiResponse::PlaylistRenamed { playlist, name } => {
                 self.on_playlist_renamed(playlist, name)
             }

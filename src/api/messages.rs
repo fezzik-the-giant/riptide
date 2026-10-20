@@ -138,6 +138,13 @@ pub enum ApiRequest {
         track: Track,
         item_id: String,
     },
+    MovePlaylistItem {
+        playlist: Playlist,
+        track: Track,
+        item_id: String,
+        /// The entry it lands in front of; `None` moves it to the end.
+        before: Option<String>,
+    },
     RenamePlaylist {
         playlist: Playlist,
         name: String,
@@ -290,6 +297,17 @@ pub enum ApiResponse {
         playlist: Playlist,
         track: Track,
         item_id: String,
+    },
+    PlaylistItemMoved {
+        playlist: Playlist,
+        track: Track,
+    },
+    /// Kept apart from `Error` because the row moved locally before the request,
+    /// so the playlist has to be reloaded.
+    PlaylistItemMoveFailed {
+        playlist: Playlist,
+        track: Track,
+        error: String,
     },
     PlaylistRenamed {
         playlist: Playlist,

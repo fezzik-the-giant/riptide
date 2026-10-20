@@ -316,6 +316,16 @@ fn remove_item_body(track_id: u64, item_id: &str) -> serde_json::Value {
         "meta": {"itemId": item_id}}]})
 }
 
+/// Move-to-end drops the whole top-level `meta`, the form verified live.
+fn move_body(track_id: u64, item_id: &str, before: Option<&str>) -> serde_json::Value {
+    let mut body = serde_json::json!({"data": [{"id": track_id.to_string(), "type": "tracks",
+        "meta": {"itemId": item_id}}]});
+    if let Some(before) = before {
+        body["meta"] = serde_json::json!({"positionBefore": before});
+    }
+    body
+}
+
 fn rename_body(uuid: &str, name: &str) -> serde_json::Value {
     serde_json::json!({"data": {"id": uuid, "type": "playlists", "attributes": {"name": name}}})
 }
@@ -396,6 +406,24 @@ impl ApiClient {
         )
         .await?;
         tracing::debug!("removed item {item_id} (track {track_id}) from playlist {uuid}");
+        Ok(())
+    }
+
+    /// `before` is the entry this one lands in front of; `None` moves it to the end.
+    pub async fn move_in_playlist(
+        &self,
+        uuid: &str,
+        track_id: u64,
+        item_id: &str,
+        before: Option<&str>,
+    ) -> Result<()> {
+        self.send_openapi_json(
+            reqwest::Method::PATCH,
+            &format!("/playlists/{uuid}/relationships/items"),
+            Some(&move_body(track_id, item_id, before)),
+        )
+        .await?;
+        tracing::debug!("moved item {item_id} in playlist {uuid} before {before:?}");
         Ok(())
     }
 
@@ -723,6 +751,19 @@ mod tests {
                 ]
             );
         }
+    }
+
+    #[test]
+    fn a_move_names_the_row_it_lands_before_or_none_at_the_end() {
+        assert_eq!(
+            move_body(7, "a", Some("b")),
+            serde_json::json!({"data": [{"id": "7", "type": "tracks", "meta": {"itemId": "a"}}],
+                "meta": {"positionBefore": "b"}})
+        );
+        assert_eq!(
+            move_body(7, "a", None),
+            serde_json::json!({"data": [{"id": "7", "type": "tracks", "meta": {"itemId": "a"}}]})
+        );
     }
 
     #[test]

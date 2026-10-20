@@ -123,5 +123,13 @@ pub(super) fn render_playlist_detail(
         format!(" Tracks ({}) ", detail.tracks.visible_len())
     };
     let tracks_focused = detail.focus == PlaylistDetailFocus::Tracks;
-    render_track_list(f, app, &detail.tracks, tracks_focused, cols[1], &title);
+    render_track_list(
+        f,
+        app,
+        &detail.tracks,
+        tracks_focused,
+        app.playlist_move.as_ref().map(|m| m.item_id.as_str()),
+        cols[1],
+        &title,
+    );
 }

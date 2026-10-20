@@ -101,6 +101,8 @@ pub struct App {
     /// The playlist awaiting a y/n before it is deleted; `Some` keeps the
     /// confirmation open.
     pub delete_confirm: Option<Playlist>,
+    /// `Some` while a row of the open playlist is picked up in move mode.
+    pub playlist_move: Option<PlaylistMove>,
     pub tracks_sort: Option<SortField>,
     pub artists_sort: Option<SortField>,
     pub fav_albums_sort: Option<SortField>,
@@ -223,6 +225,7 @@ impl App {
             playlist_picker: PlaylistPicker::default(),
             name_prompt: NamePrompt::default(),
             delete_confirm: None,
+            playlist_move: None,
             tracks_sort: prefs.tracks_sort,
             artists_sort: prefs.artists_sort,
             fav_albums_sort: prefs.fav_albums_sort,

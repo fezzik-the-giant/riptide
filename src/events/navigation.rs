@@ -43,6 +43,7 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
         PlayPlaylistTracks(Vec<crate::api::models::Track>, usize, String),
         CopyUrl(String),
         RemoveFromPlaylist,
+        StartMove,
     }
 
     let action: Action = if let Some(view) = app.view_stack.last_mut() {
@@ -337,6 +338,7 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
                 }
                 KeyCode::Char('C') => Action::CopyUrl(detail.playlist.share_url()),
                 KeyCode::Char('d') => Action::RemoveFromPlaylist,
+                KeyCode::Char('m') => Action::StartMove,
                 _ => return,
             },
             View::AlbumDetail(detail) => {
@@ -454,6 +456,10 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
         }
         Action::RemoveFromPlaylist => {
             app.remove_selected_from_playlist();
+            return;
+        }
+        Action::StartMove => {
+            app.start_move();
             return;
         }
         Action::None => {}

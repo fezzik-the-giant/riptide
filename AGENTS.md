@@ -563,6 +563,9 @@ code depends on:
   `400 Must not be null`.
 - **Write errors carry `errors[0].detail`.** `send_openapi_json` surfaces it,
   which is what the toast shows.
+- **A move names the entry it lands before.** `PATCH …/relationships/items`
+  with the entry's `meta.itemId` and a top-level `meta.positionBefore`; to move
+  to the end, the whole top-level `meta` is left out (verified that way).
 - **A rename sends only `name`; a delete sends no body.** `PATCH /playlists/{id}`
   leaves the attributes it is not given unchanged, and `DELETE /playlists/{id}`
   was verified bodiless, which is why `send_openapi_json` takes an `Option`.

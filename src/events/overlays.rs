@@ -231,6 +231,18 @@ pub(super) fn handle_delete_confirm_input(app: &mut App, key: KeyEvent) {
     }
 }
 
+/// Like the delete confirmation, everything but the move keys is ignored until
+/// the row is dropped or put back.
+pub(super) fn handle_move_input(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Up => app.step_move(false),
+        KeyCode::Down => app.step_move(true),
+        KeyCode::Enter => app.drop_move(),
+        KeyCode::Esc => app.cancel_move(),
+        _ => {}
+    }
+}
+
 pub(super) fn handle_name_prompt_input(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Esc => app.name_prompt = Default::default(),

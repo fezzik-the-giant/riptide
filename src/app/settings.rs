@@ -14,6 +14,9 @@ impl App {
     /// before the rows arrive — one opened after Atmos was turned off would
     /// otherwise show the very rows the rest of the app is hiding.
     pub(crate) fn push_view(&mut self, view: View) {
+        // A response can push a view while a row is held; drop it back first,
+        // or the playlist underneath keeps an order Tidal never got.
+        self.cancel_move();
         self.view_stack.push(view);
         self.apply_atmos_visibility();
     }

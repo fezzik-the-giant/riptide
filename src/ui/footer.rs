@@ -57,7 +57,9 @@ fn update_notice(app: &App) -> Option<String> {
 }
 
 pub(super) fn get_context_hint(app: &App) -> String {
-    if let Some(View::ArtistDetail(detail)) = app.view_stack.last() {
+    if app.playlist_move.is_some() {
+        "↑↓/jk move · Enter drop · Esc cancel".to_string()
+    } else if let Some(View::ArtistDetail(detail)) = app.view_stack.last() {
         match detail.focus {
             ArtistDetailFocus::Tracks => {
                 "↑↓ Select | ← → Section | a Add | f Fav | r Radio".to_string()
