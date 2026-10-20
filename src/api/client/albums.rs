@@ -89,6 +89,7 @@ fn parse_album_tracks(
                             },
                             media_metadata,
                             added_at: None,
+                            playlist_item_id: None,
                         });
                     }
                 }

@@ -94,5 +94,6 @@ pub(crate) fn track(id: u64) -> crate::api::models::Track {
         },
         media_metadata: None,
         added_at: None,
+        playlist_item_id: None,
     }
 }

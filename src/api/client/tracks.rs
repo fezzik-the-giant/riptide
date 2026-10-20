@@ -114,6 +114,7 @@ fn parse_v2_user_collection_tracks(
                             album,
                             media_metadata: extract_media_metadata(attrs),
                             added_at: added_at_map.get(&track_id).cloned(),
+                            playlist_item_id: None,
                         };
                         tracks.push(track);
                     }
@@ -298,6 +299,7 @@ fn parse_v2_track_details(api_resp: &serde_json::Value) -> Result<(Track, Option
         album,
         media_metadata: None,
         added_at: None,
+        playlist_item_id: None,
     };
 
     Ok((track, cover_url))

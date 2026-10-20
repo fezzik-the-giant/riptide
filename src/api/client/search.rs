@@ -242,6 +242,7 @@ fn parse_search_track_page(api_resp: &serde_json::Value) -> Result<SearchTrackPa
                     },
                     media_metadata,
                     added_at: None,
+                    playlist_item_id: None,
                 };
                 track_map.insert(id, track);
             }

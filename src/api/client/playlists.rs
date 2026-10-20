@@ -84,7 +84,8 @@ pub(super) fn parse_v2_playlist_tracks(
         );
         for item_ref in items_data.iter() {
             if let Some(track_id) = item_ref.get("id").and_then(|v| v.as_str()) {
-                track_ids.push(track_id.to_string());
+                let item_id = item_ref["meta"]["itemId"].as_str().map(str::to_string);
+                track_ids.push((track_id.to_string(), item_id));
             }
         }
     }
@@ -104,7 +105,7 @@ pub(super) fn parse_v2_playlist_tracks(
     let artist_map = build_artist_map(api_resp);
 
     let mut tracks = Vec::new();
-    for track_id in track_ids {
+    for (track_id, item_id) in track_ids {
         if let Some(track_obj) = track_map.get(&track_id) {
             if let Some(attrs) = track_obj.get("attributes").and_then(|v| v.as_object()) {
                 if let Some(title) = attrs.get("title").and_then(|v| v.as_str()) {
@@ -157,6 +158,7 @@ pub(super) fn parse_v2_playlist_tracks(
                             },
                             media_metadata,
                             added_at: None,
+                            playlist_item_id: item_id,
                         });
                     }
                 }
@@ -197,7 +199,8 @@ pub(super) fn parse_playlist_relationship_items(
     if let Some(items_data) = api_resp.get("data").and_then(|v| v.as_array()) {
         for item_ref in items_data.iter() {
             if let Some(track_id) = item_ref.get("id").and_then(|v| v.as_str()) {
-                track_ids.push(track_id.to_string());
+                let item_id = item_ref["meta"]["itemId"].as_str().map(str::to_string);
+                track_ids.push((track_id.to_string(), item_id));
             }
         }
     }
@@ -217,7 +220,7 @@ pub(super) fn parse_playlist_relationship_items(
     let artist_map = build_artist_map(api_resp);
 
     let mut tracks = Vec::new();
-    for track_id in track_ids {
+    for (track_id, item_id) in track_ids {
         if let Some(track_obj) = track_map.get(&track_id) {
             if let Some(attrs) = track_obj.get("attributes").and_then(|v| v.as_object()) {
                 if let Some(title) = attrs.get("title").and_then(|v| v.as_str()) {
@@ -270,6 +273,7 @@ pub(super) fn parse_playlist_relationship_items(
                             },
                             media_metadata,
                             added_at: None,
+                            playlist_item_id: item_id,
                         });
                     }
                 }
@@ -305,6 +309,11 @@ pub(super) fn parse_created_playlist(resp: &serde_json::Value) -> Result<Playlis
         added_at: attrs["createdAt"].as_str().map(String::from),
         playlist_type: attrs["playlistType"].as_str().map(String::from),
     })
+}
+
+fn remove_item_body(track_id: u64, item_id: &str) -> serde_json::Value {
+    serde_json::json!({"data": [{"id": track_id.to_string(), "type": "tracks",
+        "meta": {"itemId": item_id}}]})
 }
 
 /// Reads the outcome for a single-track add. `skipped` is checked first because
@@ -368,6 +377,22 @@ impl ApiClient {
             }
         }
         Ok(outcome)
+    }
+
+    pub async fn remove_from_playlist(
+        &self,
+        uuid: &str,
+        track_id: u64,
+        item_id: &str,
+    ) -> Result<()> {
+        self.send_openapi_json(
+            reqwest::Method::DELETE,
+            &format!("/playlists/{uuid}/relationships/items"),
+            &remove_item_body(track_id, item_id),
+        )
+        .await?;
+        tracing::debug!("removed item {item_id} (track {track_id}) from playlist {uuid}");
+        Ok(())
     }
 
     /// The only reliable ownership signal: a playlist's `owners` relationship
@@ -597,6 +622,14 @@ mod tests {
     /// Live `GET /playlists?filter[owners.id]=me` (2026-10-15), attributes trimmed.
     const OWNED: &str = r#"{"data":[{"id":"8c67ccd0-bd1c-4eae-91d0-c18afa9fa47c","type":"playlists","attributes":{"name":"🔥","playlistType":"USER"}},{"id":"e4658ab2-ac28-41f8-a76b-6fd0b96e1168","type":"playlists","attributes":{"name":"Reya's Jams","playlistType":"USER"}}],"links":{"self":"/playlists?filter%5Bowners.id%5D=me&countryCode=US"}}"#;
 
+    /// Live `GET /playlists/{id}?include=items` shape (2026-10-19), trimmed, holding
+    /// one track twice with the two `itemId`s from the 2026-10-15 duplicates probe.
+    const PARENT_WITH_DUPLICATE: &str = r#"{"data":{"id":"00a62462-018f-4239-b6da-111ef4f50490","type":"playlists","attributes":{"name":"dopeshit","numberOfItems":2},"relationships":{"items":{"data":[{"id":"431291038","type":"tracks","meta":{"itemId":"e2df580f-28c7-49ed-950a-e19cb8d761bd","addedAt":"2026-10-15T18:20:28.091909Z"}},{"id":"431291038","type":"tracks","meta":{"itemId":"95eb7254-0e58-401a-82f5-163c2342821a","addedAt":"2026-10-15T18:20:28.607130Z"}}],"links":{"self":"/playlists/00a62462-018f-4239-b6da-111ef4f50490/relationships/items?countryCode=US"}}}},"included":[{"id":"431291038","type":"tracks","attributes":{"title":"In the Name of the Father","duration":"PT3M47S","mediaTags":["LOSSLESS"]}}]}"#;
+
+    /// Live `GET /playlists/{id}/relationships/items?include=items` shape
+    /// (2026-10-19), trimmed, with the same duplicate.
+    const PAGE_WITH_DUPLICATE: &str = r#"{"data":[{"id":"431291038","type":"tracks","meta":{"itemId":"e2df580f-28c7-49ed-950a-e19cb8d761bd","addedAt":"2026-10-15T18:20:28.091909Z"}},{"id":"431291038","type":"tracks","meta":{"itemId":"95eb7254-0e58-401a-82f5-163c2342821a","addedAt":"2026-10-15T18:20:28.607130Z"}}],"links":{"self":"/playlists/00a62462-018f-4239-b6da-111ef4f50490/relationships/items?include=items&countryCode=US"},"included":[{"id":"431291038","type":"tracks","attributes":{"title":"In the Name of the Father","duration":"PT3M47S"}}]}"#;
+
     fn json(s: &str) -> serde_json::Value {
         serde_json::from_str(s).unwrap()
     }
@@ -643,5 +676,38 @@ mod tests {
             ]
         );
         assert_eq!(next, None);
+    }
+
+    #[test]
+    fn both_playlist_parsers_keep_each_entry_s_item_id() {
+        let (first, ..) = parse_v2_playlist_tracks(&json(PARENT_WITH_DUPLICATE)).unwrap();
+        let (cursor, ..) =
+            parse_playlist_relationship_items(&json(PAGE_WITH_DUPLICATE), 2).unwrap();
+        for tracks in [first, cursor] {
+            assert_eq!(
+                tracks.iter().map(|t| t.id).collect::<Vec<_>>(),
+                [431291038, 431291038]
+            );
+            assert_eq!(
+                tracks
+                    .iter()
+                    .map(|t| t.playlist_item_id.as_deref())
+                    .collect::<Vec<_>>(),
+                [
+                    Some("e2df580f-28c7-49ed-950a-e19cb8d761bd"),
+                    Some("95eb7254-0e58-401a-82f5-163c2342821a")
+                ]
+            );
+        }
+    }
+
+    /// Tidal rejects a remove without `meta.itemId` (`400 Must not be null`).
+    #[test]
+    fn a_remove_names_the_entry_by_item_id() {
+        assert_eq!(
+            remove_item_body(431291038, "e2df580f-28c7-49ed-950a-e19cb8d761bd"),
+            serde_json::json!({"data": [{"id": "431291038", "type": "tracks",
+                "meta": {"itemId": "e2df580f-28c7-49ed-950a-e19cb8d761bd"}}]})
+        );
     }
 }

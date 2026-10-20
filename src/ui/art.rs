@@ -221,6 +221,7 @@ mod tests {
             },
             media_metadata: None,
             added_at: None,
+            playlist_item_id: None,
         });
         t.app.now_playing.position = 60.0;
         t.app.now_playing.duration = 240.0;

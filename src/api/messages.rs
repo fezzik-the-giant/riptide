@@ -133,6 +133,11 @@ pub enum ApiRequest {
         playlist: Playlist,
         track: Track,
     },
+    RemoveFromPlaylist {
+        playlist: Playlist,
+        track: Track,
+        item_id: String,
+    },
     TrackRadio {
         track_id: u64,
     },
@@ -273,6 +278,11 @@ pub enum ApiResponse {
         playlist: Playlist,
         track: Track,
         outcome: AddOutcome,
+    },
+    RemovedFromPlaylist {
+        playlist: Playlist,
+        track: Track,
+        item_id: String,
     },
     RadioTracks {
         tracks: Vec<Track>,

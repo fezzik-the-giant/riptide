@@ -113,6 +113,7 @@ fn parse_radio_response(api_resp: &serde_json::Value) -> Result<Vec<Track>> {
                             },
                             media_metadata,
                             added_at: None,
+                            playlist_item_id: None,
                         });
                     }
                 }

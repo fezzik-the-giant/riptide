@@ -201,6 +201,10 @@ impl KeybindGroup {
                     key: "N",
                     action: "New playlist (Playlists tab)",
                 },
+                Keybind {
+                    key: "d",
+                    action: "Remove track (own playlist view)",
+                },
             ],
         }
     }

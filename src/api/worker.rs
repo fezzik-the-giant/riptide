@@ -403,6 +403,22 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
             }
         }
 
+        ApiRequest::RemoveFromPlaylist {
+            playlist,
+            track,
+            item_id,
+        } => match client
+            .remove_from_playlist(&playlist.uuid, track.id, &item_id)
+            .await
+        {
+            Ok(()) => ApiResponse::RemovedFromPlaylist {
+                playlist,
+                track,
+                item_id,
+            },
+            Err(e) => write_failed(&format!("Couldn't remove from '{}'", playlist.title), &e),
+        },
+
         ApiRequest::TrackRadio { track_id } => match client.get_track_radio(track_id).await {
             Ok(page) => ApiResponse::RadioTracks { tracks: page.items },
             Err(e) => ApiResponse::Error(format!("radio: {e}")),

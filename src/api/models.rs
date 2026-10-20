@@ -181,6 +181,11 @@ pub struct Track {
     pub media_metadata: Option<MediaMetadata>,
     #[serde(default, skip_deserializing)]
     pub added_at: Option<String>,
+    /// The entry's `meta.itemId`, set only on rows loaded from a playlist. A
+    /// playlist can hold a track more than once, and removing or moving one
+    /// copy needs this id rather than the track's.
+    #[serde(default, skip_deserializing)]
+    pub playlist_item_id: Option<String>,
 }
 
 impl Track {

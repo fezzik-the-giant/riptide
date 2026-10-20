@@ -488,6 +488,43 @@ mod tests {
         assert!(t.app.name_prompt.active);
     }
 
+    /// On the Playlists tab `d` removes the playlist from the library; inside
+    /// one of your own playlists it must remove the entry instead.
+    #[test]
+    fn d_inside_your_own_playlist_removes_the_entry_not_the_playlist() {
+        use crate::api::models::{Playlist, Track};
+        let mut t = test_app();
+        t.app.current_tab = Tab::Playlists;
+        let mine = Playlist {
+            uuid: "mine".to_string(),
+            title: "Mine".to_string(),
+            number_of_tracks: Some(1),
+            description: None,
+            cover: None,
+            added_at: None,
+            playlist_type: Some("USER".to_string()),
+        };
+        t.app.playlists.append_page(vec![mine.clone()], None);
+        t.app.owned_playlist_ids.insert("mine".to_string());
+        t.app.open_playlist(mine);
+        if let Some(crate::app::View::PlaylistDetail(d)) = t.app.view_stack.last_mut() {
+            d.tracks.append_page(
+                vec![Track {
+                    playlist_item_id: Some("a".to_string()),
+                    ..crate::app::test_support::track(7)
+                }],
+                None,
+            );
+        }
+        t.drain_api();
+        handle_key(&mut t.app, press('d'));
+        assert!(matches!(
+            t.api_requests().as_slice(),
+            [crate::api::ApiRequest::RemoveFromPlaylist { item_id, .. }] if item_id == "a"
+        ));
+        assert_eq!(t.app.playlists.items.len(), 1);
+    }
+
     fn app_on_artists_tab() -> TestApp {
         let mut t = test_app();
         t.app.current_tab = Tab::Artists;

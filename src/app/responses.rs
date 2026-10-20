@@ -68,6 +68,12 @@ impl App {
                 outcome,
             } => self.on_added_to_playlist(playlist, track, outcome),
 
+            ApiResponse::RemovedFromPlaylist {
+                playlist,
+                track,
+                item_id,
+            } => self.on_removed_from_playlist(playlist, track, item_id),
+
             ApiResponse::Playlists(items, total) => {
                 // A playlist created while this load was in flight is already
                 // listed locally, and Tidal has put it in the collection too.
@@ -1029,6 +1035,7 @@ mod tests {
             },
             media_metadata: None,
             added_at: None,
+            playlist_item_id: None,
         }
     }
 
