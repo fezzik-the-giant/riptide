@@ -36,7 +36,8 @@ pub(super) fn handle_queue_input(app: &mut App, key: KeyEvent) {
             let cursor = app.queue_cursor;
             app.play_from_queue(cursor);
         }
-        KeyCode::Char('d') | KeyCode::Delete => {
+        // Shift+d can arrive as `d` with SHIFT; it is the global delete-playlist key.
+        KeyCode::Char('d') | KeyCode::Delete if !key.modifiers.contains(KeyModifiers::SHIFT) => {
             let cursor = app.queue_cursor;
             app.remove_from_queue(cursor);
         }

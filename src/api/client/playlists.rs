@@ -316,6 +316,10 @@ fn remove_item_body(track_id: u64, item_id: &str) -> serde_json::Value {
         "meta": {"itemId": item_id}}]})
 }
 
+fn rename_body(uuid: &str, name: &str) -> serde_json::Value {
+    serde_json::json!({"data": {"id": uuid, "type": "playlists", "attributes": {"name": name}}})
+}
+
 /// Reads the outcome for a single-track add. `skipped` is checked first because
 /// Tidal answers 200 whether or not it took the track.
 pub(super) fn parse_add_outcome(resp: &serde_json::Value) -> Result<AddOutcome> {
@@ -351,7 +355,7 @@ impl ApiClient {
             "name": name, "description": "", "accessType": "UNLISTED"
         }}});
         let resp = self
-            .send_openapi_json(reqwest::Method::POST, "/playlists", &body)
+            .send_openapi_json(reqwest::Method::POST, "/playlists", Some(&body))
             .await?;
         let playlist = parse_created_playlist(&resp)?;
         tracing::debug!("created playlist {}", playlist.uuid);
@@ -364,7 +368,7 @@ impl ApiClient {
             .send_openapi_json(
                 reqwest::Method::POST,
                 &format!("/playlists/{uuid}/relationships/items"),
-                &body,
+                Some(&body),
             )
             .await?;
         let outcome = parse_add_outcome(&resp)?;
@@ -388,10 +392,30 @@ impl ApiClient {
         self.send_openapi_json(
             reqwest::Method::DELETE,
             &format!("/playlists/{uuid}/relationships/items"),
-            &remove_item_body(track_id, item_id),
+            Some(&remove_item_body(track_id, item_id)),
         )
         .await?;
         tracing::debug!("removed item {item_id} (track {track_id}) from playlist {uuid}");
+        Ok(())
+    }
+
+    /// Attributes left out of the body stay as they are.
+    pub async fn rename_playlist(&self, uuid: &str, name: &str) -> Result<()> {
+        self.send_openapi_json(
+            reqwest::Method::PATCH,
+            &format!("/playlists/{uuid}"),
+            Some(&rename_body(uuid, name)),
+        )
+        .await?;
+        tracing::debug!("renamed playlist {uuid}");
+        Ok(())
+    }
+
+    /// Sent with no body, the form verified live.
+    pub async fn delete_playlist(&self, uuid: &str) -> Result<()> {
+        self.send_openapi_json(reqwest::Method::DELETE, &format!("/playlists/{uuid}"), None)
+            .await?;
+        tracing::debug!("deleted playlist {uuid}");
         Ok(())
     }
 
@@ -699,6 +723,15 @@ mod tests {
                 ]
             );
         }
+    }
+
+    #[test]
+    fn a_rename_sends_only_the_name() {
+        assert_eq!(
+            rename_body("7c56e2bc-d5c3-44ef-adeb-57b5b1327d28", "Road trip"),
+            serde_json::json!({"data": {"id": "7c56e2bc-d5c3-44ef-adeb-57b5b1327d28",
+                "type": "playlists", "attributes": {"name": "Road trip"}}})
+        );
     }
 
     /// Tidal rejects a remove without `meta.itemId` (`400 Must not be null`).

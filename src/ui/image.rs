@@ -30,7 +30,7 @@ struct ProtocolCacheKey {
 /// cannot distinguish "help closed" from "help closed while a toast is still
 /// up", and only the first exposes the cells underneath.
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
-pub(super) struct Overlays(u8);
+pub(super) struct Overlays(u16);
 
 impl Overlays {
     pub(super) const COMMAND: Self = Self(1 << 0);
@@ -41,6 +41,7 @@ impl Overlays {
     pub(super) const SETTINGS: Self = Self(1 << 5);
     pub(super) const PLAYLIST_PICKER: Self = Self(1 << 6);
     pub(super) const NAME_PROMPT: Self = Self(1 << 7);
+    pub(super) const DELETE_CONFIRM: Self = Self(1 << 8);
 
     pub(super) const fn none() -> Self {
         Self(0)

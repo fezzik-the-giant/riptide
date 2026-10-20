@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Fezzik the Giant
 
-//! Creating playlists and filing tracks into the user's own.
+//! Creating, renaming and deleting playlists, and filing tracks into the user's own.
 
 use crate::api::ApiRequest;
 use crate::api::models::{AddOutcome, Playlist, Track};
@@ -9,7 +9,8 @@ use crate::api::models::{AddOutcome, Playlist, Track};
 use crate::search::SearchPane;
 
 use super::{
-    App, ArtistDetailFocus, NamePrompt, PlaylistDetailFocus, PlaylistPicker, StatusLevel, Tab, View,
+    App, ArtistDetailFocus, NamePrompt, NameTarget, PlaylistDetailFocus, PlaylistPicker,
+    StatusLevel, Tab, View,
 };
 
 impl App {
@@ -83,7 +84,44 @@ impl App {
         self.name_prompt = NamePrompt {
             active: true,
             input: String::new(),
-            then_add,
+            target: NameTarget::New { then_add },
+        };
+    }
+
+    /// The playlist a playlist-level command acts on: the open one, or the
+    /// row selected on the Playlists tab.
+    pub(crate) fn playlist_under_cursor(&self) -> Option<Playlist> {
+        if self.queue_focused {
+            return None;
+        }
+        match self.view_stack.last() {
+            Some(View::PlaylistDetail(d)) => Some(d.playlist.clone()),
+            Some(_) => None,
+            None if self.current_tab == Tab::Playlists => self.playlists.selected_item().cloned(),
+            None => None,
+        }
+    }
+
+    pub(crate) fn own_playlist_under_cursor(&mut self) -> Option<Playlist> {
+        let playlist = self.playlist_under_cursor()?;
+        if !self.owned_playlist_ids.contains(&playlist.uuid) {
+            self.set_status(
+                "Only your own playlists can be edited".to_string(),
+                StatusLevel::Info,
+            );
+            return None;
+        }
+        Some(playlist)
+    }
+
+    pub(crate) fn open_rename_prompt(&mut self) {
+        let Some(playlist) = self.own_playlist_under_cursor() else {
+            return;
+        };
+        self.name_prompt = NamePrompt {
+            active: true,
+            input: playlist.title.clone(),
+            target: NameTarget::Rename(playlist),
         };
     }
 
@@ -93,10 +131,12 @@ impl App {
             return;
         }
         let prompt = std::mem::take(&mut self.name_prompt);
-        let _ = self.api_tx.send(ApiRequest::CreatePlaylist {
-            name,
-            then_add: prompt.then_add,
-        });
+        let request = match prompt.target {
+            NameTarget::New { then_add } => ApiRequest::CreatePlaylist { name, then_add },
+            NameTarget::Rename(playlist) if playlist.title == name => return,
+            NameTarget::Rename(playlist) => ApiRequest::RenamePlaylist { playlist, name },
+        };
+        let _ = self.api_tx.send(request);
     }
 
     /// Tidal adds a new playlist to the collection itself, so it joins the
@@ -231,6 +271,56 @@ impl App {
             StatusLevel::Info,
         );
     }
+
+    pub(crate) fn on_playlist_renamed(&mut self, playlist: Playlist, name: String) {
+        if let Some(p) = self
+            .playlists
+            .items
+            .iter_mut()
+            .find(|p| p.uuid == playlist.uuid)
+        {
+            p.title = name.clone();
+            // The re-sort moves rows under a cursor that is only an index.
+            let selected = self.playlists.selected_item().map(|p| p.uuid.clone());
+            self.sort_playlists();
+            if let Some(i) = selected.and_then(|uuid| {
+                self.playlists
+                    .visible_items()
+                    .iter()
+                    .position(|p| p.uuid == uuid)
+            }) {
+                self.playlists.selected = i;
+            }
+        }
+        for view in &mut self.view_stack {
+            if let View::PlaylistDetail(d) = view
+                && d.playlist.uuid == playlist.uuid
+            {
+                d.playlist.title = name.clone();
+            }
+        }
+        self.set_status(format!("Renamed to '{name}'"), StatusLevel::Info);
+    }
+
+    pub(crate) fn open_delete_confirm(&mut self) {
+        self.delete_confirm = self.own_playlist_under_cursor();
+    }
+
+    pub(crate) fn confirm_delete(&mut self) {
+        if let Some(playlist) = self.delete_confirm.take() {
+            let _ = self.api_tx.send(ApiRequest::DeletePlaylist { playlist });
+        }
+    }
+
+    pub(crate) fn on_playlist_deleted(&mut self, playlist: Playlist) {
+        self.playlists.remove_where(|p| p.uuid != playlist.uuid);
+        self.favorite_playlist_ids.remove(&playlist.uuid);
+        self.owned_playlist_ids.remove(&playlist.uuid);
+        self.view_stack.retain(
+            |view| !matches!(view, View::PlaylistDetail(d) if d.playlist.uuid == playlist.uuid),
+        );
+        self.set_status(format!("Deleted '{}'", playlist.title), StatusLevel::Info);
+    }
 }
 
 #[cfg(test)]
@@ -238,7 +328,7 @@ mod tests {
     use crate::api::ApiRequest;
     use crate::api::models::{AddOutcome, Playlist};
     use crate::app::test_support::{TestApp, test_app, track};
-    use crate::app::{StatusLevel, Tab, View};
+    use crate::app::{NameTarget, StatusLevel, Tab, View};
 
     pub(super) fn own(uuid: &str, title: &str) -> Playlist {
         Playlist {
@@ -603,5 +693,145 @@ mod tests {
             },
         );
         assert_eq!(header(&t), Some(3));
+    }
+
+    fn on_playlists_tab_with(p: Playlist, owned: bool) -> TestApp {
+        let mut t = test_app();
+        t.app.current_tab = Tab::Playlists;
+        if owned {
+            t.app.owned_playlist_ids.insert(p.uuid.clone());
+        }
+        t.app.playlists.append_page(vec![p], None);
+        t.drain_api();
+        t
+    }
+
+    #[test]
+    fn r_opens_the_prompt_prefilled_with_the_current_name() {
+        let mut t = on_playlists_tab_with(own("p", "Mine"), true);
+        t.app.open_rename_prompt();
+        assert!(t.app.name_prompt.active);
+        assert_eq!(t.app.name_prompt.input, "Mine");
+        assert!(matches!(&t.app.name_prompt.target, NameTarget::Rename(p) if p.uuid == "p"));
+    }
+
+    #[test]
+    fn renaming_sends_the_new_name_and_applies_it_on_confirm() {
+        let mut t = on_playlists_tab_with(own("p", "Mine"), true);
+        t.app.open_playlist(own("p", "Mine"));
+        t.drain_api();
+        t.app.open_rename_prompt();
+        t.app.name_prompt.input = "  Road trip ".to_string();
+        t.app.submit_name_prompt();
+        assert!(!t.app.name_prompt.active);
+        assert!(matches!(
+            t.api_requests().as_slice(),
+            [ApiRequest::RenamePlaylist { playlist, name }]
+                if playlist.uuid == "p" && name == "Road trip"
+        ));
+        assert_eq!(t.app.playlists.items[0].title, "Mine");
+
+        t.app
+            .on_playlist_renamed(own("p", "Mine"), "Road trip".to_string());
+        assert_eq!(t.app.playlists.items[0].title, "Road trip");
+        let Some(View::PlaylistDetail(d)) = t.app.view_stack.last() else {
+            panic!("detail closed")
+        };
+        assert_eq!(d.playlist.title, "Road trip");
+    }
+
+    #[test]
+    fn renaming_to_the_same_or_a_blank_name_sends_nothing() {
+        let mut t = on_playlists_tab_with(own("p", "Mine"), true);
+        t.app.open_rename_prompt();
+        t.app.name_prompt.input = " Mine ".to_string();
+        t.app.submit_name_prompt();
+        assert!(!t.app.name_prompt.active);
+
+        t.app.open_rename_prompt();
+        t.app.name_prompt.input = "   ".to_string();
+        t.app.submit_name_prompt();
+        assert!(t.app.name_prompt.active);
+        assert!(t.api_requests().is_empty());
+    }
+
+    #[test]
+    fn r_on_someone_elses_playlist_opens_nothing_and_says_why() {
+        let mut t = on_playlists_tab_with(own("p", "Theirs"), false);
+        t.app.open_rename_prompt();
+        assert!(!t.app.name_prompt.active);
+        let (msg, _, _) = t.app.status.clone().unwrap();
+        assert_eq!(msg, "Only your own playlists can be edited");
+    }
+
+    #[test]
+    fn with_the_queue_focused_no_playlist_is_under_the_cursor() {
+        let mut t = on_playlists_tab_with(own("p", "Mine"), true);
+        t.app.queue_focused = true;
+        assert!(t.app.playlist_under_cursor().is_none());
+    }
+
+    #[test]
+    fn d_asks_first_and_deletes_only_on_y() {
+        let mut t = on_playlists_tab_with(own("p", "Mine"), true);
+        t.app.favorite_playlist_ids.insert("p".to_string());
+        t.app.open_delete_confirm();
+        assert!(matches!(&t.app.delete_confirm, Some(p) if p.uuid == "p"));
+        assert!(t.api_requests().is_empty());
+
+        t.app.confirm_delete();
+        assert!(t.app.delete_confirm.is_none());
+        assert!(matches!(
+            t.api_requests().as_slice(),
+            [ApiRequest::DeletePlaylist { playlist }] if playlist.uuid == "p"
+        ));
+        assert_eq!(t.app.playlists.items.len(), 1);
+
+        t.app.on_playlist_deleted(own("p", "Mine"));
+        assert!(t.app.playlists.items.is_empty());
+        assert!(!t.app.favorite_playlist_ids.contains("p"));
+        assert!(!t.app.owned_playlist_ids.contains("p"));
+        let (msg, _, _) = t.app.status.clone().unwrap();
+        assert!(msg.contains("Deleted"), "{msg}");
+    }
+
+    #[test]
+    fn deleting_a_playlist_closes_every_view_of_it_and_nothing_else() {
+        let mut t = on_playlists_tab_with(own("p", "Mine"), true);
+        t.app.open_playlist(own("q", "Other"));
+        t.app.open_playlist(own("p", "Mine"));
+        t.app.open_artist(crate::api::models::Artist {
+            id: 1,
+            name: "Someone".to_string(),
+            added_at: None,
+        });
+        t.app.on_playlist_deleted(own("p", "Mine"));
+        assert!(matches!(
+            t.app.view_stack.as_slice(),
+            [View::PlaylistDetail(q), View::ArtistDetail(_)] if q.playlist.uuid == "q"
+        ));
+    }
+
+    #[test]
+    fn d_on_someone_elses_playlist_asks_nothing() {
+        let mut t = on_playlists_tab_with(own("p", "Theirs"), false);
+        t.app.open_delete_confirm();
+        assert!(t.app.delete_confirm.is_none());
+        let (msg, _, _) = t.app.status.clone().unwrap();
+        assert_eq!(msg, "Only your own playlists can be edited");
+    }
+
+    #[test]
+    fn the_cursor_follows_a_renamed_playlist_to_its_new_place() {
+        let mut t = on_playlists_tab_with(own("z", "Zebra"), true);
+        t.app.playlists.items.insert(0, own("m", "Middle"));
+        t.app.playlists.refilter();
+        t.app.playlists.selected = 1;
+        t.app
+            .on_playlist_renamed(own("z", "Zebra"), "Apple".to_string());
+        assert_eq!(
+            t.app.playlists.selected_item().map(|p| p.uuid.as_str()),
+            Some("z")
+        );
     }
 }

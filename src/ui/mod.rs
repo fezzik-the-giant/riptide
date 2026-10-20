@@ -63,6 +63,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         .with(Overlays::ARTIST_PICKER, app.artist_selection.active)
         .with(Overlays::PLAYLIST_PICKER, app.playlist_picker.active)
         .with(Overlays::NAME_PROMPT, app.name_prompt.active)
+        .with(Overlays::DELETE_CONFIRM, app.delete_confirm.is_some())
         .with(Overlays::HELP, app.help_active)
         .with(Overlays::SETTINGS, app.settings.active)
         .with(Overlays::STATUS, app.status.is_some());
@@ -118,6 +119,10 @@ fn render_overlays(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
 
     if app.name_prompt.active {
         render_name_prompt(f, app, area);
+    }
+
+    if let Some(playlist) = &app.delete_confirm {
+        render_delete_confirm(f, &playlist.title, area);
     }
 
     if app.help_active {

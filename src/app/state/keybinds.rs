@@ -205,6 +205,14 @@ impl KeybindGroup {
                     key: "d",
                     action: "Remove track (own playlist view)",
                 },
+                Keybind {
+                    key: "R",
+                    action: "Rename playlist (your own)",
+                },
+                Keybind {
+                    key: "D",
+                    action: "Delete playlist (your own)",
+                },
             ],
         }
     }

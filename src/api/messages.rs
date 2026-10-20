@@ -138,6 +138,13 @@ pub enum ApiRequest {
         track: Track,
         item_id: String,
     },
+    RenamePlaylist {
+        playlist: Playlist,
+        name: String,
+    },
+    DeletePlaylist {
+        playlist: Playlist,
+    },
     TrackRadio {
         track_id: u64,
     },
@@ -283,6 +290,13 @@ pub enum ApiResponse {
         playlist: Playlist,
         track: Track,
         item_id: String,
+    },
+    PlaylistRenamed {
+        playlist: Playlist,
+        name: String,
+    },
+    PlaylistDeleted {
+        playlist: Playlist,
     },
     RadioTracks {
         tracks: Vec<Track>,

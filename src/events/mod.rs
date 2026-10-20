@@ -325,6 +325,11 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    if app.delete_confirm.is_some() {
+        handle_delete_confirm_input(app, key);
+        return;
+    }
+
     // Fullscreen art is a presentation layer over the active view. Only global
     // controls apply while it is open, so list navigation cannot mutate the
     // view hidden beneath it. It also outranks queue focus so Esc dismisses
@@ -539,6 +544,88 @@ mod tests {
             None,
         );
         t
+    }
+
+    fn playlists_tab_with_one_owned_playlist() -> crate::app::test_support::TestApp {
+        let mut t = test_app();
+        t.app.current_tab = Tab::Playlists;
+        t.app.playlists.append_page(
+            vec![crate::api::models::Playlist {
+                uuid: "mine".to_string(),
+                title: "Mine".to_string(),
+                number_of_tracks: Some(1),
+                description: None,
+                cover: None,
+                added_at: None,
+                playlist_type: Some("USER".to_string()),
+            }],
+            None,
+        );
+        t.app.owned_playlist_ids.insert("mine".to_string());
+        t.drain_api();
+        t
+    }
+
+    #[test]
+    fn the_delete_confirmation_ignores_every_key_but_y_n_and_esc() {
+        let mut t = playlists_tab_with_one_owned_playlist();
+        t.app.open_delete_confirm();
+        for c in ['q', 'd', 'j'] {
+            handle_key(&mut t.app, press(c));
+        }
+        assert!(t.app.delete_confirm.is_some());
+        assert!(!t.app.should_quit);
+        assert!(t.api_requests().is_empty());
+
+        handle_key(&mut t.app, press('n'));
+        assert!(t.app.delete_confirm.is_none());
+        t.app.open_delete_confirm();
+        handle_key(&mut t.app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(t.app.delete_confirm.is_none());
+        assert_eq!(t.app.playlists.items.len(), 1);
+
+        t.app.open_delete_confirm();
+        handle_key(&mut t.app, press('y'));
+        assert!(matches!(
+            t.api_requests().as_slice(),
+            [crate::api::ApiRequest::DeletePlaylist { playlist }] if playlist.uuid == "mine"
+        ));
+    }
+
+    /// Some terminals spell Shift+d as `d` carrying SHIFT; the bare `d` on the
+    /// Playlists tab removes the playlist from the library, and `r` starts radio.
+    #[test]
+    fn shift_r_and_shift_d_never_fall_through_to_radio_or_library_removal() {
+        let mut t = playlists_tab_with_one_owned_playlist();
+        handle_key(
+            &mut t.app,
+            KeyEvent::new(KeyCode::Char('d'), KeyModifiers::SHIFT),
+        );
+        assert!(t.app.delete_confirm.is_some());
+        assert!(t.api_requests().is_empty());
+        assert_eq!(t.app.playlists.items.len(), 1);
+
+        let mut t = favorites_with_one_owned_playlist();
+        t.drain_api();
+        handle_key(
+            &mut t.app,
+            KeyEvent::new(KeyCode::Char('r'), KeyModifiers::SHIFT),
+        );
+        assert!(t.api_requests().is_empty());
+    }
+
+    #[test]
+    fn shift_d_in_the_focused_queue_removes_nothing() {
+        use crate::app::test_support::track;
+        let mut t = test_app();
+        t.app.now_playing.queue = vec![track(1), track(7)];
+        t.app.queue_cursor = 1;
+        t.app.queue_focused = true;
+        handle_key(
+            &mut t.app,
+            KeyEvent::new(KeyCode::Char('d'), KeyModifiers::SHIFT),
+        );
+        assert_eq!(t.app.now_playing.queue.len(), 2);
     }
 
     fn press(c: char) -> KeyEvent {

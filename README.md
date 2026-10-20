@@ -481,6 +481,8 @@ It stays applied when you switch tabs, and `Esc` clears it from anywhere on the 
 | `P` | Add the track under the cursor to one of your playlists, or to a new one |
 | `N` | New playlist (Playlists tab)                                             |
 | `d` | Remove the track under the cursor (inside one of your own playlists)     |
+| `R` | Rename one of your own playlists (Playlists tab, or its own view)        |
+| `D` | Delete one of your own playlists, after a `y`/`n` confirmation           |
 
 The vim directions work anywhere a list does, including the queue, the detail
 views and the help modal — but not while a text box is open, where they are

@@ -98,6 +98,9 @@ pub struct App {
     pub artist_selection: ArtistSelection,
     pub playlist_picker: PlaylistPicker,
     pub name_prompt: NamePrompt,
+    /// The playlist awaiting a y/n before it is deleted; `Some` keeps the
+    /// confirmation open.
+    pub delete_confirm: Option<Playlist>,
     pub tracks_sort: Option<SortField>,
     pub artists_sort: Option<SortField>,
     pub fav_albums_sort: Option<SortField>,
@@ -219,6 +222,7 @@ impl App {
             artist_selection: ArtistSelection::default(),
             playlist_picker: PlaylistPicker::default(),
             name_prompt: NamePrompt::default(),
+            delete_confirm: None,
             tracks_sort: prefs.tracks_sort,
             artists_sort: prefs.artists_sort,
             fav_albums_sort: prefs.fav_albums_sort,

@@ -14,7 +14,7 @@ use ratatui::{
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::*;
-use crate::app::App;
+use crate::app::{App, NameTarget};
 
 /// Floor for the update modal so short states keep the roomy look they had
 /// before the box started sizing itself to its content.
@@ -215,6 +215,7 @@ fn picker_scroll(selected: usize, visible: usize) -> usize {
 
 const PLAYLIST_PICKER_W: u16 = 48;
 const NAME_PROMPT_W: u16 = 44;
+const DELETE_CONFIRM_W: u16 = 60;
 const NEW_PLAYLIST_ROW: &str = "+ New playlist…";
 
 pub(super) fn render_playlist_picker(f: &mut Frame, app: &App, area: Rect) {
@@ -282,7 +283,10 @@ pub(super) fn render_name_prompt(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Clear, overlay);
     let block = Block::default()
         .title(Span::styled(
-            " new playlist ",
+            match app.name_prompt.target {
+                NameTarget::Rename(_) => " rename playlist ",
+                NameTarget::New { .. } => " new playlist ",
+            },
             Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
@@ -403,6 +407,45 @@ fn highlight_spans(text: &str, query: &str, base: Style, hl: Style) -> Vec<Span<
         ));
     }
     spans
+}
+
+pub(super) fn render_delete_confirm(f: &mut Frame, name: &str, area: Rect) {
+    const BEFORE: &str = "Delete \"";
+    const AFTER: &str = "\"? This can't be undone.";
+    let box_w = DELETE_CONFIRM_W.min(area.width.saturating_sub(4));
+    let box_h: u16 = 4;
+    let x = area.x + area.width.saturating_sub(box_w) / 2;
+    let y = area.y + area.height.saturating_sub(box_h) / 2;
+    let overlay = Rect::new(x, y, box_w.min(area.width), box_h.min(area.height));
+
+    f.render_widget(Clear, overlay);
+    let block = Block::default()
+        .title(Span::styled(
+            " delete playlist ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(ACCENT));
+    let inner = block.inner(overlay);
+    f.render_widget(block, overlay);
+
+    let name_w = (inner.width as usize).saturating_sub(2 + BEFORE.len() + AFTER.len());
+    let question = format!("{BEFORE}{}{AFTER}", ellipsize(name, name_w as u16));
+    f.render_widget(
+        Paragraph::new(vec![
+            Line::from(Span::styled(question, Style::default().fg(Color::White))),
+            Line::from(Span::styled(
+                "y delete · n cancel",
+                Style::default().fg(DIM),
+            )),
+        ]),
+        Rect::new(
+            inner.x + 1,
+            inner.y,
+            inner.width.saturating_sub(1),
+            inner.height,
+        ),
+    );
 }
 
 /// Keep the end of `text` in view. A filter box must show the characters just

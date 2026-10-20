@@ -110,6 +110,15 @@ pub(super) fn handle_global_key(app: &mut App, key: KeyEvent) -> bool {
         {
             app.open_name_prompt(None);
         }
+        // No context guard: outside a playlist this does nothing, which beats
+        // falling through to the bare `r` (radio).
+        KeyCode::Char('R') | KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            app.open_rename_prompt();
+        }
+        // Unguarded for the same reason, against the bare `d` (remove from library).
+        KeyCode::Char('D') | KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            app.open_delete_confirm();
+        }
         KeyCode::Char('n') => app.next_track(),
         KeyCode::Char('p') => app.prev_track(),
         KeyCode::Char('z') => app.toggle_shuffle(),

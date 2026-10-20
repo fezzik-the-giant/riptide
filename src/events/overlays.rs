@@ -221,6 +221,16 @@ pub(super) fn handle_playlist_picker_input(app: &mut App, key: KeyEvent) {
     }
 }
 
+/// Only an explicit answer counts: a stray `q` or `d` here must neither quit
+/// nor delete.
+pub(super) fn handle_delete_confirm_input(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Char('y') | KeyCode::Char('Y') => app.confirm_delete(),
+        KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => app.delete_confirm = None,
+        _ => {}
+    }
+}
+
 pub(super) fn handle_name_prompt_input(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Esc => app.name_prompt = Default::default(),

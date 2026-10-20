@@ -74,6 +74,12 @@ impl App {
                 item_id,
             } => self.on_removed_from_playlist(playlist, track, item_id),
 
+            ApiResponse::PlaylistRenamed { playlist, name } => {
+                self.on_playlist_renamed(playlist, name)
+            }
+
+            ApiResponse::PlaylistDeleted { playlist } => self.on_playlist_deleted(playlist),
+
             ApiResponse::Playlists(items, total) => {
                 // A playlist created while this load was in flight is already
                 // listed locally, and Tidal has put it in the collection too.

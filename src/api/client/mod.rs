@@ -269,19 +269,19 @@ impl ApiClient {
         &self,
         method: reqwest::Method,
         path: &str,
-        body: &serde_json::Value,
+        body: Option<&serde_json::Value>,
     ) -> Result<serde_json::Value> {
         let token = self.access_token().await?;
         let url = format!("{OPENAPI_BASE}{path}");
-        let resp = self
+        let mut req = self
             .http
             .request(method, &url)
             .bearer_auth(&token)
-            .query(&[("countryCode", &self.config.country_code)])
-            .json(body)
-            .send()
-            .await
-            .context("openapi write failed")?;
+            .query(&[("countryCode", &self.config.country_code)]);
+        if let Some(body) = body {
+            req = req.json(body);
+        }
+        let resp = req.send().await.context("openapi write failed")?;
         let status = resp.status();
         let bytes = resp.bytes().await?;
         if !status.is_success() {

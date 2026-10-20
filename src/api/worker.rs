@@ -419,6 +419,20 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
             Err(e) => write_failed(&format!("Couldn't remove from '{}'", playlist.title), &e),
         },
 
+        ApiRequest::RenamePlaylist { playlist, name } => {
+            match client.rename_playlist(&playlist.uuid, &name).await {
+                Ok(()) => ApiResponse::PlaylistRenamed { playlist, name },
+                Err(e) => write_failed(&format!("Couldn't rename '{}'", playlist.title), &e),
+            }
+        }
+
+        ApiRequest::DeletePlaylist { playlist } => {
+            match client.delete_playlist(&playlist.uuid).await {
+                Ok(()) => ApiResponse::PlaylistDeleted { playlist },
+                Err(e) => write_failed(&format!("Couldn't delete '{}'", playlist.title), &e),
+            }
+        }
+
         ApiRequest::TrackRadio { track_id } => match client.get_track_radio(track_id).await {
             Ok(page) => ApiResponse::RadioTracks { tracks: page.items },
             Err(e) => ApiResponse::Error(format!("radio: {e}")),

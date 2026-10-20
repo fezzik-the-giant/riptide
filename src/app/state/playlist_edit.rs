@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Fezzik the Giant
 
-//! Overlay state for filing a track into a playlist.
+//! Overlay state for filing a track into a playlist and naming one.
 
 use crate::api::models::{Playlist, Track};
 
@@ -22,11 +22,24 @@ impl PlaylistPicker {
     }
 }
 
+pub enum NameTarget {
+    /// `then_add` is set when the prompt was opened from the picker, so the
+    /// new playlist receives the track it was made for.
+    New {
+        then_add: Option<Track>,
+    },
+    Rename(Playlist),
+}
+
+impl Default for NameTarget {
+    fn default() -> Self {
+        NameTarget::New { then_add: None }
+    }
+}
+
 #[derive(Default)]
 pub struct NamePrompt {
     pub active: bool,
     pub input: String,
-    /// Set when the prompt was opened from the picker, so the new playlist
-    /// receives the track it was made for.
-    pub then_add: Option<Track>,
+    pub target: NameTarget,
 }
