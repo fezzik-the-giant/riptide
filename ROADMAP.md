@@ -5,7 +5,18 @@ here is committed to a release; the point is that a later session can pick one
 up without re-deriving the gap.
 
 No entry is ever deleted. A candidate that ships moves to `## Shipped` with its
-version; one that is ruled out moves to `## Considered and Rejected` with the
+version; one that is ruled out moves to `### Seek from the keyboard
+
+**Issue:** [#58](https://github.com/fezzik-the-giant/riptide/issues/58) — `Done`
+**Version:** next release (under `[Unreleased]` in `CHANGELOG.md`).
+
+`,` / `.` seek 5 s and `<` / `>` 30 s, bound in `handle_global_key`
+(`src/events/global.rs`) so they work with the queue focused and in fullscreen
+art. The arrows were ruled out because `←` / `→` already switch carousel tabs
+and focus the queue. The keys call `App::seek_by_us`, the MPRIS path, so seeking
+past the end moves on to the next track exactly as `playerctl` does.
+
+## Considered and Rejected` with the
 reason. Left under `## Candidates`, either one gets proposed again by a session
 that has no way to know it was already settled.
 
@@ -58,19 +69,6 @@ Is Not the Queue" in `AGENTS.md`. Repeat-track means `SetNext` queues the stream
 that is already playing, and repeat-queue means the track after the last one is
 the first one, which `TrackEnded` currently treats as the end. The `FakeMpv`
 tests in `src/app/playback.rs` are where that gets proven.
-
-### Seek from the keyboard
-
-**Issue:** [#58](https://github.com/fezzik-the-giant/riptide/issues/58) — `In progress`
-
-`PlayerCmd::SeekAbsolute` (`src/player.rs`) exists, `App::seek_by_us`
-(`src/app/playback.rs`) drives it, and the only caller is `MprisCmd::Seek` in
-`src/events/mod.rs`. So `playerctl position 30+` seeks and the keyboard cannot.
-No seek row appears anywhere in the help modal.
-
-Smallest item here. The real question is which keys: `←` / `→` switch carousel
-tabs, so seek needs something else — `,` / `.`, `[` / `]`, or a modifier on the
-arrows.
 
 ### Resume the last session
 
