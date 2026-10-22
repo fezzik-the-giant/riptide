@@ -43,7 +43,7 @@ touch, touch the other before you move on.
 
 ### Repeat / loop mode
 
-**Issue:** [#56](https://github.com/fezzik-the-giant/riptide/issues/56) — `In progress`
+**Issue:** [#56](https://github.com/fezzik-the-giant/riptide/issues/56) — `In review`
 
 Shuffle is a persisted preference with a keybind, a settings row and an MPRIS
 property. Repeat is absent everywhere: `loop_status` in `src/mpris.rs` returns a
