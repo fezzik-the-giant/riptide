@@ -122,6 +122,10 @@ pub(super) fn handle_global_key(app: &mut App, key: KeyEvent) -> bool {
         KeyCode::Char('D') | KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::SHIFT) => {
             app.open_delete_confirm();
         }
+        // Before the bare `z`, for the same reason as Shift+p above.
+        KeyCode::Char('Z') | KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            app.cycle_repeat();
+        }
         KeyCode::Char('n') => app.next_track(),
         KeyCode::Char('p') => app.prev_track(),
         KeyCode::Char('z') => app.toggle_shuffle(),

@@ -9,6 +9,7 @@
 pub enum Setting {
     Atmos,
     Shuffle,
+    Repeat,
     QueuePanel,
     Visualizer,
     Volume,
@@ -16,9 +17,10 @@ pub enum Setting {
 }
 
 impl Setting {
-    pub const ALL: [Setting; 6] = [
+    pub const ALL: [Setting; 7] = [
         Setting::Atmos,
         Setting::Shuffle,
+        Setting::Repeat,
         Setting::QueuePanel,
         Setting::Visualizer,
         Setting::Volume,
@@ -29,6 +31,7 @@ impl Setting {
         match self {
             Setting::Atmos => "Dolby Atmos",
             Setting::Shuffle => "Shuffle",
+            Setting::Repeat => "Repeat",
             Setting::QueuePanel => "Queue panel",
             Setting::Visualizer => "Visualizer",
             Setting::Volume => "Volume",
@@ -43,6 +46,7 @@ impl Setting {
         match self {
             Setting::Atmos => "Atmos mixes stream as E-AC-3; off plays the stereo master as FLAC",
             Setting::Shuffle => "Shuffles the current queue, keeping the playing track first",
+            Setting::Repeat => "Replays the whole queue or just the playing track",
             Setting::QueuePanel => "Show the queue alongside the library",
             Setting::Visualizer => "Spectrum above the progress bar; needs cava installed",
             Setting::Volume => "← → adjusts by 5%",

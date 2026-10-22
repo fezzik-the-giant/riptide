@@ -38,9 +38,10 @@ A terminal UI music player for Tidal, built with Rust.
 - Progress bar with an optional music-reactive spectrum above it, drawn from [CAVA](https://github.com/karlstav/cava)
 - Sort any library list by name, artist, or date added — your choice is remembered between sessions and shown in the
   list header
-- Volume, shuffle, and queue visibility persist across restarts
+- Repeat the whole queue or just the playing track
+- Volume, shuffle, repeat, and queue visibility persist across restarts
 - MPRIS support — media keys, `playerctl`, and desktop widgets see track metadata and album art and can control
-  playback, volume, seeking, and shuffle
+  playback, volume, seeking, shuffle, and repeat
 
 ## Requirements
 
@@ -267,6 +268,7 @@ It is created automatically on first run. Example:
     "playlists_sort": null,
     "volume": 80,
     "shuffle": false,
+    "repeat": "off",
     "queue_visible": true,
     "visualizer_mode": "off"
   }
@@ -305,6 +307,7 @@ optional — a config from an older version loads fine and picks up the defaults
 | `tracks_sort`, `artists_sort`, `fav_albums_sort`, `playlists_sort` | `"Alphabetical"`, `"LastAdded"`, `"ByArtist"`, or `null` | `null` (A–Z) |
 | `volume`                                                              | `0`–`100`                                                | `100`        |
 | `shuffle`                                                             | `true` / `false`                                         | `false`      |
+| `repeat`                                                              | `"off"`, `"queue"`, `"track"`                            | `"off"`      |
 | `queue_visible`                                                       | `true` / `false`                                         | `true`       |
 | `atmos`                                                               | `true` / `false`                                         | `false`      |
 | `visualizer_mode`                                                     | `"off"`, `"bars"`, `"outline"`, `"columns"`, `"bricks"`, `"dots"`, `"butterfly"` | `"off"` |
@@ -425,6 +428,7 @@ Press `?` in the player to view all keybinds. Here's the complete reference:
 | `, or .`    | Seek back/forward 5s |
 | `< or >`    | Seek back/forward 30s |
 | `z`         | Toggle shuffle  |
+| `Z`         | Cycle repeat: off, queue, track |
 | `t`         | Show/hide queue |
 | `v`         | Cycle visualizer |
 | `V`         | Turn visualizer off |
@@ -438,7 +442,7 @@ These work everywhere, including while the queue is focused.
 
 ### Settings
 
-`Shift+S` opens the settings modal: Dolby Atmos, shuffle, the queue panel,
+`Shift+S` opens the settings modal: Dolby Atmos, shuffle, repeat, the queue panel,
 the visualizer, volume and Last.fm scrobbling, over a read-only summary of the signed-in
 account. `↑↓` moves, `←→` changes the selected row, `Enter` flips a toggle and
 `Esc` closes. Changes apply immediately and are saved when Riptide exits.
@@ -557,11 +561,12 @@ playerctl -p riptide next
 playerctl -p riptide position 30          # seek to 0:30
 playerctl -p riptide volume 0.5           # 50%
 playerctl -p riptide shuffle On
+playerctl -p riptide loop Track           # None, Playlist or Track
 playerctl -p riptide metadata mpris:artUrl
 ```
 
-Track metadata (title, all artists, album, cover art URL, duration), playback status, position, volume, and shuffle
-are all live, and changes are signalled to clients only when something actually changed. If a second riptide instance
+Track metadata (title, all artists, album, cover art URL, duration), playback status, position, volume, shuffle and
+loop status are all live, and changes are signalled to clients only when something actually changed. If a second riptide instance
 is started it serves under `org.mpris.MediaPlayer2.riptide.instance<pid>` instead of taking the name over.
 
 ## Image Rendering

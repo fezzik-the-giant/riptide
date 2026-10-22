@@ -48,6 +48,8 @@ pub struct Preferences {
     pub volume: u8,
     #[serde(default)]
     pub shuffle: bool,
+    #[serde(default)]
+    pub repeat: RepeatMode,
     #[serde(default = "default_queue_visible")]
     pub queue_visible: bool,
     /// Stream Dolby Atmos mixes where Tidal has them.
@@ -77,6 +79,7 @@ impl Default for Preferences {
             playlists_sort: None,
             volume: default_volume(),
             shuffle: false,
+            repeat: RepeatMode::Off,
             queue_visible: default_queue_visible(),
             atmos: false,
             visualizer_mode: VisualizerMode::Off,

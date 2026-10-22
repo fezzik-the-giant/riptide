@@ -468,7 +468,7 @@ impl App {
                 let is_source = self.now_playing.source_playlist_uuid.as_deref() == Some(&uuid);
                 if is_source {
                     let qi = self.now_playing.queue_index;
-                    let old_next_id = self.now_playing.queue.get(qi + 1).map(|t| t.id);
+                    let old_next_id = self.now_playing.next_up_id();
 
                     if self.now_playing.shuffle {
                         self.now_playing.original_queue.extend(tracks.clone());
@@ -511,7 +511,7 @@ impl App {
 
                     // A shuffled insert can land directly after the current track, so
                     // it is not enough to check whether the queue merely grew past it.
-                    if self.now_playing.queue.get(qi + 1).map(|t| t.id) != old_next_id {
+                    if self.now_playing.next_up_id() != old_next_id {
                         self.replace_prefetched_next();
                     }
                 }
@@ -634,20 +634,18 @@ impl App {
                 track_id,
                 url,
                 delivered,
+                prefetch,
             } => {
                 let idx = self.now_playing.queue_index;
-                // A queue can hold the same track twice in a row — a duplicated
-                // favourite, or just pressing `a` on what is already playing — and
-                // the response carries only an id, so "this is the current track"
-                // and "this is the prefetch" look identical. Every path that
-                // genuinely wants playback to start clears `active` first, so an id
-                // match while that track is still playing must be the prefetch.
-                // Treating it as the current track re-issues `Play`, which restarts
-                // the song and requests the URL again, looping until Tidal answers
-                // 429.
+                // Every path that genuinely wants playback to start clears `active`
+                // first, so a response for the track already playing is a stale
+                // duplicate. Treating it as the current track re-issues `Play`,
+                // which restarts the song and requests the URL again, looping until
+                // Tidal answers 429.
                 let already_playing = self.now_playing.active
                     && self.now_playing.track.as_ref().map(|t| t.id) == Some(track_id);
-                if self.now_playing.queue.get(idx).map(|t| t.id) == Some(track_id)
+                if !prefetch
+                    && self.now_playing.queue.get(idx).map(|t| t.id) == Some(track_id)
                     && !already_playing
                 {
                     self.now_playing.play_pending = None;
@@ -678,10 +676,11 @@ impl App {
                     self.now_playing.delivered = delivered;
                     self.now_playing.next_prefetched = None;
                     self.now_playing.mpv_exhausted = false;
-                    if let Some(next) = self.now_playing.queue.get(idx + 1) {
-                        self.resolve_stream(next.id);
+                    if let Some(next) = self.now_playing.next_up_id() {
+                        self.resolve_prefetch(next);
                     }
-                } else if self.now_playing.queue.get(idx + 1).map(|t| t.id) == Some(track_id)
+                } else if prefetch
+                    && self.now_playing.next_up_id() == Some(track_id)
                     && !self.now_playing.mpv_exhausted
                 {
                     // Only queue behind media mpv still has loaded — see the field's
@@ -885,8 +884,7 @@ impl App {
                 self.push_mpris_state();
             }
             PlayerEvent::TrackEnded => {
-                let next_idx = self.now_playing.queue_index + 1;
-                if next_idx < self.now_playing.queue.len() {
+                if let Some(next_idx) = self.now_playing.next_index() {
                     // mpv rolls over to whatever it had prefetched, which is only the
                     // track we are about to display if that is what we appended. When
                     // it is not, the two sides have diverged — re-resolve the track so
@@ -912,8 +910,8 @@ impl App {
                         if let Some(current) = self.now_playing.queue.get(next_idx) {
                             self.resolve_stream(current.id);
                         }
-                    } else if let Some(next) = self.now_playing.queue.get(next_idx + 1) {
-                        self.resolve_stream(next.id);
+                    } else if let Some(next) = self.now_playing.next_up_id() {
+                        self.resolve_prefetch(next);
                     }
 
                     if let Some(current) = self.now_playing.queue.get(next_idx) {

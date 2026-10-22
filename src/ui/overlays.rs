@@ -1051,6 +1051,7 @@ mod tests {
         for (label, value) in [
             ("Dolby Atmos", "off"),
             ("Shuffle", "off"),
+            ("Repeat", "off"),
             ("Queue panel", "on"),
             ("Volume", "100%"),
             ("Last.fm scrobbling", "run riptide --lastfm-auth"),
@@ -1072,7 +1073,7 @@ mod tests {
     /// below the list is context; the settings themselves are the modal.
     #[test]
     fn settings_modal_drops_its_footer_before_its_rows() {
-        let text = render_modal(&settings_app(), 80, 10);
+        let text = render_modal(&settings_app(), 80, 11);
 
         assert!(
             text.contains("Last.fm scrobbling"),
