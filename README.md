@@ -422,6 +422,8 @@ Press `?` in the player to view all keybinds. Here's the complete reference:
 | `Space`     | Play/Pause      |
 | `n`         | Next track      |
 | `p`         | Previous track  |
+| `, or .`    | Seek back/forward 5s |
+| `< or >`    | Seek back/forward 30s |
 | `z`         | Toggle shuffle  |
 | `t`         | Show/hide queue |
 | `v`         | Cycle visualizer |

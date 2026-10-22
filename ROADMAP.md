@@ -61,7 +61,7 @@ tests in `src/app/playback.rs` are where that gets proven.
 
 ### Seek from the keyboard
 
-**Issue:** [#58](https://github.com/fezzik-the-giant/riptide/issues/58) — `Backlog`
+**Issue:** [#58](https://github.com/fezzik-the-giant/riptide/issues/58) — `In progress`
 
 `PlayerCmd::SeekAbsolute` (`src/player.rs`) exists, `App::seek_by_us`
 (`src/app/playback.rs`) drives it, and the only caller is `MprisCmd::Seek` in

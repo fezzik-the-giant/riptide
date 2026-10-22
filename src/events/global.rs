@@ -9,6 +9,9 @@ use super::*;
 use crate::app::{App, View};
 use crate::player::PlayerCmd;
 
+const SEEK_NUDGE_US: i64 = 5_000_000;
+const SEEK_JUMP_US: i64 = 30_000_000;
+
 pub(super) fn kitty_delete_album_art() {
     if std::env::var("KITTY_WINDOW_ID").is_ok() {
         use std::io::Write;
@@ -152,6 +155,11 @@ pub(super) fn handle_global_key(app: &mut App, key: KeyEvent) -> bool {
             }
             app.go_back();
         }
+        // Not the arrows: ←/→ already switch carousel tabs and focus the queue.
+        KeyCode::Char(',') => app.seek_by_us(-SEEK_NUDGE_US),
+        KeyCode::Char('.') => app.seek_by_us(SEEK_NUDGE_US),
+        KeyCode::Char('<') => app.seek_by_us(-SEEK_JUMP_US),
+        KeyCode::Char('>') => app.seek_by_us(SEEK_JUMP_US),
         KeyCode::Char('+') | KeyCode::Char('=') => {
             let _ = app.player_tx.send(PlayerCmd::ChangeVolume(5));
         }
@@ -300,5 +308,21 @@ mod tests {
         );
 
         assert!(!t.app.filter_active);
+    }
+
+    #[test]
+    fn comma_period_and_angle_brackets_seek_the_playing_track() {
+        let mut t = test_app();
+        t.app.now_playing.active = true;
+        t.app.now_playing.duration = 200.0;
+        t.app.now_playing.position = 60.0;
+
+        for (c, expected) in [('.', 65.0), (',', 60.0), ('>', 90.0), ('<', 60.0)] {
+            assert!(handle_global_key(
+                &mut t.app,
+                KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE),
+            ));
+            assert_eq!(t.app.now_playing.position, expected, "after {c}");
+        }
     }
 }

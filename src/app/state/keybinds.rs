@@ -146,6 +146,14 @@ impl KeybindGroup {
                     action: "Previous track",
                 },
                 Keybind {
+                    key: ", or .",
+                    action: "Seek back/forward 5s",
+                },
+                Keybind {
+                    key: "< or >",
+                    action: "Seek back/forward 30s",
+                },
+                Keybind {
                     key: "z",
                     action: "Toggle shuffle",
                 },
