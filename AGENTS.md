@@ -475,8 +475,17 @@ The design that satisfies both:
 - **`now_playing.mpv_exhausted`** gates every `SetNext`. Nothing may be appended
   once mpv has run out of playlist.
 - **`now_playing.next_prefetched`** records what mpv actually holds.
-  `PlayerEvent::TrackEnded` compares it against `queue[queue_index + 1]` and
+  `PlayerEvent::TrackEnded` compares it against the entry `next_index()` names and
   replays the track instead of advancing blindly when they disagree.
+- **`NowPlaying::next_index()` is the only answer to "what follows".** It applies
+  the repeat mode — the first entry after the last under repeat queue, the current
+  one under repeat track — so prefetching and advancing cannot disagree about it.
+  Never compute `queue_index + 1` for that; `n`/`p` use `skip_index()`, because
+  repeat track governs a track that ends, not a skip.
+- **A stream request says whether it is the prefetch**, and `StreamUrl` echoes
+  it. Under repeat track the prefetch names the very track whose `Play` is still
+  loading, and mpv's `file-loaded` can land after that response; matching on the
+  id alone took it for the current track and restarted the song.
 - **`PlayerCmd::Play`** (`loadfile replace`) is the resync point — it resets the
   playlist to one entry at position 0. Explicit actions (next/prev/play-from-queue)
   all route through it, which is why they never desync, and why bugs here only

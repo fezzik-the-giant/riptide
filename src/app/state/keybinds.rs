@@ -158,6 +158,10 @@ impl KeybindGroup {
                     action: "Toggle shuffle",
                 },
                 Keybind {
+                    key: "Z",
+                    action: "Cycle repeat: off, queue, track",
+                },
+                Keybind {
                     key: "Alt+f",
                     action: "Favorite playing track",
                 },

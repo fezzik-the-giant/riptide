@@ -5,18 +5,7 @@ here is committed to a release; the point is that a later session can pick one
 up without re-deriving the gap.
 
 No entry is ever deleted. A candidate that ships moves to `## Shipped` with its
-version; one that is ruled out moves to `### Seek from the keyboard
-
-**Issue:** [#58](https://github.com/fezzik-the-giant/riptide/issues/58) — `Done`
-**Version:** next release (under `[Unreleased]` in `CHANGELOG.md`).
-
-`,` / `.` seek 5 s and `<` / `>` 30 s, bound in `handle_global_key`
-(`src/events/global.rs`) so they work with the queue focused and in fullscreen
-art. The arrows were ruled out because `←` / `→` already switch carousel tabs
-and focus the queue. The keys call `App::seek_by_us`, the MPRIS path, so seeking
-past the end moves on to the next track exactly as `playerctl` does.
-
-## Considered and Rejected` with the
+version; one that is ruled out moves to `## Considered and Rejected` with the
 reason. Left under `## Candidates`, either one gets proposed again by a session
 that has no way to know it was already settled.
 
@@ -54,7 +43,7 @@ touch, touch the other before you move on.
 
 ### Repeat / loop mode
 
-**Issue:** [#56](https://github.com/fezzik-the-giant/riptide/issues/56) — `Backlog`
+**Issue:** [#56](https://github.com/fezzik-the-giant/riptide/issues/56) — `In progress`
 
 Shuffle is a persisted preference with a keybind, a settings row and an MPRIS
 property. Repeat is absent everywhere: `loop_status` in `src/mpris.rs` returns a
@@ -198,6 +187,17 @@ filled from any track row (`P`), and edited: `d` removes an entry, `m` moves one
 first; the facts the code depends on are in `AGENTS.md` under "Playlist Editing —
 Verified API". Ownership comes from a separate `filter[owners.id]=me` request,
 which is also what the Playlists tab's `Yours` badge reads.
+
+### Seek from the keyboard
+
+**Issue:** [#58](https://github.com/fezzik-the-giant/riptide/issues/58) — `Done`
+**Version:** next release (under `[Unreleased]` in `CHANGELOG.md`).
+
+`,` / `.` seek 5 s and `<` / `>` 30 s, bound in `handle_global_key`
+(`src/events/global.rs`) so they work with the queue focused and in fullscreen
+art. The arrows were ruled out because `←` / `→` already switch carousel tabs
+and focus the queue. The keys call `App::seek_by_us`, the MPRIS path, so seeking
+past the end moves on to the next track exactly as `playerctl` does.
 
 ## Considered and Rejected
 

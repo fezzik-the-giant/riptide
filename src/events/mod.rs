@@ -181,6 +181,7 @@ pub fn run_app(
                     app.set_volume_percent((v.clamp(0.0, 1.0) * 100.0).round() as u8)
                 }
                 MprisCmd::SetShuffle(on) => app.set_shuffle(on),
+                MprisCmd::SetRepeat(mode) => app.set_repeat(mode),
                 MprisCmd::Seek(offset_us) => app.seek_by_us(offset_us),
                 MprisCmd::SetPosition(track_id, position_us) => {
                     app.set_position_us(track_id, position_us)

@@ -72,6 +72,7 @@ impl App {
         match setting {
             Setting::Atmos => SettingValue::Toggle(self.atmos),
             Setting::Shuffle => SettingValue::Toggle(self.now_playing.shuffle),
+            Setting::Repeat => SettingValue::Choice(self.now_playing.repeat.label()),
             Setting::QueuePanel => SettingValue::Toggle(self.queue_visible),
             Setting::Visualizer => SettingValue::Choice(self.visualizer_mode.label()),
             Setting::Volume => SettingValue::Percent(self.now_playing.volume),
@@ -124,7 +125,7 @@ impl App {
                     self.toggle_queue_visible();
                 }
             }
-            Setting::Visualizer | Setting::Volume => {}
+            Setting::Repeat | Setting::Visualizer | Setting::Volume => {}
             Setting::Scrobbling => {
                 self.lastfm_enabled = on;
                 let _ = self.lastfm_tx.send(LastfmCmd::SetEnabled(on));
@@ -137,13 +138,24 @@ impl App {
     }
 
     fn step_choice(&mut self, setting: Setting, forward: bool) {
-        if setting == Setting::Visualizer {
-            let mode = self.visualizer_mode;
-            self.set_visualizer_mode(if forward {
-                mode.next()
-            } else {
-                mode.previous()
-            });
+        match setting {
+            Setting::Visualizer => {
+                let mode = self.visualizer_mode;
+                self.set_visualizer_mode(if forward {
+                    mode.next()
+                } else {
+                    mode.previous()
+                });
+            }
+            Setting::Repeat => {
+                let mode = self.now_playing.repeat;
+                self.set_repeat(if forward {
+                    mode.next()
+                } else {
+                    mode.previous()
+                });
+            }
+            _ => {}
         }
     }
 
@@ -189,8 +201,8 @@ impl App {
         self.atmos = on;
         self.apply_atmos_visibility();
         self.refresh_search();
-        if let Some(next) = self.now_playing.queue.get(self.now_playing.queue_index + 1) {
-            self.resolve_stream(next.id);
+        if let Some(next) = self.now_playing.next_up_id() {
+            self.resolve_prefetch(next);
         }
         self.set_status(
             format!(
@@ -206,6 +218,7 @@ impl App {
 mod tests {
     use super::*;
     use crate::api::ApiRequest;
+    use crate::app::RepeatMode;
     use crate::app::test_support::{test_app, track, track_tagged};
 
     #[test]
@@ -221,7 +234,8 @@ mod tests {
             t.api_requests().as_slice(),
             [ApiRequest::ResolveStreamUrl {
                 track_id: 2,
-                atmos: true
+                atmos: true,
+                prefetch: true
             }]
         ));
 
@@ -231,7 +245,8 @@ mod tests {
             t.api_requests().as_slice(),
             [ApiRequest::ResolveStreamUrl {
                 track_id: 2,
-                atmos: false
+                atmos: false,
+                prefetch: true
             }]
         ));
     }
@@ -394,6 +409,21 @@ mod tests {
         assert_eq!(t.app.visualizer_mode, VisualizerMode::Off);
         assert!(!*t.visualizer_enabled_rx.borrow_and_update());
         assert_eq!(t.app.preferences().visualizer_mode, VisualizerMode::Off);
+    }
+
+    #[test]
+    fn repeat_steps_through_off_queue_and_track_and_is_saved() {
+        let mut t = test_app();
+
+        t.app.toggle_setting(Setting::Repeat);
+        assert_eq!(t.app.now_playing.repeat, RepeatMode::Queue);
+        t.app.cycle_repeat();
+        assert_eq!(t.app.now_playing.repeat, RepeatMode::Track);
+        t.app.nudge_setting(Setting::Repeat, true);
+        assert_eq!(t.app.now_playing.repeat, RepeatMode::Off);
+        t.app.nudge_setting(Setting::Repeat, false);
+
+        assert_eq!(t.app.preferences().repeat, RepeatMode::Track);
     }
 
     #[test]
