@@ -43,7 +43,7 @@ touch, touch the other before you move on.
 
 ### Resume the last session
 
-**Issue:** [#59](https://github.com/fezzik-the-giant/riptide/issues/59) — `Backlog`
+**Issue:** [#59](https://github.com/fezzik-the-giant/riptide/issues/59) — `In progress`
 
 `Preferences` persists sorts, volume, shuffle, queue visibility and Atmos. It
 does not persist the queue, the playing track or its position, so a restart

@@ -112,6 +112,10 @@ pub struct NowPlaying {
     /// Seek issued to mpv whose landing has not been observed yet; see
     /// [`PendingSeek`].
     pub seek_pending: Option<PendingSeek>,
+    /// Where a restored track picks up, taken by the first `TrackStarted` of the
+    /// run. Keyed by track so skipping away first forfeits it rather than
+    /// landing the seek on a different song.
+    pub resume_at: Option<(u64, f64)>,
     pub lyrics_synced: Vec<(f64, String)>,
     pub lyrics_plain: Vec<String>,
     pub lyrics_loading: bool,
@@ -180,6 +184,7 @@ impl Default for NowPlaying {
             art_source: None,
             position_epoch: 0,
             seek_pending: None,
+            resume_at: None,
             lyrics_synced: Vec::new(),
             lyrics_plain: Vec::new(),
             lyrics_loading: false,

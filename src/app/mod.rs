@@ -7,12 +7,14 @@ mod navigation;
 mod playback;
 mod playlist_edit;
 mod responses;
+mod session;
 mod settings;
 mod state;
 #[cfg(test)]
 pub(crate) mod test_support;
 
 pub use crate::playlist::{PlaylistDetail, PlaylistDetailFocus};
+pub use session::{load_session, save_session};
 pub use state::*;
 
 use crate::api::ApiRequest;

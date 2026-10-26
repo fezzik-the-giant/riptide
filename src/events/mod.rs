@@ -174,7 +174,7 @@ pub fn run_app(
                 MprisCmd::Previous => app.prev_track(),
                 MprisCmd::Play => app.mpris_play(),
                 MprisCmd::Pause => app.set_paused(true),
-                MprisCmd::PlayPause => app.mpris_play_pause(),
+                MprisCmd::PlayPause => app.toggle_pause(),
                 MprisCmd::Stop => app.stop_playback(),
                 MprisCmd::Quit => app.should_quit = true,
                 MprisCmd::SetVolume(v) => {

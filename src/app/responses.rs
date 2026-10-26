@@ -881,7 +881,11 @@ impl App {
                     let title = format!("{} — {}", track.artist_name(), track.title);
                     let _ = self.player_tx.send(PlayerCmd::SetMediaTitle(title));
                 }
-                self.push_mpris_state();
+                let current = self.now_playing.track.as_ref().map(|t| t.id);
+                match self.now_playing.resume_at.take() {
+                    Some((id, secs)) if Some(id) == current => self.seek_to_secs(secs),
+                    _ => self.push_mpris_state(),
+                }
             }
             PlayerEvent::TrackEnded => {
                 if let Some(next_idx) = self.now_playing.next_index() {

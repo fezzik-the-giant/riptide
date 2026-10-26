@@ -63,8 +63,14 @@ impl App {
         self.now_playing.source_playlist_next_offset = next_offset;
     }
 
+    /// Space and MPRIS PlayPause. A stopped queue — a restored session, or one
+    /// that ran out or was stopped — has nothing loaded in mpv to unpause.
     pub fn toggle_pause(&mut self) {
-        let _ = self.player_tx.send(PlayerCmd::TogglePause);
+        if self.stopped_with_queue() {
+            self.play_from_queue(self.now_playing.queue_index);
+        } else {
+            let _ = self.player_tx.send(PlayerCmd::TogglePause);
+        }
     }
 
     pub fn set_paused(&mut self, paused: bool) {
@@ -523,14 +529,6 @@ impl App {
         }
     }
 
-    pub fn mpris_play_pause(&mut self) {
-        if self.stopped_with_queue() {
-            self.play_from_queue(self.now_playing.queue_index);
-        } else {
-            self.toggle_pause();
-        }
-    }
-
     /// Distinguishes "stopped" from the transient not-yet-active window while a
     /// stream URL resolves: only a stop or a run-out leaves mpv exhausted, and
     /// `track` stays None until a fresh queue's very first URL resolves — the
@@ -616,7 +614,7 @@ impl App {
         self.seek_to_secs(target);
     }
 
-    fn seek_to_secs(&mut self, secs: f64) {
+    pub(super) fn seek_to_secs(&mut self, secs: f64) {
         let _ = self.player_tx.send(PlayerCmd::SeekAbsolute(secs));
         self.now_playing.seek_pending = Some(crate::app::PendingSeek {
             target_secs: secs,
