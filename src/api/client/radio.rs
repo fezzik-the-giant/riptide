@@ -49,10 +49,10 @@ fn parse_radio_response(api_resp: &serde_json::Value) -> Result<Vec<Track>> {
     let mut track_map = HashMap::new();
     if let Some(included) = api_resp.get("included").and_then(|v| v.as_array()) {
         for item in included {
-            if item.get("type").and_then(|v| v.as_str()) == Some("tracks") {
-                if let Some(id) = item.get("id").and_then(|v| v.as_str()) {
-                    track_map.insert(id.to_string(), item.clone());
-                }
+            if item.get("type").and_then(|v| v.as_str()) == Some("tracks")
+                && let Some(id) = item.get("id").and_then(|v| v.as_str())
+            {
+                track_map.insert(id.to_string(), item.clone());
             }
         }
     }
@@ -61,63 +61,60 @@ fn parse_radio_response(api_resp: &serde_json::Value) -> Result<Vec<Track>> {
 
     let mut tracks = Vec::new();
     for track_id in track_ids {
-        if let Some(track_obj) = track_map.get(&track_id) {
-            if let Some(attrs) = track_obj.get("attributes").and_then(|v| v.as_object()) {
-                if let Some(title) = attrs.get("title").and_then(|v| v.as_str()) {
-                    if let Ok(id) = track_id.parse::<u64>() {
-                        let duration = parse_iso_duration(
-                            attrs
-                                .get("duration")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("PT0S"),
-                        );
+        if let Some(track_obj) = track_map.get(&track_id)
+            && let Some(attrs) = track_obj.get("attributes").and_then(|v| v.as_object())
+            && let Some(title) = attrs.get("title").and_then(|v| v.as_str())
+            && let Ok(id) = track_id.parse::<u64>()
+        {
+            let duration = parse_iso_duration(
+                attrs
+                    .get("duration")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("PT0S"),
+            );
 
-                        let artists = extract_artists_from_track(track_obj, &artist_map);
+            let artists = extract_artists_from_track(track_obj, &artist_map);
 
-                        let album_title = attrs
-                            .get("album")
-                            .and_then(|v| v.as_object())
-                            .and_then(|obj| obj.get("title"))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("Unknown");
+            let album_title = attrs
+                .get("album")
+                .and_then(|v| v.as_object())
+                .and_then(|obj| obj.get("title"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown");
 
-                        let media_metadata =
-                            attrs
-                                .get("mediaTags")
-                                .and_then(|v| v.as_array())
-                                .map(|tags| {
-                                    let tag_strs: Vec<String> = tags
-                                        .iter()
-                                        .filter_map(|t| t.as_str().map(|s| s.to_string()))
-                                        .collect();
-                                    MediaMetadata { tags: tag_strs }
-                                });
+            let media_metadata = attrs
+                .get("mediaTags")
+                .and_then(|v| v.as_array())
+                .map(|tags| {
+                    let tag_strs: Vec<String> = tags
+                        .iter()
+                        .filter_map(|t| t.as_str().map(|s| s.to_string()))
+                        .collect();
+                    MediaMetadata { tags: tag_strs }
+                });
 
-                        let album_id = extract_album_id_from_track(track_obj);
-                        tracks.push(Track {
-                            id,
-                            title: title.to_string(),
-                            duration,
-                            artist: artists.first().cloned(),
-                            artists,
-                            album: Album {
-                                id: album_id,
-                                title: album_title.to_string(),
-                                number_of_tracks: None,
-                                release_date: None,
-                                cover: None,
-                                artist: None,
-                                media_metadata: None,
-                                added_at: None,
-                                album_type: None,
-                            },
-                            media_metadata,
-                            added_at: None,
-                            playlist_item_id: None,
-                        });
-                    }
-                }
-            }
+            let album_id = extract_album_id_from_track(track_obj);
+            tracks.push(Track {
+                id,
+                title: title.to_string(),
+                duration,
+                artist: artists.first().cloned(),
+                artists,
+                album: Album {
+                    id: album_id,
+                    title: album_title.to_string(),
+                    number_of_tracks: None,
+                    release_date: None,
+                    cover: None,
+                    artist: None,
+                    media_metadata: None,
+                    added_at: None,
+                    album_type: None,
+                },
+                media_metadata,
+                added_at: None,
+                playlist_item_id: None,
+            });
         }
     }
     Ok(tracks)

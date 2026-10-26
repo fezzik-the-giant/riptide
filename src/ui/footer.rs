@@ -59,7 +59,7 @@ fn update_notice(app: &App) -> Option<String> {
 pub(super) fn get_context_hint(app: &App) -> String {
     if app.playlist_move.is_some() {
         "↑↓/jk move · Enter drop · Esc cancel".to_string()
-    } else if let Some(View::ArtistDetail(detail)) = app.view_stack.last() {
+    } else if let Some(View::Artist(detail)) = app.view_stack.last() {
         match detail.focus {
             ArtistDetailFocus::Tracks => {
                 "↑↓ Select | ← → Section | a Add | f Fav | r Radio".to_string()
@@ -69,9 +69,9 @@ pub(super) fn get_context_hint(app: &App) -> String {
             }
             ArtistDetailFocus::Bio => "↑↓ Scroll | ← → Section".to_string(),
         }
-    } else if let Some(View::AlbumDetail(_)) = app.view_stack.last() {
+    } else if let Some(View::Album(_)) = app.view_stack.last() {
         "↑↓ Select | a Add | f Fav | r Radio | c Copy".to_string()
-    } else if let Some(View::PlaylistDetail(detail)) = app.view_stack.last() {
+    } else if let Some(View::Playlist(detail)) = app.view_stack.last() {
         match detail.focus {
             PlaylistDetailFocus::Tracks => {
                 "↑↓ Select | ← → Section | a Add | f Fav | r Radio | c Copy".to_string()

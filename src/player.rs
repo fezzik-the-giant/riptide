@@ -224,11 +224,10 @@ impl PlayerWorker {
 
     async fn connect_socket(&self) -> Result<UnixStream> {
         for _ in 0..50 {
-            if Path::new(SOCKET_PATH).exists() {
-                match UnixStream::connect(SOCKET_PATH).await {
-                    Ok(s) => return Ok(s),
-                    Err(_) => {}
-                }
+            if Path::new(SOCKET_PATH).exists()
+                && let Ok(s) = UnixStream::connect(SOCKET_PATH).await
+            {
+                return Ok(s);
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }

@@ -62,9 +62,9 @@ impl Tab {
 // ── View stack ────────────────────────────────────────────────────────────────
 
 pub enum View {
-    ArtistDetail(ArtistDetail),
-    PlaylistDetail(PlaylistDetail),
-    AlbumDetail(AlbumDetail),
+    Artist(Box<ArtistDetail>),
+    Playlist(PlaylistDetail),
+    Album(AlbumDetail),
 }
 
 // ── Undo ──────────────────────────────────────────────────────────────────────

@@ -294,7 +294,7 @@ impl ApiClient {
             let resp = self
                 .http
                 .get(&base_url)
-                .bearer_auth(&token.clone())
+                .bearer_auth(token.clone())
                 .query(&all_params)
                 .send()
                 .await

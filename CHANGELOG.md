@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 - CI builds the Nix flake far less often and far faster (#62). It no longer runs twice for every push to a branch with an open PR, a newer push cancels the run it supersedes, and the Nix store is cached so the dependency tree is rebuilt only when `flake.lock` or `Cargo.lock` changes. Every commit on master still has its flake built, so a release cannot ship unbuildable on Nix again (#60)
+- `cargo clippy` runs clean, so a new warning stands out instead of disappearing among 130 old ones (#77). The playlist parser returns named fields instead of a five-value tuple, which mixes had been reading in a different order
 
 ## [1.6.0] - 2026-10-12
 

@@ -87,18 +87,10 @@ impl Default for Preferences {
     }
 }
 
+#[derive(Default)]
 pub struct SortPalette {
     pub active: bool,
     pub selected: usize,
-}
-
-impl Default for SortPalette {
-    fn default() -> Self {
-        Self {
-            active: false,
-            selected: 0,
-        }
-    }
 }
 
 impl SortPalette {

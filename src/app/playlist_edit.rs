@@ -35,13 +35,13 @@ impl App {
             return self.now_playing.queue.get(self.queue_cursor).cloned();
         }
         match self.view_stack.last() {
-            Some(View::ArtistDetail(d)) if d.focus == ArtistDetailFocus::Tracks => {
+            Some(View::Artist(d)) if d.focus == ArtistDetailFocus::Tracks => {
                 d.tracks.selected_item().cloned()
             }
-            Some(View::PlaylistDetail(d)) if d.focus == PlaylistDetailFocus::Tracks => {
+            Some(View::Playlist(d)) if d.focus == PlaylistDetailFocus::Tracks => {
                 d.tracks.selected_item().cloned()
             }
-            Some(View::AlbumDetail(d)) => d.tracks.selected_item().cloned(),
+            Some(View::Album(d)) => d.tracks.selected_item().cloned(),
             Some(_) => None,
             None => match self.current_tab {
                 Tab::Favorites => self.favorites.selected_item().cloned(),
@@ -109,7 +109,7 @@ impl App {
             return None;
         }
         match self.view_stack.last() {
-            Some(View::PlaylistDetail(d)) => Some(d.playlist.clone()),
+            Some(View::Playlist(d)) => Some(d.playlist.clone()),
             Some(_) => None,
             None if self.current_tab == Tab::Playlists => self.playlists.selected_item().cloned(),
             None => None,
@@ -200,7 +200,7 @@ impl App {
             p.number_of_tracks = Some(p.number_of_tracks.unwrap_or(0) + 1);
         }
         for view in &mut self.view_stack {
-            if let View::PlaylistDetail(d) = view {
+            if let View::Playlist(d) = view {
                 // Still paging means a later page will already contain the entry.
                 if d.playlist.uuid == playlist.uuid && d.tracks.exhausted {
                     d.tracks.items.push(Track {
@@ -221,7 +221,7 @@ impl App {
     }
 
     pub(crate) fn remove_selected_from_playlist(&mut self) {
-        let Some(View::PlaylistDetail(d)) = self.view_stack.last() else {
+        let Some(View::Playlist(d)) = self.view_stack.last() else {
             return;
         };
         if d.focus != PlaylistDetailFocus::Tracks {
@@ -269,7 +269,7 @@ impl App {
             p.number_of_tracks = p.number_of_tracks.map(|n| n.saturating_sub(1));
         }
         for view in &mut self.view_stack {
-            if let View::PlaylistDetail(d) = view
+            if let View::Playlist(d) = view
                 && d.playlist.uuid == playlist.uuid
             {
                 d.tracks
@@ -307,7 +307,7 @@ impl App {
             }
         }
         for view in &mut self.view_stack {
-            if let View::PlaylistDetail(d) = view
+            if let View::Playlist(d) = view
                 && d.playlist.uuid == playlist.uuid
             {
                 d.playlist.title = name.clone();
@@ -317,7 +317,7 @@ impl App {
     }
 
     pub(crate) fn start_move(&mut self) {
-        let Some(View::PlaylistDetail(d)) = self.view_stack.last() else {
+        let Some(View::Playlist(d)) = self.view_stack.last() else {
             return;
         };
         if d.focus != PlaylistDetailFocus::Tracks {
@@ -363,8 +363,7 @@ impl App {
     }
 
     pub(crate) fn step_move(&mut self, down: bool) {
-        let (Some(m), Some(View::PlaylistDetail(d))) =
-            (&self.playlist_move, self.view_stack.last_mut())
+        let (Some(m), Some(View::Playlist(d))) = (&self.playlist_move, self.view_stack.last_mut())
         else {
             return;
         };
@@ -391,7 +390,7 @@ impl App {
         let Some(m) = self.playlist_move.take() else {
             return;
         };
-        let Some(View::PlaylistDetail(d)) = self.view_stack.last_mut() else {
+        let Some(View::Playlist(d)) = self.view_stack.last_mut() else {
             return;
         };
         let Some(from) = entry_position(&d.tracks, &m.item_id) else {
@@ -422,7 +421,7 @@ impl App {
         let Some(m) = self.playlist_move.take() else {
             return;
         };
-        let Some(View::PlaylistDetail(d)) = self.view_stack.last() else {
+        let Some(View::Playlist(d)) = self.view_stack.last() else {
             return;
         };
         let Some(at) = entry_position(&d.tracks, &m.item_id) else {
@@ -443,7 +442,7 @@ impl App {
     /// Refetches the open view of `uuid`, the only sound recovery once the local
     /// order may differ from Tidal's.
     fn reload_playlist(&mut self, uuid: &str) {
-        let Some(View::PlaylistDetail(d)) = self.view_stack.last_mut() else {
+        let Some(View::Playlist(d)) = self.view_stack.last_mut() else {
             return;
         };
         if d.playlist.uuid != uuid {
@@ -490,9 +489,8 @@ impl App {
         self.playlists.remove_where(|p| p.uuid != playlist.uuid);
         self.favorite_playlist_ids.remove(&playlist.uuid);
         self.owned_playlist_ids.remove(&playlist.uuid);
-        self.view_stack.retain(
-            |view| !matches!(view, View::PlaylistDetail(d) if d.playlist.uuid == playlist.uuid),
-        );
+        self.view_stack
+            .retain(|view| !matches!(view, View::Playlist(d) if d.playlist.uuid == playlist.uuid));
         self.set_status(format!("Deleted '{}'", playlist.title), StatusLevel::Info);
     }
 }
@@ -554,7 +552,7 @@ mod tests {
     fn an_add_appends_to_the_open_detail_once_it_has_finished_loading() {
         let mut t = test_app();
         t.app.open_playlist(own("p", "Mine"));
-        if let Some(View::PlaylistDetail(d)) = t.app.view_stack.last_mut() {
+        if let Some(View::Playlist(d)) = t.app.view_stack.last_mut() {
             d.tracks.append_page(vec![track(1)], None);
         }
         t.app.on_added_to_playlist(
@@ -564,7 +562,7 @@ mod tests {
                 item_id: "i".to_string(),
             },
         );
-        let Some(View::PlaylistDetail(d)) = t.app.view_stack.last() else {
+        let Some(View::Playlist(d)) = t.app.view_stack.last() else {
             panic!("detail closed")
         };
         assert_eq!(
@@ -579,7 +577,7 @@ mod tests {
     fn an_add_leaves_a_still_paging_detail_to_the_server() {
         let mut t = test_app();
         t.app.open_playlist(own("p", "Mine"));
-        if let Some(View::PlaylistDetail(d)) = t.app.view_stack.last_mut() {
+        if let Some(View::Playlist(d)) = t.app.view_stack.last_mut() {
             d.tracks
                 .append_page(vec![track(1)], Some("cursor".to_string()));
         }
@@ -590,7 +588,7 @@ mod tests {
                 item_id: "i".to_string(),
             },
         );
-        let Some(View::PlaylistDetail(d)) = t.app.view_stack.last() else {
+        let Some(View::Playlist(d)) = t.app.view_stack.last() else {
             panic!("detail closed")
         };
         assert_eq!(d.tracks.items.len(), 1);
@@ -733,7 +731,7 @@ mod tests {
         t.app.playlists.append_page(vec![own("p", "Mine")], None);
         t.app.owned_playlist_ids.insert("p".to_string());
         t.app.open_playlist(own("p", "Mine"));
-        if let Some(View::PlaylistDetail(d)) = t.app.view_stack.last_mut() {
+        if let Some(View::Playlist(d)) = t.app.view_stack.last_mut() {
             d.tracks.append_page(rows, None);
         }
         t.drain_api();
@@ -741,7 +739,7 @@ mod tests {
     }
 
     fn open_rows(t: &TestApp) -> Vec<Option<String>> {
-        let Some(View::PlaylistDetail(d)) = t.app.view_stack.last() else {
+        let Some(View::Playlist(d)) = t.app.view_stack.last() else {
             panic!("detail closed")
         };
         d.tracks
@@ -769,7 +767,7 @@ mod tests {
     #[test]
     fn d_removes_the_entry_only_once_tidal_confirms() {
         let mut t = own_playlist_open_with(vec![row(1, "a"), row(2, "b")]);
-        if let Some(View::PlaylistDetail(d)) = t.app.view_stack.last_mut() {
+        if let Some(View::Playlist(d)) = t.app.view_stack.last_mut() {
             d.tracks.next();
         }
         t.app.remove_selected_from_playlist();
@@ -799,7 +797,7 @@ mod tests {
     #[test]
     fn d_on_a_narrowed_list_removes_the_highlighted_entry() {
         let mut t = own_playlist_open_with(vec![row(1, "a"), row(2, "b")]);
-        if let Some(View::PlaylistDetail(d)) = t.app.view_stack.last_mut() {
+        if let Some(View::Playlist(d)) = t.app.view_stack.last_mut() {
             d.tracks.edit_filter(|q| q.push_str("Track 2"));
         }
         t.app.remove_selected_from_playlist();
@@ -849,7 +847,7 @@ mod tests {
             .handle_api_response(page(vec![row(1, "a"), row(2, "b")], 3, Some("c")));
         t.app.handle_api_response(page(vec![row(3, "c")], 0, None));
         let header = |t: &TestApp| {
-            let Some(View::PlaylistDetail(d)) = t.app.view_stack.last() else {
+            let Some(View::Playlist(d)) = t.app.view_stack.last() else {
                 panic!("detail closed")
             };
             d.playlist.number_of_tracks
@@ -908,7 +906,7 @@ mod tests {
         t.app
             .on_playlist_renamed(own("p", "Mine"), "Road trip".to_string());
         assert_eq!(t.app.playlists.items[0].title, "Road trip");
-        let Some(View::PlaylistDetail(d)) = t.app.view_stack.last() else {
+        let Some(View::Playlist(d)) = t.app.view_stack.last() else {
             panic!("detail closed")
         };
         assert_eq!(d.playlist.title, "Road trip");
@@ -982,7 +980,7 @@ mod tests {
         t.app.on_playlist_deleted(own("p", "Mine"));
         assert!(matches!(
             t.app.view_stack.as_slice(),
-            [View::PlaylistDetail(q), View::ArtistDetail(_)] if q.playlist.uuid == "q"
+            [View::Playlist(q), View::Artist(_)] if q.playlist.uuid == "q"
         ));
     }
 
@@ -1018,7 +1016,7 @@ mod tests {
     }
 
     fn detail_mut(t: &mut TestApp) -> &mut crate::app::PlaylistDetail {
-        let Some(View::PlaylistDetail(d)) = t.app.view_stack.last_mut() else {
+        let Some(View::Playlist(d)) = t.app.view_stack.last_mut() else {
             panic!("detail closed")
         };
         d

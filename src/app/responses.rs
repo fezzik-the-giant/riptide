@@ -127,81 +127,84 @@ impl App {
             }
 
             ApiResponse::ArtistTopTracks { artist_id, tracks } => {
-                if let Some(View::ArtistDetail(detail)) = self.view_stack.last_mut() {
-                    if detail.artist.id == artist_id {
-                        let n = tracks.len() as u32;
-                        let total = detail.tracks.total.max(n);
-                        detail.tracks.append(tracks, total);
-                        detail.tracks.exhausted = true;
+                if let Some(View::Artist(detail)) = self.view_stack.last_mut()
+                    && detail.artist.id == artist_id
+                {
+                    let n = tracks.len() as u32;
+                    let total = detail.tracks.total.max(n);
+                    detail.tracks.append(tracks, total);
+                    detail.tracks.exhausted = true;
 
-                        if detail.albums.items.is_empty() && !detail.albums.loading {
-                            let artist_id = detail.artist.id;
-                            detail.albums.loading = true;
-                            let _ = self.api_tx.send(ApiRequest::LoadArtistAlbums { artist_id });
-                        }
-                        if detail.eps.items.is_empty() && !detail.eps.loading {
-                            let artist_id = detail.artist.id;
-                            detail.eps.loading = true;
-                            let _ = self.api_tx.send(ApiRequest::LoadArtistEPs { artist_id });
-                        }
-                        if detail.singles.items.is_empty() && !detail.singles.loading {
-                            let artist_id = detail.artist.id;
-                            detail.singles.loading = true;
-                            let _ = self
-                                .api_tx
-                                .send(ApiRequest::LoadArtistSingles { artist_id });
-                        }
+                    if detail.albums.items.is_empty() && !detail.albums.loading {
+                        let artist_id = detail.artist.id;
+                        detail.albums.loading = true;
+                        let _ = self.api_tx.send(ApiRequest::LoadArtistAlbums { artist_id });
+                    }
+                    if detail.eps.items.is_empty() && !detail.eps.loading {
+                        let artist_id = detail.artist.id;
+                        detail.eps.loading = true;
+                        let _ = self.api_tx.send(ApiRequest::LoadArtistEPs { artist_id });
+                    }
+                    if detail.singles.items.is_empty() && !detail.singles.loading {
+                        let artist_id = detail.artist.id;
+                        detail.singles.loading = true;
+                        let _ = self
+                            .api_tx
+                            .send(ApiRequest::LoadArtistSingles { artist_id });
                     }
                 }
             }
 
             ApiResponse::ArtistAlbums { artist_id, albums } => {
-                if let Some(View::ArtistDetail(detail)) = self.view_stack.last_mut() {
-                    if detail.artist.id == artist_id {
-                        let n = albums.len() as u32;
-                        let total = detail.albums.total.max(n);
-                        detail.albums.append(albums, total);
-                        detail.albums.items.sort_by(|a, b| {
-                            b.release_date.as_deref().cmp(&a.release_date.as_deref())
-                        });
-                        detail.albums.exhausted = true;
-                    }
+                if let Some(View::Artist(detail)) = self.view_stack.last_mut()
+                    && detail.artist.id == artist_id
+                {
+                    let n = albums.len() as u32;
+                    let total = detail.albums.total.max(n);
+                    detail.albums.append(albums, total);
+                    detail
+                        .albums
+                        .items
+                        .sort_by(|a, b| b.release_date.as_deref().cmp(&a.release_date.as_deref()));
+                    detail.albums.exhausted = true;
                 }
             }
 
             ApiResponse::ArtistEPs { artist_id, albums } => {
-                if let Some(View::ArtistDetail(detail)) = self.view_stack.last_mut() {
-                    if detail.artist.id == artist_id {
-                        let eps: Vec<Album> = albums
-                            .into_iter()
-                            .filter(|a| a.number_of_tracks.unwrap_or(0) >= 3)
-                            .collect();
-                        let n = eps.len() as u32;
-                        let total = detail.eps.total.max(n);
-                        detail.eps.append(eps, total);
-                        detail.eps.items.sort_by(|a, b| {
-                            b.release_date.as_deref().cmp(&a.release_date.as_deref())
-                        });
-                        detail.eps.exhausted = true;
-                    }
+                if let Some(View::Artist(detail)) = self.view_stack.last_mut()
+                    && detail.artist.id == artist_id
+                {
+                    let eps: Vec<Album> = albums
+                        .into_iter()
+                        .filter(|a| a.number_of_tracks.unwrap_or(0) >= 3)
+                        .collect();
+                    let n = eps.len() as u32;
+                    let total = detail.eps.total.max(n);
+                    detail.eps.append(eps, total);
+                    detail
+                        .eps
+                        .items
+                        .sort_by(|a, b| b.release_date.as_deref().cmp(&a.release_date.as_deref()));
+                    detail.eps.exhausted = true;
                 }
             }
 
             ApiResponse::ArtistSingles { artist_id, albums } => {
-                if let Some(View::ArtistDetail(detail)) = self.view_stack.last_mut() {
-                    if detail.artist.id == artist_id {
-                        let singles: Vec<Album> = albums
-                            .into_iter()
-                            .filter(|a| a.number_of_tracks.unwrap_or(0) <= 2)
-                            .collect();
-                        let n = singles.len() as u32;
-                        let total = detail.singles.total.max(n);
-                        detail.singles.append(singles, total);
-                        detail.singles.items.sort_by(|a, b| {
-                            b.release_date.as_deref().cmp(&a.release_date.as_deref())
-                        });
-                        detail.singles.exhausted = true;
-                    }
+                if let Some(View::Artist(detail)) = self.view_stack.last_mut()
+                    && detail.artist.id == artist_id
+                {
+                    let singles: Vec<Album> = albums
+                        .into_iter()
+                        .filter(|a| a.number_of_tracks.unwrap_or(0) <= 2)
+                        .collect();
+                    let n = singles.len() as u32;
+                    let total = detail.singles.total.max(n);
+                    detail.singles.append(singles, total);
+                    detail
+                        .singles
+                        .items
+                        .sort_by(|a, b| b.release_date.as_deref().cmp(&a.release_date.as_deref()));
+                    detail.singles.exhausted = true;
                 }
             }
 
@@ -210,16 +213,16 @@ impl App {
                 let cover = album.cover.clone();
                 tracing::debug!("AlbumLoaded album_id={}, cover={:?}", album_id, cover);
 
-                if let Some(View::AlbumDetail(detail)) = self.view_stack.last_mut() {
-                    if detail.album.id == album.id {
-                        detail.album = album.clone();
-                        if let Some(cover_url) = cover.clone() {
-                            detail.art_loading = true;
-                            let _ = self.api_tx.send(ApiRequest::FetchAlbumArt {
-                                album_id,
-                                cover_id: cover_url,
-                            });
-                        }
+                if let Some(View::Album(detail)) = self.view_stack.last_mut()
+                    && detail.album.id == album.id
+                {
+                    detail.album = album.clone();
+                    if let Some(cover_url) = cover.clone() {
+                        detail.art_loading = true;
+                        let _ = self.api_tx.send(ApiRequest::FetchAlbumArt {
+                            album_id,
+                            cover_id: cover_url,
+                        });
                     }
                 }
 
@@ -247,7 +250,7 @@ impl App {
             }
 
             ApiResponse::AlbumLoadFailed { album_id, error } => {
-                if let Some(View::AlbumDetail(detail)) = self.view_stack.last_mut()
+                if let Some(View::Album(detail)) = self.view_stack.last_mut()
                     && detail.album.id == album_id
                 {
                     detail.art_loading = false;
@@ -262,12 +265,12 @@ impl App {
             }
 
             ApiResponse::AlbumTracks { album_id, tracks } => {
-                if let Some(View::AlbumDetail(detail)) = self.view_stack.last_mut() {
-                    if detail.album.id == album_id {
-                        let n = tracks.len() as u32;
-                        detail.tracks.append(tracks.clone(), n);
-                        detail.tracks.exhausted = true;
-                    }
+                if let Some(View::Album(detail)) = self.view_stack.last_mut()
+                    && detail.album.id == album_id
+                {
+                    let n = tracks.len() as u32;
+                    detail.tracks.append(tracks.clone(), n);
+                    detail.tracks.exhausted = true;
                 }
                 // The client drains an album's tracks internally, so one
                 // response is the whole thing.
@@ -292,11 +295,11 @@ impl App {
                     self.now_playing.set_art_bytes(Some(image_data.clone()));
                     self.now_playing.art_loading = false;
                 }
-                if let Some(View::AlbumDetail(detail)) = self.view_stack.last_mut() {
-                    if detail.album.id == album_id {
-                        detail.art_bytes = Some(image_data);
-                        detail.art_loading = false;
-                    }
+                if let Some(View::Album(detail)) = self.view_stack.last_mut()
+                    && detail.album.id == album_id
+                {
+                    detail.art_bytes = Some(image_data);
+                    detail.art_loading = false;
                 }
             }
 
@@ -304,7 +307,7 @@ impl App {
                 if self.now_playing.is_current_album(album_id) {
                     self.now_playing.art_loading = false;
                 }
-                if let Some(View::AlbumDetail(detail)) = self.view_stack.last_mut()
+                if let Some(View::Album(detail)) = self.view_stack.last_mut()
                     && detail.album.id == album_id
                 {
                     detail.art_loading = false;
@@ -334,20 +337,20 @@ impl App {
                 artist_id,
                 image_data,
             } => {
-                if let Some(View::ArtistDetail(detail)) = self.view_stack.last_mut() {
-                    if detail.artist.id == artist_id {
-                        detail.art_bytes = Some(image_data);
-                        detail.art_loading = false;
-                    }
+                if let Some(View::Artist(detail)) = self.view_stack.last_mut()
+                    && detail.artist.id == artist_id
+                {
+                    detail.art_bytes = Some(image_data);
+                    detail.art_loading = false;
                 }
             }
 
             ApiResponse::PlaylistArt { uuid, image_data } => {
-                if let Some(View::PlaylistDetail(detail)) = self.view_stack.last_mut() {
-                    if detail.playlist.uuid == uuid {
-                        detail.art_bytes = Some(image_data.clone());
-                        detail.art_loading = false;
-                    }
+                if let Some(View::Playlist(detail)) = self.view_stack.last_mut()
+                    && detail.playlist.uuid == uuid
+                {
+                    detail.art_bytes = Some(image_data.clone());
+                    detail.art_loading = false;
                 }
                 // Every playlist cover comes through here; only the mixes Home
                 // can show are worth keeping, or the cache grows with each
@@ -358,11 +361,11 @@ impl App {
             }
 
             ApiResponse::ArtistBio { artist_id, text } => {
-                if let Some(View::ArtistDetail(detail)) = self.view_stack.last_mut() {
-                    if detail.artist.id == artist_id {
-                        detail.bio = if text.is_empty() { None } else { Some(text) };
-                        detail.bio_loading = false;
-                    }
+                if let Some(View::Artist(detail)) = self.view_stack.last_mut()
+                    && detail.artist.id == artist_id
+                {
+                    detail.bio = if text.is_empty() { None } else { Some(text) };
+                    detail.bio_loading = false;
                 }
             }
 
@@ -370,16 +373,15 @@ impl App {
                 artist_id,
                 picture_url,
             } => {
-                if let Some(View::ArtistDetail(detail)) = self.view_stack.last_mut() {
-                    if detail.artist.id == artist_id {
-                        if let Some(url) = picture_url {
-                            detail.art_loading = true;
-                            let _ = self.api_tx.send(ApiRequest::FetchArtistArt {
-                                artist_id,
-                                picture_id: url,
-                            });
-                        }
-                    }
+                if let Some(View::Artist(detail)) = self.view_stack.last_mut()
+                    && detail.artist.id == artist_id
+                    && let Some(url) = picture_url
+                {
+                    detail.art_loading = true;
+                    let _ = self.api_tx.send(ApiRequest::FetchArtistArt {
+                        artist_id,
+                        picture_id: url,
+                    });
                 }
             }
 
@@ -392,46 +394,46 @@ impl App {
                 cover,
             } => {
                 // 1. Update the detail view while it's open.
-                if let Some(View::PlaylistDetail(detail)) = self.view_stack.last_mut() {
-                    if detail.playlist.uuid == uuid {
-                        tracing::debug!(
-                            "PlaylistTracks response: has_description={}, has_cover={}, total_tracks={}",
-                            description.is_some(),
-                            cover.is_some(),
-                            total
-                        );
-                        if let Some(desc) = description {
-                            detail.playlist.description = Some(desc);
-                        }
-                        // Only the initial /playlists/{uuid} request carries the
-                        // playlist's item count. Later pages come from the
-                        // relationship endpoint, which has no attributes block
-                        // and reports 0 — don't let that clobber a real count.
-                        if total > 0 {
-                            detail.playlist.number_of_tracks = Some(total);
-                        }
-                        if let Some(cov_url) = cover {
-                            detail.playlist.cover = Some(cov_url.clone());
-                            detail.art_loading = true;
-                            let _ = self.api_tx.send(ApiRequest::FetchPlaylistArt {
-                                uuid: uuid.clone(),
-                                cover_url: cov_url,
-                            });
-                        }
-                        detail.tracks.append(tracks.clone(), total);
-                        detail.tracks.pagination_cursor = next_cursor.clone();
-                        detail.tracks.exhausted = next_cursor.is_none();
-                        match &next_cursor {
-                            Some(c) => tracing::debug!(
-                                "Stored cursor: {} | Total items loaded: {}",
-                                c,
-                                detail.tracks.items.len()
-                            ),
-                            None => tracing::debug!(
-                                "No more pages | Total items loaded: {}",
-                                detail.tracks.items.len()
-                            ),
-                        }
+                if let Some(View::Playlist(detail)) = self.view_stack.last_mut()
+                    && detail.playlist.uuid == uuid
+                {
+                    tracing::debug!(
+                        "PlaylistTracks response: has_description={}, has_cover={}, total_tracks={}",
+                        description.is_some(),
+                        cover.is_some(),
+                        total
+                    );
+                    if let Some(desc) = description {
+                        detail.playlist.description = Some(desc);
+                    }
+                    // Only the initial /playlists/{uuid} request carries the
+                    // playlist's item count. Later pages come from the
+                    // relationship endpoint, which has no attributes block
+                    // and reports 0 — don't let that clobber a real count.
+                    if total > 0 {
+                        detail.playlist.number_of_tracks = Some(total);
+                    }
+                    if let Some(cov_url) = cover {
+                        detail.playlist.cover = Some(cov_url.clone());
+                        detail.art_loading = true;
+                        let _ = self.api_tx.send(ApiRequest::FetchPlaylistArt {
+                            uuid: uuid.clone(),
+                            cover_url: cov_url,
+                        });
+                    }
+                    detail.tracks.append(tracks.clone(), total);
+                    detail.tracks.pagination_cursor = next_cursor.clone();
+                    detail.tracks.exhausted = next_cursor.is_none();
+                    match &next_cursor {
+                        Some(c) => tracing::debug!(
+                            "Stored cursor: {} | Total items loaded: {}",
+                            c,
+                            detail.tracks.items.len()
+                        ),
+                        None => tracing::debug!(
+                            "No more pages | Total items loaded: {}",
+                            detail.tracks.items.len()
+                        ),
                     }
                 }
 
@@ -445,7 +447,7 @@ impl App {
                 if self.pending_queue_entry(&source).is_some() {
                     let detail_open = matches!(
                         self.view_stack.last(),
-                        Some(View::PlaylistDetail(d)) if d.playlist.uuid == uuid
+                        Some(View::Playlist(d)) if d.playlist.uuid == uuid
                     );
                     let more = next_cursor.clone();
                     if let Some(pending) = self.pending_queue_entry(&source) {
@@ -493,8 +495,7 @@ impl App {
                     self.now_playing.source_playlist_cursor = next_cursor.clone();
 
                     // If the detail view is gone, keep firing page requests ourselves (if more pages available).
-                    let detail_open = if let Some(View::PlaylistDetail(d)) = self.view_stack.last()
-                    {
+                    let detail_open = if let Some(View::Playlist(d)) = self.view_stack.last() {
                         d.playlist.uuid == uuid
                     } else {
                         false
@@ -954,7 +955,7 @@ impl App {
                 // wobbles, but a jump of more than a second either way is a real
                 // seek (e.g. through mpv's IPC socket) and must be taken — and
                 // signalled, which is what the epoch bump does.
-                if delta >= -0.01 || delta < -1.0 {
+                if !(-1.0..-0.01).contains(&delta) {
                     if delta.abs() > 1.0 {
                         self.now_playing.position_epoch += 1;
                     }
@@ -968,33 +969,34 @@ impl App {
                 }
                 self.now_playing.duration = d;
                 // Send track to Last.fm once when we first learn the duration
-                if !self.now_playing.lastfm_sent && d > 0.0 {
-                    if let Some(track) = &self.now_playing.track {
-                        let artist_names = if !track.artists.is_empty() {
-                            track
-                                .artists
-                                .iter()
-                                .map(|a| a.name.clone())
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        } else if let Some(ref artist) = track.artist {
-                            artist.name.clone()
-                        } else {
-                            "Unknown".to_string()
-                        };
-                        let album = Some(track.album.title.clone());
+                if !self.now_playing.lastfm_sent
+                    && d > 0.0
+                    && let Some(track) = &self.now_playing.track
+                {
+                    let artist_names = if !track.artists.is_empty() {
+                        track
+                            .artists
+                            .iter()
+                            .map(|a| a.name.clone())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    } else if let Some(ref artist) = track.artist {
+                        artist.name.clone()
+                    } else {
+                        "Unknown".to_string()
+                    };
+                    let album = Some(track.album.title.clone());
 
-                        let _ = self
-                            .lastfm_tx
-                            .send(crate::lastfm::LastfmCmd::UpdatePlayingTrack {
-                                track_id: track.id,
-                                artist: artist_names,
-                                track_name: track.title.clone(),
-                                album,
-                                duration: d,
-                            });
-                        self.now_playing.lastfm_sent = true;
-                    }
+                    let _ = self
+                        .lastfm_tx
+                        .send(crate::lastfm::LastfmCmd::UpdatePlayingTrack {
+                            track_id: track.id,
+                            artist: artist_names,
+                            track_name: track.title.clone(),
+                            album,
+                            duration: d,
+                        });
+                    self.now_playing.lastfm_sent = true;
                 }
             }
             PlayerEvent::Paused(p) => {

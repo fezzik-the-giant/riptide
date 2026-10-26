@@ -121,7 +121,7 @@ impl App {
             bio_loading: true,
             bio_scroll: 0,
         };
-        self.push_view(View::ArtistDetail(detail));
+        self.push_view(View::Artist(Box::new(detail)));
         let _ = self
             .api_tx
             .send(ApiRequest::LoadArtistTopTracks { artist_id: id });
@@ -135,7 +135,7 @@ impl App {
 
     pub fn open_album(&mut self, album: Album) {
         let album_id = album.id;
-        self.push_view(View::AlbumDetail(AlbumDetail {
+        self.push_view(View::Album(AlbumDetail {
             album,
             tracks: StatefulList::default(),
             art_bytes: None,
@@ -147,7 +147,7 @@ impl App {
     }
 
     pub fn open_selected_album(&mut self) {
-        let album = if let Some(View::ArtistDetail(detail)) = self.view_stack.last() {
+        let album = if let Some(View::Artist(detail)) = self.view_stack.last() {
             match detail.focus {
                 ArtistDetailFocus::Albums => detail.albums.selected_item().cloned(),
                 ArtistDetailFocus::EPs => detail.eps.selected_item().cloned(),
@@ -184,7 +184,7 @@ impl App {
             art_loading,
             description_scroll: 0,
         };
-        self.push_view(View::PlaylistDetail(detail));
+        self.push_view(View::Playlist(detail));
         // Use v2 API for mixes from Home tab, v1 for regular playlists
         if self.current_tab == Tab::Home {
             let _ = self.api_tx.send(ApiRequest::LoadMixTracks { uuid });

@@ -78,7 +78,7 @@ pub(super) fn render_album_detail(
     let max_width = (header_cols[1].width as usize).saturating_sub(2); // account for borders
     let mut title_line = String::new();
     for word in detail.album.title.split_whitespace() {
-        if title_line.len() + word.len() + 1 <= max_width {
+        if title_line.len() + word.len() < max_width {
             if !title_line.is_empty() {
                 title_line.push(' ');
             }

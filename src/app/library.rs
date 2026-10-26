@@ -279,10 +279,7 @@ impl App {
 
     pub(crate) fn sort_favorites(&mut self) {
         match self.tracks_sort.unwrap_or(SortField::Alphabetical) {
-            SortField::Alphabetical => self
-                .favorites
-                .items
-                .sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase())),
+            SortField::Alphabetical => self.favorites.items.sort_by_key(|a| a.title.to_lowercase()),
             SortField::LastAdded => self
                 .favorites
                 .items
@@ -305,10 +302,7 @@ impl App {
                 .sort_by(|a, b| b.added_at.cmp(&a.added_at)),
             // Artists have no album/artist axis to sort on, so anything else
             // falls back to name order.
-            _ => self
-                .artists
-                .items
-                .sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
+            _ => self.artists.items.sort_by_key(|a| a.name.to_lowercase()),
         }
         // `matches` holds positions, so reordering invalidates it.
         self.artists.refilter();
@@ -319,7 +313,7 @@ impl App {
             SortField::Alphabetical => self
                 .fav_albums
                 .items
-                .sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase())),
+                .sort_by_key(|a| a.title.to_lowercase()),
             SortField::LastAdded => self
                 .fav_albums
                 .items
@@ -340,10 +334,7 @@ impl App {
                 .playlists
                 .items
                 .sort_by(|a, b| b.added_at.cmp(&a.added_at)),
-            _ => self
-                .playlists
-                .items
-                .sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase())),
+            _ => self.playlists.items.sort_by_key(|a| a.title.to_lowercase()),
         }
         // `matches` holds positions, so reordering invalidates it.
         self.playlists.refilter();

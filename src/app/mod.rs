@@ -348,15 +348,15 @@ impl App {
 
     pub fn tick(&mut self) {
         self.tick = self.tick.wrapping_add(1);
-        if let Some((msg, _, set_at)) = &self.status {
-            if set_at.elapsed() > std::time::Duration::from_secs(5) {
-                tracing::debug!(
-                    "Clearing status after {:.1}s: {}",
-                    set_at.elapsed().as_secs_f64(),
-                    msg
-                );
-                self.status = None;
-            }
+        if let Some((msg, _, set_at)) = &self.status
+            && set_at.elapsed() > std::time::Duration::from_secs(5)
+        {
+            tracing::debug!(
+                "Clearing status after {:.1}s: {}",
+                set_at.elapsed().as_secs_f64(),
+                msg
+            );
+            self.status = None;
         }
         let spectrum_rx = &mut self.visualizer.spectrum_rx;
         let capture_failed = spectrum_rx.has_changed().unwrap_or(false)

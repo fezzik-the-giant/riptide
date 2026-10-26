@@ -153,10 +153,10 @@ pub(super) fn build_included_map(
     let mut map = HashMap::new();
     if let Some(included) = api_resp.get("included").and_then(|v| v.as_array()) {
         for item in included {
-            if item.get("type").and_then(|v| v.as_str()) == Some(ty) {
-                if let Some(id) = item.get("id").and_then(|v| v.as_str()) {
-                    map.insert(id.to_string(), item.clone());
-                }
+            if item.get("type").and_then(|v| v.as_str()) == Some(ty)
+                && let Some(id) = item.get("id").and_then(|v| v.as_str())
+            {
+                map.insert(id.to_string(), item.clone());
             }
         }
     }

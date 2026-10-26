@@ -48,7 +48,7 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
 
     let action: Action = if let Some(view) = app.view_stack.last_mut() {
         match view {
-            View::ArtistDetail(detail) => match key.code {
+            View::Artist(detail) => match key.code {
                 KeyCode::Up => {
                     match detail.focus {
                         ArtistDetailFocus::Tracks => detail.tracks.prev(),
@@ -230,7 +230,7 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
                 }
                 _ => return,
             },
-            View::PlaylistDetail(detail) => match key.code {
+            View::Playlist(detail) => match key.code {
                 KeyCode::Up => {
                     match detail.focus {
                         PlaylistDetailFocus::Tracks => detail.tracks.prev(),
@@ -268,7 +268,7 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
                         .playlist
                         .description
                         .as_ref()
-                        .map_or(false, |d| !d.is_empty())
+                        .is_some_and(|d| !d.is_empty())
                     {
                         detail.focus = match detail.focus {
                             PlaylistDetailFocus::Tracks => PlaylistDetailFocus::Description,
@@ -285,55 +285,35 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
                         return;
                     }
                 }
-                KeyCode::Enter => {
-                    if detail.focus == PlaylistDetailFocus::Tracks {
-                        let idx = detail.tracks.selected;
-                        let tracks: Vec<_> =
-                            detail.tracks.visible_items().into_iter().cloned().collect();
-                        let uuid = detail.playlist.uuid.clone();
-                        Action::PlayPlaylistTracks(tracks, idx, uuid)
-                    } else {
-                        return;
+                KeyCode::Enter if detail.focus == PlaylistDetailFocus::Tracks => {
+                    let idx = detail.tracks.selected;
+                    let tracks: Vec<_> =
+                        detail.tracks.visible_items().into_iter().cloned().collect();
+                    let uuid = detail.playlist.uuid.clone();
+                    Action::PlayPlaylistTracks(tracks, idx, uuid)
+                }
+                KeyCode::Char('a') if detail.focus == PlaylistDetailFocus::Tracks => {
+                    match detail.tracks.selected_item().cloned() {
+                        Some(t) => Action::AddToQueue(t, queue_at(&key)),
+                        None => return,
                     }
                 }
-                KeyCode::Char('a') => {
-                    if detail.focus == PlaylistDetailFocus::Tracks {
-                        match detail.tracks.selected_item().cloned() {
-                            Some(t) => Action::AddToQueue(t, queue_at(&key)),
-                            None => return,
-                        }
-                    } else {
-                        return;
+                KeyCode::Char('f') if detail.focus == PlaylistDetailFocus::Tracks => {
+                    match detail.tracks.selected_item().cloned() {
+                        Some(t) => Action::ToggleFavoriteTrack(t),
+                        None => return,
                     }
                 }
-                KeyCode::Char('f') => {
-                    if detail.focus == PlaylistDetailFocus::Tracks {
-                        match detail.tracks.selected_item().cloned() {
-                            Some(t) => Action::ToggleFavoriteTrack(t),
-                            None => return,
-                        }
-                    } else {
-                        return;
+                KeyCode::Char('r') if detail.focus == PlaylistDetailFocus::Tracks => {
+                    match detail.tracks.selected_item().cloned() {
+                        Some(t) => Action::TrackRadio(t),
+                        None => return,
                     }
                 }
-                KeyCode::Char('r') => {
-                    if detail.focus == PlaylistDetailFocus::Tracks {
-                        match detail.tracks.selected_item().cloned() {
-                            Some(t) => Action::TrackRadio(t),
-                            None => return,
-                        }
-                    } else {
-                        return;
-                    }
-                }
-                KeyCode::Char('c') => {
-                    if detail.focus == PlaylistDetailFocus::Tracks {
-                        match detail.tracks.selected_item() {
-                            Some(t) => Action::CopyUrl(t.share_url()),
-                            None => return,
-                        }
-                    } else {
-                        return;
+                KeyCode::Char('c') if detail.focus == PlaylistDetailFocus::Tracks => {
+                    match detail.tracks.selected_item() {
+                        Some(t) => Action::CopyUrl(t.share_url()),
+                        None => return,
                     }
                 }
                 KeyCode::Char('C') => Action::CopyUrl(detail.playlist.share_url()),
@@ -341,7 +321,7 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
                 KeyCode::Char('m') => Action::StartMove,
                 _ => return,
             },
-            View::AlbumDetail(detail) => {
+            View::Album(detail) => {
                 match key.code {
                     KeyCode::Up => {
                         detail.tracks.prev();
@@ -732,10 +712,10 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
             _ => {}
         },
         KeyCode::Char('s') => match app.current_tab {
-            Tab::Favorites | Tab::Artists | Tab::Albums | Tab::Playlists => {
-                if app.view_stack.is_empty() {
-                    app.open_sort_palette();
-                }
+            Tab::Favorites | Tab::Artists | Tab::Albums | Tab::Playlists
+                if app.view_stack.is_empty() =>
+            {
+                app.open_sort_palette();
             }
             _ => {}
         },
@@ -767,10 +747,10 @@ pub(super) fn handle_navigation(app: &mut App, key: KeyEvent) {
 }
 
 pub(super) fn get_selected_track(app: &App) -> Option<crate::api::models::Track> {
-    if let Some(View::PlaylistDetail(detail)) = app.view_stack.last() {
+    if let Some(View::Playlist(detail)) = app.view_stack.last() {
         return detail.tracks.selected_item().cloned();
     }
-    if let Some(View::ArtistDetail(detail)) = app.view_stack.last() {
+    if let Some(View::Artist(detail)) = app.view_stack.last() {
         return detail.tracks.selected_item().cloned();
     }
     if app.current_tab == Tab::Favorites {
