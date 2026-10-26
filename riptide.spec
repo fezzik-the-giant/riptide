@@ -6,7 +6,7 @@
 %global debug_package %{nil}
 
 Name:           riptide
-Version:        1.6.0
+Version:        2.0.0
 Release:        1%{?dist}
 Summary:        Terminal UI music player for Tidal
 License:        GPL-3.0-or-later
@@ -55,6 +55,28 @@ cargo test --release --locked
 %{_bindir}/%{name}
 
 %changelog
+* Mon Oct 26 2026 Fezzik the Giant <noreply@github.com> - 2.0.0-1
+- Added: Playlists can now be created and filled from riptide (#57, #71).
+- Added: The Playlists tab labels every playlist as Yours, Tidal (curated by Tidal), User (made by someone else) or Mix, so the ones you can edit stand out (#71).
+- Added: Tracks can be removed from your own playlists (#72).
+- Added: Your own playlists can be renamed and deleted (#73).
+- Added: Tracks in your own playlists can be reordered (#74).
+- Added: A spectrum visualizer above the progress bar, driven by [CAVA](https://github.com/karlstav/cava) (#40).
+- Added: Search has an Albums pane, so you can find a record by name instead of finding the artist and scrolling their discography (#55).
+- Added: Seek from the keyboard (#58).
+- Added: Repeat (#56).
+- Added: Riptide remembers your queue between sessions (#59).
+- Changed: The now-playing bar grows and shrinks with the terminal instead of always taking 16 rows (#63).
+- Changed: The queue pane hides itself when the terminal is too narrow for it, instead of taking 26 columns the list needs (#65).
+- Changed: Riptide now looks for a new release every 10 minutes while it is open, not just once at startup, so a session left running for days still finds out when one comes out (#68).
+- Changed: Installs from a package manager now hear about new releases too (#68).
+- Changed: The progress bar is a steady line rather than a sine wave.
+- Fixed: Space did nothing once the queue had played to the end or been stopped from a desktop widget.
+- Fixed: On Fedora, a COPR install of riptide was treated as one it could update itself (#68).
+- Fixed: Lyrics now fill the space beside the cover art instead of three rows at its foot, showing several lines either side of the one being sung.
+- Internal: CI builds the Nix flake far less often and far faster (#62).
+- Internal: cargo clippy runs clean, so a new warning stands out instead of disappearing among 130 old ones (#77).
+
 * Mon Oct 12 2026 Fezzik the Giant <noreply@github.com> - 1.6.0-1
 - Added: A settings modal on Shift+S, covering Dolby Atmos, shuffle, the queue panel, volume and Last.fm scrobbling, over a read-only summary of the signed-in account.
 - Added: Dolby Atmos is now a setting rather than something that happened to you.

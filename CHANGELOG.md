@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-26
+
 ### Added
 - Playlists can now be created and filled from riptide (#57, #71). Press `P` on any track — in your library, search, an album, an artist or the queue — to add it to one of your own playlists, or pick `+ New playlist…` to make one on the spot; `N` on the Playlists tab creates an empty one. New playlists are unlisted. If Tidal refuses a track, the status line says so, with Tidal's reason, instead of claiming it was added
 - The Playlists tab labels every playlist as Yours, Tidal (curated by Tidal), User (made by someone else) or Mix, so the ones you can edit stand out (#71). The same label heads a playlist's own view
