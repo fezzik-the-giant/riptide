@@ -41,24 +41,6 @@ touch, touch the other before you move on.
 
 ## Candidates
 
-### Repeat / loop mode
-
-**Issue:** [#56](https://github.com/fezzik-the-giant/riptide/issues/56) — `In review`
-
-Shuffle is a persisted preference with a keybind, a settings row and an MPRIS
-property. Repeat is absent everywhere: `loop_status` in `src/mpris.rs` returns a
-hardcoded `"None"`, no key in `src/app/state/keybinds.rs` binds it, and
-`Preferences` in `src/app/state/sort.rs` has no field for it.
-
-Off / repeat-queue / repeat-track, to match what MPRIS `LoopStatus` already
-names, and the property should become settable rather than constant.
-
-This one lands in the middle of the mpv prefetch machinery — see "mpv's Playlist
-Is Not the Queue" in `AGENTS.md`. Repeat-track means `SetNext` queues the stream
-that is already playing, and repeat-queue means the track after the last one is
-the first one, which `TrackEnded` currently treats as the end. The `FakeMpv`
-tests in `src/app/playback.rs` are where that gets proven.
-
 ### Resume the last session
 
 **Issue:** [#59](https://github.com/fezzik-the-giant/riptide/issues/59) — `Backlog`
@@ -198,6 +180,17 @@ which is also what the Playlists tab's `Yours` badge reads.
 art. The arrows were ruled out because `←` / `→` already switch carousel tabs
 and focus the queue. The keys call `App::seek_by_us`, the MPRIS path, so seeking
 past the end moves on to the next track exactly as `playerctl` does.
+
+### Repeat / loop mode
+
+**Issue:** [#56](https://github.com/fezzik-the-giant/riptide/issues/56) — `Done`
+**Version:** next release (under `[Unreleased]` in `CHANGELOG.md`).
+
+`Z` cycles off / queue / track, also a `Shift+S` row and a persisted pref;
+MPRIS `LoopStatus` is live and settable. Both modes stay gapless by prefetching
+through `NowPlaying::next_index()`, and stream requests carry a `prefetch` flag
+so repeat track's prefetch of the playing track cannot restart it. `n`/`p` skip
+via `skip_index()`, wrapping only under repeat queue.
 
 ## Considered and Rejected
 
