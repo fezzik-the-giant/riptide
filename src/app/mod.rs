@@ -235,6 +235,7 @@ impl App {
                 np.set_art_bytes(Some(DEFAULT_ART.to_vec()));
                 np.volume = prefs.volume;
                 np.shuffle = prefs.shuffle;
+                np.repeat = prefs.repeat;
                 np
             },
             atmos: prefs.atmos,
@@ -300,6 +301,7 @@ impl App {
             playlists_sort: self.playlists_sort,
             volume: self.now_playing.volume,
             shuffle: self.now_playing.shuffle,
+            repeat: self.now_playing.repeat,
             queue_visible: self.queue_visible,
             atmos: self.atmos,
             visualizer_mode: self.visualizer_mode,
@@ -478,9 +480,19 @@ impl App {
     /// requests concurrently — a flag read on the client side could not say
     /// which of the requests already in flight it applied to.
     pub(crate) fn resolve_stream(&self, track_id: u64) {
+        self.request_stream(track_id, false);
+    }
+
+    /// Resolve the track mpv should queue behind the playing one.
+    pub(crate) fn resolve_prefetch(&self, track_id: u64) {
+        self.request_stream(track_id, true);
+    }
+
+    fn request_stream(&self, track_id: u64, prefetch: bool) {
         let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl {
             track_id,
             atmos: self.atmos,
+            prefetch,
         });
     }
 

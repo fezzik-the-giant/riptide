@@ -95,6 +95,10 @@ pub enum ApiRequest {
         track_id: u64,
         /// Whether to accept a Dolby Atmos mix for this track, when one exists.
         atmos: bool,
+        /// Echoed back on `StreamUrl`. A queue can name the same track at the
+        /// current and the next position, so the id alone cannot say which slot
+        /// a response fills.
+        prefetch: bool,
     },
     FetchLyrics {
         track_id: u64,
@@ -248,6 +252,7 @@ pub enum ApiResponse {
         url: String,
         /// What the server actually served, which a `MAX` badge does not promise.
         delivered: DeliveredQuality,
+        prefetch: bool,
     },
     Lyrics {
         track_id: u64,

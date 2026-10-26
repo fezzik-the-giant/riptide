@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Fezzik the Giant
 
-use super::{App, PendingQueueAdd, QueueAt, QueueSource, StatusLevel};
+use super::{App, PendingQueueAdd, QueueAt, QueueSource, RepeatMode, StatusLevel};
 use crate::api::ApiRequest;
 use crate::api::models::{Album, Playlist, Track, presentation_art_url};
 use crate::mpris::MprisState;
@@ -75,32 +75,27 @@ impl App {
     }
 
     pub fn next_track(&mut self) {
-        let next_idx = self.now_playing.queue_index + 1;
-        if next_idx < self.now_playing.queue.len() {
-            self.now_playing.queue_index = next_idx;
-            // Don't set track yet - wait for successful StreamUrl response
-            self.now_playing.active = false;
-            self.now_playing.position = 0.0;
-            if let Some(track) = self.now_playing.queue.get(next_idx) {
-                self.resolve_stream(track.id);
-            }
-            // No MPRIS push here: `active` is false until the stream URL
-            // resolves, and pushing would flash Stopped at clients on every
-            // skip. The StreamUrl handler pushes as soon as playback restarts.
-        }
+        self.skip(true);
     }
 
     pub fn prev_track(&mut self) {
-        if self.now_playing.queue_index > 0 {
-            let prev_idx = self.now_playing.queue_index - 1;
-            self.now_playing.queue_index = prev_idx;
-            // Don't set track yet - wait for successful StreamUrl response
-            self.now_playing.active = false;
-            self.now_playing.position = 0.0;
-            if let Some(track) = self.now_playing.queue.get(prev_idx) {
-                self.resolve_stream(track.id);
-            }
+        self.skip(false);
+    }
+
+    fn skip(&mut self, forward: bool) {
+        let Some(idx) = self.now_playing.skip_index(forward) else {
+            return;
+        };
+        self.now_playing.queue_index = idx;
+        // Don't set track yet - wait for successful StreamUrl response
+        self.now_playing.active = false;
+        self.now_playing.position = 0.0;
+        if let Some(track) = self.now_playing.queue.get(idx) {
+            self.resolve_stream(track.id);
         }
+        // No MPRIS push here: `active` is false until the stream URL
+        // resolves, and pushing would flash Stopped at clients on every
+        // skip. The StreamUrl handler pushes as soon as playback restarts.
     }
 
     pub fn toggle_shuffle(&mut self) {
@@ -161,9 +156,9 @@ impl App {
     /// `next_prefetched` therefore keeps describing what mpv actually holds, which is
     /// what lets `TrackEnded` notice if the track runs out first.
     pub(super) fn replace_prefetched_next(&mut self) {
-        match self.now_playing.queue.get(self.now_playing.queue_index + 1) {
-            Some(next) if self.now_playing.next_prefetched != Some(next.id) => {
-                self.resolve_stream(next.id);
+        match self.now_playing.next_up_id() {
+            Some(next) if self.now_playing.next_prefetched != Some(next) => {
+                self.resolve_prefetch(next);
             }
             Some(_) => {}
             None => {
@@ -179,7 +174,7 @@ impl App {
             return;
         }
         let qi = self.now_playing.queue_index;
-        let old_next_id = self.now_playing.queue.get(qi + 1).map(|t| t.id);
+        let old_next_id = self.now_playing.next_up_id();
 
         self.now_playing.queue.swap(idx, idx - 1);
 
@@ -192,8 +187,7 @@ impl App {
         };
         self.now_playing.queue_index = new_qi;
 
-        let new_next_id = self.now_playing.queue.get(new_qi + 1).map(|t| t.id);
-        if new_next_id != old_next_id {
+        if self.now_playing.next_up_id() != old_next_id {
             self.replace_prefetched_next();
         }
 
@@ -207,7 +201,7 @@ impl App {
             return;
         }
         let qi = self.now_playing.queue_index;
-        let old_next_id = self.now_playing.queue.get(qi + 1).map(|t| t.id);
+        let old_next_id = self.now_playing.next_up_id();
 
         self.now_playing.queue.swap(idx, idx + 1);
 
@@ -220,8 +214,7 @@ impl App {
         };
         self.now_playing.queue_index = new_qi;
 
-        let new_next_id = self.now_playing.queue.get(new_qi + 1).map(|t| t.id);
-        if new_next_id != old_next_id {
+        if self.now_playing.next_up_id() != old_next_id {
             self.replace_prefetched_next();
         }
 
@@ -278,8 +271,7 @@ impl App {
             self.play_tracks(tracks, 0);
             return false;
         }
-        let qi = self.now_playing.queue_index;
-        let old_next_id = self.now_playing.queue.get(qi + 1).map(|t| t.id);
+        let old_next_id = self.now_playing.next_up_id();
 
         // Or turning shuffle off would drop them again.
         if self.now_playing.shuffle {
@@ -307,7 +299,7 @@ impl App {
 
         // Appending onto an empty tail makes a new track the next one, which
         // mpv has to be told about.
-        if self.now_playing.queue.get(qi + 1).map(|t| t.id) != old_next_id {
+        if self.now_playing.next_up_id() != old_next_id {
             self.replace_prefetched_next();
         }
         self.push_mpris_state();
@@ -441,13 +433,16 @@ impl App {
                 self.resolve_stream(track.id);
             }
             self.fetch_now_playing_metadata();
-        } else if idx == qi + 1 {
-            self.now_playing.queue.remove(idx);
-            self.replace_prefetched_next();
         } else {
+            let old_next_id = self.now_playing.next_up_id();
             self.now_playing.queue.remove(idx);
             if idx < qi {
                 self.now_playing.queue_index -= 1;
+            }
+            // Not just the row after the current one: under repeat queue the
+            // first row is next while the last plays.
+            if self.now_playing.next_up_id() != old_next_id {
+                self.replace_prefetched_next();
             }
         }
 
@@ -462,8 +457,8 @@ impl App {
 
     pub fn push_mpris_state(&self) {
         let np = &self.now_playing;
-        let can_next = np.queue_index + 1 < np.queue.len();
-        let can_prev = np.queue_index > 0 && !np.queue.is_empty();
+        let can_next = np.skip_index(true).is_some();
+        let can_prev = np.skip_index(false).is_some();
         let state = match &np.track {
             Some(t) => MprisState {
                 track_id: t.id,
@@ -487,6 +482,7 @@ impl App {
                 active: np.active,
                 volume: np.volume,
                 shuffle: np.shuffle,
+                repeat: np.repeat,
                 can_next,
                 can_prev,
                 has_track: true,
@@ -495,6 +491,7 @@ impl App {
                 position_epoch: np.position_epoch,
                 volume: np.volume,
                 shuffle: np.shuffle,
+                repeat: np.repeat,
                 can_next,
                 can_prev,
                 ..MprisState::default()
@@ -553,6 +550,22 @@ impl App {
         self.push_mpris_state();
     }
 
+    pub fn cycle_repeat(&mut self) {
+        self.set_repeat(self.now_playing.repeat.next());
+    }
+
+    pub fn set_repeat(&mut self, mode: RepeatMode) {
+        if mode == self.now_playing.repeat {
+            return;
+        }
+        self.now_playing.repeat = mode;
+        if !self.now_playing.queue.is_empty() {
+            self.replace_prefetched_next();
+        }
+        self.set_status(format!("Repeat: {}", mode.label()), StatusLevel::Info);
+        self.push_mpris_state();
+    }
+
     pub fn set_shuffle(&mut self, on: bool) {
         if on == self.now_playing.shuffle {
             return;
@@ -577,7 +590,7 @@ impl App {
             // The spec: seeking beyond the end acts like Next, and stops when
             // there is no next track. `next_track` is a no-op on the last entry,
             // which left the request doing nothing at all.
-            if self.now_playing.queue_index + 1 < self.now_playing.queue.len() {
+            if self.now_playing.skip_index(true).is_some() {
                 self.next_track();
             } else {
                 self.stop_playback();
@@ -623,8 +636,8 @@ mod tests {
     use super::App;
     use crate::api::models::Track;
     use crate::api::{ApiRequest, ApiResponse};
-    use crate::app::QueueAt;
     use crate::app::test_support::track;
+    use crate::app::{QueueAt, RepeatMode};
     use crate::mpris::MprisState;
     use crate::player::{PlayerCmd, PlayerEvent};
     use tokio::sync::mpsc;
@@ -825,11 +838,15 @@ mod tests {
                 progressed = true;
             }
             while let Ok(req) = api_rx.try_recv() {
-                if let ApiRequest::ResolveStreamUrl { track_id, .. } = req {
+                if let ApiRequest::ResolveStreamUrl {
+                    track_id, prefetch, ..
+                } = req
+                {
                     app.handle_api_response(crate::api::ApiResponse::StreamUrl {
                         track_id,
                         url: format!("url-{track_id}"),
                         delivered: Default::default(),
+                        prefetch,
                     });
                 }
                 progressed = true;
@@ -971,11 +988,15 @@ mod tests {
                 break;
             }
             for req in reqs {
-                if let ApiRequest::ResolveStreamUrl { track_id, .. } = req {
+                if let ApiRequest::ResolveStreamUrl {
+                    track_id, prefetch, ..
+                } = req
+                {
                     app.handle_api_response(crate::api::ApiResponse::StreamUrl {
                         track_id,
                         url: format!("url-{track_id}"),
                         delivered: Default::default(),
+                        prefetch,
                     });
                 }
             }
@@ -1013,11 +1034,15 @@ mod tests {
                 break;
             }
             for req in reqs {
-                if let ApiRequest::ResolveStreamUrl { track_id, .. } = req {
+                if let ApiRequest::ResolveStreamUrl {
+                    track_id, prefetch, ..
+                } = req
+                {
                     app.handle_api_response(crate::api::ApiResponse::StreamUrl {
                         track_id,
                         url: format!("url-{track_id}"),
                         delivered: Default::default(),
+                        prefetch,
                     });
                 }
             }
@@ -1188,6 +1213,177 @@ mod tests {
         // mpv's playlist — rather than narrating a track mpv never loaded.
         assert_eq!(resolved_track_ids(&mut api_rx), vec![2]);
         assert!(!app.now_playing.active);
+    }
+
+    // ── Repeat ────────────────────────────────────────────────────────────────
+
+    /// mpv's order of events at a natural end: `end-file`, then `file-loaded` for
+    /// whatever it rolled onto — which `settle` cannot infer when that is the same
+    /// track again.
+    fn natural_end(
+        app: &mut App,
+        mpv: &mut FakeMpv,
+        api_rx: &mut mpsc::UnboundedReceiver<ApiRequest>,
+        player_rx: &mut mpsc::UnboundedReceiver<PlayerCmd>,
+    ) {
+        let rolled = mpv.end_of_file();
+        app.handle_player_event(PlayerEvent::TrackEnded);
+        if rolled {
+            app.handle_player_event(PlayerEvent::TrackStarted);
+        }
+        settle(app, mpv, api_rx, player_rx);
+    }
+
+    #[test]
+    fn repeat_track_rolls_onto_the_same_track_again() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.now_playing.repeat = RepeatMode::Track;
+        app.play_tracks((1..=3).map(track).collect(), 1);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+
+        for lap in 0..3 {
+            assert_eq!(
+                mpv.playlist.get(mpv.pos + 1),
+                Some(&2),
+                "lap {lap}: mpv must hold the playing track again, so the loop is gapless"
+            );
+            natural_end(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+            assert_eq!(mpv.playing(), Some(2), "lap {lap}");
+            assert_eq!(app.now_playing.queue_index, 1, "lap {lap}");
+            assert_in_sync(&app, &mpv, &format!("after lap {lap}"));
+        }
+    }
+
+    #[test]
+    fn repeat_queue_rolls_from_the_last_track_to_the_first() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.now_playing.repeat = RepeatMode::Queue;
+        app.play_tracks((1..=3).map(track).collect(), 2);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+
+        natural_end(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        assert_eq!(mpv.playing(), Some(1));
+        assert_eq!(app.now_playing.queue_index, 0);
+        assert_in_sync(&app, &mpv, "after wrapping");
+
+        natural_end(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        assert_in_sync(&app, &mpv, "after the first track of the second pass");
+    }
+
+    /// mpv's `file-loaded` can land after the prefetch's stream URL. With repeat
+    /// track the prefetch names the very track whose `Play` is still loading, and
+    /// an id alone cannot tell the two apart — taking it for the current track
+    /// restarts the song and requests it again, the #43 loop.
+    #[test]
+    fn a_repeated_track_is_not_restarted_by_its_own_prefetch() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.now_playing.repeat = RepeatMode::Track;
+        app.play_tracks(vec![track(7), track(8)], 0);
+
+        let mut plays = 0;
+        for _ in 0..12 {
+            while let Ok(cmd) = player_rx.try_recv() {
+                if matches!(cmd, PlayerCmd::Play(_)) {
+                    plays += 1;
+                }
+                mpv.apply(cmd);
+            }
+            let reqs: Vec<ApiRequest> = std::iter::from_fn(|| api_rx.try_recv().ok()).collect();
+            if reqs.is_empty() {
+                break;
+            }
+            for req in reqs {
+                if let ApiRequest::ResolveStreamUrl {
+                    track_id, prefetch, ..
+                } = req
+                {
+                    app.handle_api_response(ApiResponse::StreamUrl {
+                        track_id,
+                        url: format!("url-{track_id}"),
+                        delivered: Default::default(),
+                        prefetch,
+                    });
+                }
+            }
+        }
+
+        assert_eq!(plays, 1, "the track must be loaded once, not restarted");
+        assert_eq!(mpv.playlist, vec![7, 7]);
+    }
+
+    #[test]
+    fn turning_repeat_queue_on_at_the_last_track_queues_the_first() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.play_tracks((1..=3).map(track).collect(), 2);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        assert_eq!(mpv.playlist.get(mpv.pos + 1), None);
+
+        app.set_repeat(RepeatMode::Queue);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+
+        assert_eq!(mpv.playlist.get(mpv.pos + 1), Some(&1));
+    }
+
+    #[test]
+    fn removing_the_first_track_requeues_the_wrap_target() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+        app.now_playing.repeat = RepeatMode::Queue;
+        app.play_tracks((1..=3).map(track).collect(), 2);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+
+        app.remove_from_queue(0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+
+        assert_eq!(mpv.playlist.get(mpv.pos + 1), Some(&2));
+    }
+
+    #[test]
+    fn next_wraps_to_the_first_track_when_repeating_the_queue() {
+        let (mut app, mut api_rx) = make_app_watching_api();
+        app.now_playing.repeat = RepeatMode::Queue;
+        app.now_playing.queue = (1..=3).map(track).collect();
+        app.now_playing.queue_index = 2;
+
+        app.next_track();
+
+        assert_eq!(app.now_playing.queue_index, 0);
+        assert_eq!(resolved_track_ids(&mut api_rx), vec![1]);
+    }
+
+    #[test]
+    fn previous_wraps_to_the_last_track_when_repeating_the_queue() {
+        let (mut app, mut api_rx) = make_app_watching_api();
+        app.now_playing.repeat = RepeatMode::Queue;
+        app.now_playing.queue = (1..=3).map(track).collect();
+        app.now_playing.queue_index = 0;
+
+        app.prev_track();
+
+        assert_eq!(app.now_playing.queue_index, 2);
+        assert_eq!(resolved_track_ids(&mut api_rx), vec![3]);
+    }
+
+    /// Repeat track decides what follows a track that *ends*; a skip is the user
+    /// asking for a different one.
+    #[test]
+    fn skipping_under_repeat_track_moves_on_without_wrapping() {
+        let mut app = make_app();
+        app.now_playing.repeat = RepeatMode::Track;
+        app.now_playing.queue = (1..=2).map(track).collect();
+        app.now_playing.queue_index = 0;
+
+        app.next_track();
+        assert_eq!(app.now_playing.queue_index, 1);
+        app.next_track();
+        assert_eq!(
+            app.now_playing.queue_index, 1,
+            "repeat track must not wrap a skip"
+        );
     }
 
     #[test]
@@ -1757,6 +1953,7 @@ mod tests {
             track_id: 2,
             url: "url-2".into(),
             delivered: Default::default(),
+            prefetch: false,
         });
 
         assert_eq!(app.now_playing.art_bytes(), Some([3, 2, 1].as_slice()));

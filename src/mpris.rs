@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Fezzik the Giant
 
+use crate::app::RepeatMode;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, watch};
@@ -35,9 +36,27 @@ pub struct MprisState {
     /// mpv scale, 0–100. MPRIS speaks 0.0–1.0; the conversion lives at the interface.
     pub volume: u8,
     pub shuffle: bool,
+    pub repeat: RepeatMode,
     pub can_next: bool,
     pub can_prev: bool,
     pub has_track: bool,
+}
+
+fn loop_status_name(mode: RepeatMode) -> &'static str {
+    match mode {
+        RepeatMode::Off => "None",
+        RepeatMode::Queue => "Playlist",
+        RepeatMode::Track => "Track",
+    }
+}
+
+fn parse_loop_status(status: &str) -> Option<RepeatMode> {
+    match status {
+        "None" => Some(RepeatMode::Off),
+        "Playlist" => Some(RepeatMode::Queue),
+        "Track" => Some(RepeatMode::Track),
+        _ => None,
+    }
 }
 
 fn playback_status(s: &MprisState) -> &'static str {
@@ -63,6 +82,7 @@ pub enum MprisCmd {
     /// MPRIS scale, 0.0–1.0.
     SetVolume(f64),
     SetShuffle(bool),
+    SetRepeat(RepeatMode),
     /// Relative offset in microseconds.
     Seek(i64),
     /// Track id (parsed from the client's trackid path) and absolute position in
@@ -159,9 +179,17 @@ impl PlayerIface {
         playback_status(&self.state.lock().unwrap()).into()
     }
 
-    #[zbus(property)]
+    // Same asynchronous round trip as `shuffle` below.
+    #[zbus(property(emits_changed_signal = "false"))]
     fn loop_status(&self) -> String {
-        "None".into()
+        loop_status_name(self.state.lock().unwrap().repeat).into()
+    }
+
+    #[zbus(property)]
+    fn set_loop_status(&self, status: String) {
+        if let Some(mode) = parse_loop_status(&status) {
+            let _ = self.cmd_tx.send(MprisCmd::SetRepeat(mode));
+        }
     }
 
     #[zbus(property)]
@@ -305,6 +333,7 @@ struct SignalPlan {
     metadata: bool,
     volume: bool,
     shuffle: bool,
+    loop_status: bool,
     can_next: bool,
     can_prev: bool,
     can_play_pause: bool,
@@ -330,6 +359,7 @@ fn plan_signals(prev: &MprisState, new: &MprisState) -> SignalPlan {
         metadata: metadata_fields(prev) != metadata_fields(new),
         volume: prev.volume != new.volume,
         shuffle: prev.shuffle != new.shuffle,
+        loop_status: prev.repeat != new.repeat,
         can_next: prev.can_next != new.can_next,
         can_prev: prev.can_prev != new.can_prev,
         can_play_pause: prev.has_track != new.has_track,
@@ -441,6 +471,9 @@ impl MprisServer {
             if plan.shuffle {
                 let _ = guard.shuffle_changed(ctx).await;
             }
+            if plan.loop_status {
+                let _ = guard.loop_status_changed(ctx).await;
+            }
             if plan.can_next {
                 let _ = guard.can_go_next_changed(ctx).await;
             }
@@ -481,6 +514,7 @@ mod tests {
             active: true,
             volume: 80,
             shuffle: false,
+            repeat: RepeatMode::Off,
             can_next: true,
             can_prev: false,
             has_track: true,
@@ -556,13 +590,22 @@ mod tests {
     }
 
     #[test]
-    fn volume_and_shuffle_signal_their_properties() {
+    fn loop_status_names_round_trip() {
+        for mode in [RepeatMode::Off, RepeatMode::Queue, RepeatMode::Track] {
+            assert_eq!(parse_loop_status(loop_status_name(mode)), Some(mode));
+        }
+        assert_eq!(parse_loop_status("Bogus"), None);
+    }
+
+    #[test]
+    fn volume_shuffle_and_repeat_signal_their_properties() {
         let prev = playing_state();
         let mut new = prev.clone();
         new.volume = 50;
         new.shuffle = true;
+        new.repeat = RepeatMode::Track;
         let plan = plan_signals(&prev, &new);
-        assert!(plan.volume && plan.shuffle);
+        assert!(plan.volume && plan.shuffle && plan.loop_status);
         assert!(!plan.metadata && !plan.status);
     }
 }

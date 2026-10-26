@@ -4,6 +4,7 @@
 //! Playback state: the queue, current track, and derived display helpers.
 
 use super::*;
+use serde::{Deserialize, Serialize};
 
 // ── Now playing ───────────────────────────────────────────────────────────────
 
@@ -20,6 +21,44 @@ pub struct PendingSeek {
 
 impl PendingSeek {
     pub const POLL_BUDGET: u8 = 3;
+}
+
+/// What follows the last track, or the current one, once it ends.
+///
+/// Named after MPRIS `LoopStatus` rather than after a UI, because that is the
+/// one fixed vocabulary every client already speaks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RepeatMode {
+    #[default]
+    Off,
+    Queue,
+    Track,
+}
+
+impl RepeatMode {
+    const CYCLE: [RepeatMode; 3] = [Self::Off, Self::Queue, Self::Track];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Off => "Off",
+            Self::Queue => "Queue",
+            Self::Track => "Track",
+        }
+    }
+
+    pub fn next(self) -> Self {
+        self.step(1)
+    }
+
+    pub fn previous(self) -> Self {
+        self.step(Self::CYCLE.len() - 1)
+    }
+
+    fn step(self, by: usize) -> Self {
+        let at = Self::CYCLE.iter().position(|&m| m == self).unwrap_or(0);
+        Self::CYCLE[(at + by) % Self::CYCLE.len()]
+    }
 }
 
 /// Where newly queued tracks land.
@@ -84,6 +123,7 @@ pub struct NowPlaying {
     pub codec: Option<String>,
     pub volume: u8,
     pub shuffle: bool,
+    pub repeat: RepeatMode,
     /// UUID of the playlist this queue originated from, used to append arriving pages.
     pub source_playlist_uuid: Option<String>,
     /// How many tracks from that playlist have been loaded into the queue so far.
@@ -148,6 +188,7 @@ impl Default for NowPlaying {
             codec: None,
             volume: 100,
             shuffle: false,
+            repeat: RepeatMode::Off,
             source_playlist_uuid: None,
             source_playlist_next_offset: 0,
             source_playlist_cursor: None,
@@ -229,6 +270,42 @@ impl NowPlaying {
     /// all carry `album.id == 0`, so every in-flight response would match.
     pub(crate) fn wants_art_source(&self, source: &str) -> bool {
         self.art_source.as_deref() == Some(source)
+    }
+
+    /// The entry mpv should play once the current one ends. Everything that
+    /// prefetches or advances asks here, so the repeat mode is decided once.
+    pub fn next_index(&self) -> Option<usize> {
+        let qi = self.queue_index;
+        let len = self.queue.len();
+        match self.repeat {
+            RepeatMode::Off => (qi + 1 < len).then_some(qi + 1),
+            RepeatMode::Queue => (len > 0).then(|| (qi + 1) % len),
+            RepeatMode::Track => (qi < len).then_some(qi),
+        }
+    }
+
+    pub fn next_up_id(&self) -> Option<u64> {
+        self.next_index()
+            .and_then(|i| self.queue.get(i))
+            .map(|t| t.id)
+    }
+
+    /// Where `n`/`p` land. Repeat track governs what follows a track that ends,
+    /// not a skip, which is the user asking for a different one.
+    pub fn skip_index(&self, forward: bool) -> Option<usize> {
+        let qi = self.queue_index;
+        let len = self.queue.len();
+        if len == 0 {
+            return None;
+        }
+        let wrap = self.repeat == RepeatMode::Queue;
+        match (forward, wrap) {
+            (true, _) if qi + 1 < len => Some(qi + 1),
+            (true, true) => Some(0),
+            (false, _) if qi > 0 => Some(qi - 1),
+            (false, true) => Some(len - 1),
+            _ => None,
+        }
     }
 
     /// Detach the queue from the playlist it came from, so pages still in flight
