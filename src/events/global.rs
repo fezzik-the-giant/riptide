@@ -29,11 +29,11 @@ pub(super) fn kitty_delete_artist_art() {
 }
 
 pub(super) fn leaving_album(app: &App) -> bool {
-    matches!(app.view_stack.last(), Some(View::AlbumDetail(_)))
+    matches!(app.view_stack.last(), Some(View::Album(_)))
 }
 
 pub(super) fn leaving_artist(app: &App) -> bool {
-    matches!(app.view_stack.last(), Some(View::ArtistDetail(_)))
+    matches!(app.view_stack.last(), Some(View::Artist(_)))
 }
 
 /// Bindings that apply everywhere: transport, volume, tabs, help, quit.

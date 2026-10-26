@@ -308,10 +308,10 @@ fn is_under_cargo_bin(path: &Path) -> bool {
 /// True when `path` lives under the Nix store. Canonicalizes symlinks so that
 /// `/run/current-system/sw/bin/riptide` is correctly classified.
 fn is_under_nix_store(path: &Path) -> bool {
-    if let Ok(canonical) = std::fs::canonicalize(path) {
-        if canonical.starts_with("/nix/store") {
-            return true;
-        }
+    if let Ok(canonical) = std::fs::canonicalize(path)
+        && canonical.starts_with("/nix/store")
+    {
+        return true;
     }
     path.starts_with("/nix/store")
 }
@@ -608,7 +608,7 @@ fn download_and_install(
         let sums_path = tmp.join("SHA256SUMS");
         download_to_file(client, url, &sums_path).context("cannot download SHA256SUMS")?;
         let sums = std::fs::read_to_string(&sums_path).context("cannot read SHA256SUMS")?;
-        let expected = parse_sha256sums(&sums, &asset)
+        let expected = parse_sha256sums(&sums, asset)
             .with_context(|| format!("SHA256SUMS has no entry for {asset}"))?;
         let actual = sha256_hex(&tarball);
         if actual != expected {
@@ -1485,9 +1485,8 @@ mod tests {
         let prev2 = std::env::var("CARGO_HOME").ok();
         unsafe { std::env::remove_var("CARGO_HOME") };
         let fallback_result = is_under_cargo_bin(fallback);
-        match prev2 {
-            Some(v) => unsafe { std::env::set_var("CARGO_HOME", v) },
-            None => {}
+        if let Some(v) = prev2 {
+            unsafe { std::env::set_var("CARGO_HOME", v) }
         }
         assert!(
             fallback_result,

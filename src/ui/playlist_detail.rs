@@ -103,16 +103,16 @@ pub(super) fn render_playlist_detail(
     }
 
     // Description with scrolling (if it exists)
-    if let Some(desc) = &detail.playlist.description {
-        if !desc.is_empty() {
-            f.render_widget(
-                Paragraph::new(desc.as_str())
-                    .style(Style::default().fg(DIM))
-                    .wrap(Wrap { trim: true })
-                    .scroll((detail.description_scroll, 0)),
-                sections[2],
-            );
-        }
+    if let Some(desc) = &detail.playlist.description
+        && !desc.is_empty()
+    {
+        f.render_widget(
+            Paragraph::new(desc.as_str())
+                .style(Style::default().fg(DIM))
+                .wrap(Wrap { trim: true })
+                .scroll((detail.description_scroll, 0)),
+            sections[2],
+        );
     }
 
     // ── Track list (full right column) ────────────────────────────────────────

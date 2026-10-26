@@ -82,5 +82,9 @@ pub(super) fn spinner_char(tick: u64) -> char {
 
 /// Blinking block for text inputs. Shared so every input box blinks in step.
 pub(super) fn cursor_char(tick: u64) -> &'static str {
-    if (tick / 30) % 2 == 0 { "█" } else { " " }
+    if (tick / 30).is_multiple_of(2) {
+        "█"
+    } else {
+        " "
+    }
 }

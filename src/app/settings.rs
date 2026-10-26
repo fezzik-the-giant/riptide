@@ -57,14 +57,14 @@ impl App {
         self.fav_albums.set_hide_atmos(hide);
         for view in &mut self.view_stack {
             match view {
-                View::ArtistDetail(detail) => {
+                View::Artist(detail) => {
                     detail.tracks.set_hide_atmos(hide);
                     detail.albums.set_hide_atmos(hide);
                     detail.eps.set_hide_atmos(hide);
                     detail.singles.set_hide_atmos(hide);
                 }
-                View::AlbumDetail(detail) => detail.tracks.set_hide_atmos(hide),
-                View::PlaylistDetail(detail) => detail.tracks.set_hide_atmos(hide),
+                View::Album(detail) => detail.tracks.set_hide_atmos(hide),
+                View::Playlist(detail) => detail.tracks.set_hide_atmos(hide),
             }
         }
     }
@@ -308,13 +308,13 @@ mod tests {
         let mut t = test_app();
         assert!(!t.app.atmos);
 
-        t.app.push_view(View::AlbumDetail(AlbumDetail {
+        t.app.push_view(View::Album(AlbumDetail {
             album: track(1).album,
             tracks: StatefulList::default(),
             art_bytes: None,
             art_loading: false,
         }));
-        let Some(View::AlbumDetail(detail)) = t.app.view_stack.last_mut() else {
+        let Some(View::Album(detail)) = t.app.view_stack.last_mut() else {
             panic!("album detail was not pushed");
         };
         detail.tracks.items = vec![
@@ -323,7 +323,7 @@ mod tests {
         ];
         detail.tracks.refilter();
 
-        let Some(View::AlbumDetail(detail)) = t.app.view_stack.last() else {
+        let Some(View::Album(detail)) = t.app.view_stack.last() else {
             unreachable!()
         };
         assert_eq!(detail.tracks.visible_len(), 1);

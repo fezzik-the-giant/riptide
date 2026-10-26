@@ -5,6 +5,7 @@
 
 // ── Artist selection modal ────────────────────────────────────────────────────
 
+#[derive(Default)]
 pub struct ArtistSelection {
     pub active: bool,
     pub artist_names: Vec<String>,
@@ -12,33 +13,13 @@ pub struct ArtistSelection {
     pub searching_for: Option<String>,
 }
 
-impl Default for ArtistSelection {
-    fn default() -> Self {
-        Self {
-            active: false,
-            artist_names: Vec::new(),
-            selected: 0,
-            searching_for: None,
-        }
-    }
-}
-
 // ── Command palette ───────────────────────────────────────────────────────────
 
+#[derive(Default)]
 pub struct CommandState {
     pub active: bool,
     pub input: String,
     pub selected: usize,
-}
-
-impl Default for CommandState {
-    fn default() -> Self {
-        Self {
-            active: false,
-            input: String::new(),
-            selected: 0,
-        }
-    }
 }
 
 impl CommandState {
@@ -78,8 +59,10 @@ mod tests {
 
     #[test]
     fn command_state_matches_prefix() {
-        let mut cmd = CommandState::default();
-        cmd.input = "tra".to_string();
+        let cmd = CommandState {
+            input: "tra".to_string(),
+            ..CommandState::default()
+        };
         let matches = cmd.matches();
         assert!(matches.contains(&"tracks"));
         assert!(!matches.contains(&"artists"));
@@ -109,8 +92,10 @@ mod tests {
 
     #[test]
     fn command_state_no_match_returns_empty() {
-        let mut cmd = CommandState::default();
-        cmd.input = "zzz".to_string();
+        let cmd = CommandState {
+            input: "zzz".to_string(),
+            ..CommandState::default()
+        };
         assert!(cmd.matches().is_empty());
     }
 }

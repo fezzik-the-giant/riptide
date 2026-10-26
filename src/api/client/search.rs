@@ -152,23 +152,22 @@ fn parse_search_track_page(api_resp: &serde_json::Value) -> Result<SearchTrackPa
 
     if let Some(included) = included_opt {
         for item in included {
-            if item["type"] == "artists" {
-                if let Ok(id) = item["id"]
+            if item["type"] == "artists"
+                && let Ok(id) = item["id"]
                     .as_str()
                     .context("missing artist id")?
                     .parse::<u64>()
-                {
-                    let name = item["attributes"]["name"]
-                        .as_str()
-                        .unwrap_or("")
-                        .to_string();
-                    let artist = Artist {
-                        id,
-                        name,
-                        added_at: None,
-                    };
-                    artist_map.insert(id, artist);
-                }
+            {
+                let name = item["attributes"]["name"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string();
+                let artist = Artist {
+                    id,
+                    name,
+                    added_at: None,
+                };
+                artist_map.insert(id, artist);
             }
         }
 
@@ -188,14 +187,13 @@ fn parse_search_track_page(api_resp: &serde_json::Value) -> Result<SearchTrackPa
                 let mut artist_refs = Vec::new();
                 if let Some(artist_rels) = item["relationships"]["artists"]["data"].as_array() {
                     for artist_ref in artist_rels {
-                        if let Some(artist_id_str) = artist_ref["id"].as_str() {
-                            if let Ok(artist_id) = artist_id_str.parse::<u64>() {
-                                if let Some(artist) = artist_map.get(&artist_id) {
-                                    artist_refs.push(ArtistRef {
-                                        name: artist.name.clone(),
-                                    });
-                                }
-                            }
+                        if let Some(artist_id_str) = artist_ref["id"].as_str()
+                            && let Ok(artist_id) = artist_id_str.parse::<u64>()
+                            && let Some(artist) = artist_map.get(&artist_id)
+                        {
+                            artist_refs.push(ArtistRef {
+                                name: artist.name.clone(),
+                            });
                         }
                     }
                 }
@@ -250,12 +248,11 @@ fn parse_search_track_page(api_resp: &serde_json::Value) -> Result<SearchTrackPa
     }
 
     for track_ref in track_refs_src {
-        if let Some(id_str) = track_ref["id"].as_str() {
-            if let Ok(id) = id_str.parse::<u64>() {
-                if let Some(track) = track_map.remove(&id) {
-                    tracks.push(track);
-                }
-            }
+        if let Some(id_str) = track_ref["id"].as_str()
+            && let Ok(id) = id_str.parse::<u64>()
+            && let Some(track) = track_map.remove(&id)
+        {
+            tracks.push(track);
         }
     }
 
@@ -315,12 +312,11 @@ fn parse_search_artist_page(api_resp: &serde_json::Value) -> Result<SearchArtist
         }
 
         for artist_ref in artist_refs {
-            if let Some(id_str) = artist_ref["id"].as_str() {
-                if let Ok(id) = id_str.parse::<u64>() {
-                    if let Some(artist) = artist_map.remove(&id) {
-                        artists.push(artist);
-                    }
-                }
+            if let Some(id_str) = artist_ref["id"].as_str()
+                && let Ok(id) = id_str.parse::<u64>()
+                && let Some(artist) = artist_map.remove(&id)
+            {
+                artists.push(artist);
             }
         }
     }
@@ -398,10 +394,10 @@ fn parse_search_playlist_page(api_resp: &serde_json::Value) -> Result<SearchPlay
         }
 
         for playlist_ref in playlist_refs {
-            if let Some(uuid) = playlist_ref["id"].as_str() {
-                if let Some(playlist) = playlist_map.remove(uuid) {
-                    playlists.push(playlist);
-                }
+            if let Some(uuid) = playlist_ref["id"].as_str()
+                && let Some(playlist) = playlist_map.remove(uuid)
+            {
+                playlists.push(playlist);
             }
         }
     }

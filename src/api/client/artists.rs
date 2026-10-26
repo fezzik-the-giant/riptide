@@ -23,61 +23,58 @@ fn parse_artist_albums(api_resp: &serde_json::Value) -> Result<Vec<Album>> {
     let mut album_map = HashMap::new();
     if let Some(included) = api_resp.get("included").and_then(|v| v.as_array()) {
         for item in included {
-            if item.get("type").and_then(|v| v.as_str()) == Some("albums") {
-                if let Some(id) = item.get("id").and_then(|v| v.as_str()) {
-                    album_map.insert(id.to_string(), item.clone());
-                }
+            if item.get("type").and_then(|v| v.as_str()) == Some("albums")
+                && let Some(id) = item.get("id").and_then(|v| v.as_str())
+            {
+                album_map.insert(id.to_string(), item.clone());
             }
         }
     }
 
     let mut albums = Vec::new();
     for album_id in album_ids {
-        if let Some(album_obj) = album_map.get(&album_id) {
-            if let Some(attrs) = album_obj.get("attributes").and_then(|v| v.as_object()) {
-                if let Some(title) = attrs.get("title").and_then(|v| v.as_str()) {
-                    if let Ok(id) = album_id.parse::<u64>() {
-                        let album_type = attrs
-                            .get("albumType")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
+        if let Some(album_obj) = album_map.get(&album_id)
+            && let Some(attrs) = album_obj.get("attributes").and_then(|v| v.as_object())
+            && let Some(title) = attrs.get("title").and_then(|v| v.as_str())
+            && let Ok(id) = album_id.parse::<u64>()
+        {
+            let album_type = attrs
+                .get("albumType")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
 
-                        let number_of_items = attrs
-                            .get("numberOfItems")
-                            .and_then(|v| v.as_u64())
-                            .map(|n| n as u32);
+            let number_of_items = attrs
+                .get("numberOfItems")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as u32);
 
-                        let release_date = attrs
-                            .get("releaseDate")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
+            let release_date = attrs
+                .get("releaseDate")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
 
-                        let media_metadata =
-                            attrs
-                                .get("mediaTags")
-                                .and_then(|v| v.as_array())
-                                .map(|tags| {
-                                    let tag_strs: Vec<String> = tags
-                                        .iter()
-                                        .filter_map(|t| t.as_str().map(|s| s.to_string()))
-                                        .collect();
-                                    MediaMetadata { tags: tag_strs }
-                                });
+            let media_metadata = attrs
+                .get("mediaTags")
+                .and_then(|v| v.as_array())
+                .map(|tags| {
+                    let tag_strs: Vec<String> = tags
+                        .iter()
+                        .filter_map(|t| t.as_str().map(|s| s.to_string()))
+                        .collect();
+                    MediaMetadata { tags: tag_strs }
+                });
 
-                        albums.push(Album {
-                            id,
-                            title: title.to_string(),
-                            number_of_tracks: number_of_items,
-                            release_date,
-                            cover: None,
-                            artist: None,
-                            media_metadata,
-                            added_at: None,
-                            album_type,
-                        });
-                    }
-                }
-            }
+            albums.push(Album {
+                id,
+                title: title.to_string(),
+                number_of_tracks: number_of_items,
+                release_date,
+                cover: None,
+                artist: None,
+                media_metadata,
+                added_at: None,
+                album_type,
+            });
         }
     }
 
@@ -123,27 +120,26 @@ fn parse_v2_user_collection_artists(
     let mut artist_map = HashMap::new();
     if let Some(included) = api_resp.get("included").and_then(|v| v.as_array()) {
         for item in included {
-            if item.get("type").and_then(|v| v.as_str()) == Some("artists") {
-                if let Some(id) = item.get("id").and_then(|v| v.as_str()) {
-                    artist_map.insert(id.to_string(), item.clone());
-                }
+            if item.get("type").and_then(|v| v.as_str()) == Some("artists")
+                && let Some(id) = item.get("id").and_then(|v| v.as_str())
+            {
+                artist_map.insert(id.to_string(), item.clone());
             }
         }
     }
 
     let mut artists = Vec::new();
     for artist_id in artist_ids {
-        if let Some(artist_obj) = artist_map.get(&artist_id) {
-            if let Some(attrs) = artist_obj.get("attributes").and_then(|v| v.as_object()) {
-                if let Some(name) = attrs.get("name").and_then(|v| v.as_str()) {
-                    let artist = Artist {
-                        id: artist_id.parse().unwrap_or(0),
-                        name: name.to_string(),
-                        added_at: added_at_map.get(&artist_id).cloned(),
-                    };
-                    artists.push(artist);
-                }
-            }
+        if let Some(artist_obj) = artist_map.get(&artist_id)
+            && let Some(attrs) = artist_obj.get("attributes").and_then(|v| v.as_object())
+            && let Some(name) = attrs.get("name").and_then(|v| v.as_str())
+        {
+            let artist = Artist {
+                id: artist_id.parse().unwrap_or(0),
+                name: name.to_string(),
+                added_at: added_at_map.get(&artist_id).cloned(),
+            };
+            artists.push(artist);
         }
     }
 
@@ -257,10 +253,10 @@ impl ApiClient {
         let mut artwork_map = HashMap::new();
         if let Some(included) = api_resp.get("included").and_then(|v| v.as_array()) {
             for item in included {
-                if item.get("type").and_then(|v| v.as_str()) == Some("artworks") {
-                    if let Some(id) = item.get("id").and_then(|v| v.as_str()) {
-                        artwork_map.insert(id.to_string(), item.clone());
-                    }
+                if item.get("type").and_then(|v| v.as_str()) == Some("artworks")
+                    && let Some(id) = item.get("id").and_then(|v| v.as_str())
+                {
+                    artwork_map.insert(id.to_string(), item.clone());
                 }
             }
         }

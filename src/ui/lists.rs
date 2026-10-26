@@ -29,15 +29,15 @@ pub(super) fn render_content(f: &mut Frame, app: &App, area: Rect) {
     // If there's a view on the stack, render it
     if let Some(view) = app.view_stack.last() {
         match view {
-            View::ArtistDetail(detail) => {
+            View::Artist(detail) => {
                 render_artist_detail(f, app, detail, area);
                 return;
             }
-            View::PlaylistDetail(detail) => {
+            View::Playlist(detail) => {
                 render_playlist_detail(f, app, detail, area);
                 return;
             }
-            View::AlbumDetail(detail) => {
+            View::Album(detail) => {
                 render_album_detail(f, app, detail, area);
                 return;
             }

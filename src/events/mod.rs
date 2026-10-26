@@ -361,12 +361,10 @@ fn handle_key(app: &mut App, key: KeyEvent) {
     }
 
     // Open search modal when on Search tab
-    if app.current_tab == Tab::Search {
-        if key.code == KeyCode::Char('/') {
-            app.search.modal_open = true;
-            app.search.query.clear();
-            return;
-        }
+    if app.current_tab == Tab::Search && key.code == KeyCode::Char('/') {
+        app.search.modal_open = true;
+        app.search.query.clear();
+        return;
     }
 
     if !handle_global_key(app, key) {
@@ -518,7 +516,7 @@ mod tests {
         t.app.playlists.append_page(vec![mine.clone()], None);
         t.app.owned_playlist_ids.insert("mine".to_string());
         t.app.open_playlist(mine);
-        if let Some(crate::app::View::PlaylistDetail(d)) = t.app.view_stack.last_mut() {
+        if let Some(crate::app::View::Playlist(d)) = t.app.view_stack.last_mut() {
             d.tracks.append_page(
                 vec![Track {
                     playlist_item_id: Some("a".to_string()),
@@ -644,12 +642,12 @@ mod tests {
             playlist_item_id: Some(id.to_string()),
             ..crate::app::test_support::track(1)
         });
-        if let Some(crate::app::View::PlaylistDetail(d)) = t.app.view_stack.last_mut() {
+        if let Some(crate::app::View::Playlist(d)) = t.app.view_stack.last_mut() {
             d.tracks.append_page(rows.to_vec(), None);
         }
         t.drain_api();
         let order = |t: &crate::app::test_support::TestApp| {
-            let Some(crate::app::View::PlaylistDetail(d)) = t.app.view_stack.last() else {
+            let Some(crate::app::View::Playlist(d)) = t.app.view_stack.last() else {
                 panic!("detail closed")
             };
             d.tracks
@@ -691,13 +689,13 @@ mod tests {
 
         let mut t = test_app();
         assert!(!t.app.atmos);
-        t.app.push_view(View::AlbumDetail(AlbumDetail {
+        t.app.push_view(View::Album(AlbumDetail {
             album: track_tagged(1, &[]).album,
             tracks: StatefulList::default(),
             art_bytes: None,
             art_loading: false,
         }));
-        let Some(View::AlbumDetail(detail)) = t.app.view_stack.last_mut() else {
+        let Some(View::Album(detail)) = t.app.view_stack.last_mut() else {
             panic!("album detail was not pushed");
         };
         detail.tracks.items = vec![

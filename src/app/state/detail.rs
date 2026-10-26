@@ -34,17 +34,12 @@ pub struct ArtistDetail {
 
 // ── Home tab ──────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum HomeSectionFocus {
+    #[default]
     NewReleases,
     DailyMixes,
     DiscoveryMixes,
-}
-
-impl Default for HomeSectionFocus {
-    fn default() -> Self {
-        Self::NewReleases
-    }
 }
 
 pub struct HomeSection<T> {

@@ -52,13 +52,13 @@ fn parse_v2_user_collection_tracks(
 
     if let Some(included) = api_resp.get("included").and_then(|v| v.as_array()) {
         for item in included {
-            if let Some(item_type) = item.get("type").and_then(|v| v.as_str()) {
-                if let Some(id) = item.get("id").and_then(|v| v.as_str()) {
-                    if item_type == "tracks" {
-                        track_map.insert(id.to_string(), item.clone());
-                    } else if item_type == "artists" {
-                        artist_map.insert(id.to_string(), item.clone());
-                    }
+            if let Some(item_type) = item.get("type").and_then(|v| v.as_str())
+                && let Some(id) = item.get("id").and_then(|v| v.as_str())
+            {
+                if item_type == "tracks" {
+                    track_map.insert(id.to_string(), item.clone());
+                } else if item_type == "artists" {
+                    artist_map.insert(id.to_string(), item.clone());
                 }
             }
         }
@@ -69,57 +69,55 @@ fn parse_v2_user_collection_tracks(
     let mut unresolved_artists = 0usize;
     let referenced = track_ids.len();
     for track_id in track_ids {
-        if let Some(track_obj) = track_map.get(&track_id) {
-            if let Some(attrs) = track_obj.get("attributes").and_then(|v| v.as_object()) {
-                if let Some(title) = attrs.get("title").and_then(|v| v.as_str()) {
-                    if let Ok(id) = track_id.parse::<u64>() {
-                        let duration = parse_iso_duration(
-                            attrs
-                                .get("duration")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("PT0S"),
-                        );
+        if let Some(track_obj) = track_map.get(&track_id)
+            && let Some(attrs) = track_obj.get("attributes").and_then(|v| v.as_object())
+            && let Some(title) = attrs.get("title").and_then(|v| v.as_str())
+            && let Ok(id) = track_id.parse::<u64>()
+        {
+            let duration = parse_iso_duration(
+                attrs
+                    .get("duration")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("PT0S"),
+            );
 
-                        let artists = extract_artists_from_track(track_obj, &artist_map);
-                        if artists.is_empty() {
-                            unresolved_artists += 1;
-                        }
-
-                        let album_title = attrs
-                            .get("album")
-                            .and_then(|v| v.as_object())
-                            .and_then(|obj| obj.get("title"))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
-
-                        let album = Album {
-                            id: 0,
-                            title: album_title,
-                            number_of_tracks: None,
-                            release_date: None,
-                            cover: None,
-                            artist: artists.first().cloned(),
-                            media_metadata: None,
-                            added_at: None,
-                            album_type: None,
-                        };
-
-                        let track = Track {
-                            id,
-                            title: title.to_string(),
-                            duration,
-                            artist: artists.first().cloned(),
-                            artists,
-                            album,
-                            media_metadata: extract_media_metadata(attrs),
-                            added_at: added_at_map.get(&track_id).cloned(),
-                            playlist_item_id: None,
-                        };
-                        tracks.push(track);
-                    }
-                }
+            let artists = extract_artists_from_track(track_obj, &artist_map);
+            if artists.is_empty() {
+                unresolved_artists += 1;
             }
+
+            let album_title = attrs
+                .get("album")
+                .and_then(|v| v.as_object())
+                .and_then(|obj| obj.get("title"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            let album = Album {
+                id: 0,
+                title: album_title,
+                number_of_tracks: None,
+                release_date: None,
+                cover: None,
+                artist: artists.first().cloned(),
+                media_metadata: None,
+                added_at: None,
+                album_type: None,
+            };
+
+            let track = Track {
+                id,
+                title: title.to_string(),
+                duration,
+                artist: artists.first().cloned(),
+                artists,
+                album,
+                media_metadata: extract_media_metadata(attrs),
+                added_at: added_at_map.get(&track_id).cloned(),
+                playlist_item_id: None,
+            };
+            tracks.push(track);
         }
     }
 
@@ -222,51 +220,48 @@ fn parse_v2_track_details(api_resp: &serde_json::Value) -> Result<(Track, Option
     if let Some(included) = api_resp.get("included").and_then(|v| v.as_array()) {
         for item in included {
             if let Some("artists") = item.get("type").and_then(|v| v.as_str()) {
-                if let Some(id) = item.get("id").and_then(|v| v.as_str()) {
-                    if let Some(attrs) = item.get("attributes").and_then(|v| v.as_object()) {
-                        let name = attrs
-                            .get("name")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("Unknown")
-                            .to_string();
-                        artist_map.insert(id.to_string(), name);
-                    }
+                if let Some(id) = item.get("id").and_then(|v| v.as_str())
+                    && let Some(attrs) = item.get("attributes").and_then(|v| v.as_object())
+                {
+                    let name = attrs
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown")
+                        .to_string();
+                    artist_map.insert(id.to_string(), name);
                 }
             } else if let Some("albums") = item.get("type").and_then(|v| v.as_str()) {
-                if let Some(item_id) = item.get("id").and_then(|v| v.as_str()) {
-                    if item_id.parse::<u64>().ok() == Some(album_id) {
-                        if let Some(attrs) = item.get("attributes").and_then(|v| v.as_object()) {
-                            album.title = attrs
-                                .get("title")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("Unknown")
-                                .to_string();
-                            album.release_date = attrs
-                                .get("releaseDate")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string());
-                        }
-                    }
+                if let Some(item_id) = item.get("id").and_then(|v| v.as_str())
+                    && item_id.parse::<u64>().ok() == Some(album_id)
+                    && let Some(attrs) = item.get("attributes").and_then(|v| v.as_object())
+                {
+                    album.title = attrs
+                        .get("title")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown")
+                        .to_string();
+                    album.release_date = attrs
+                        .get("releaseDate")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
                 }
-            } else if let Some("artworks") = item.get("type").and_then(|v| v.as_str()) {
-                if let Some(files) = item
+            } else if let Some("artworks") = item.get("type").and_then(|v| v.as_str())
+                && let Some(files) = item
                     .get("attributes")
                     .and_then(|v| v.get("files"))
                     .and_then(|v| v.as_array())
-                {
-                    if let Some(file) = files.iter().find(|f| {
-                        f.get("meta")
-                            .and_then(|m| m.get("width"))
-                            .and_then(|w| w.as_u64())
-                            .map(|w| w == 320)
-                            .unwrap_or(false)
-                    }) {
-                        cover_url = file
-                            .get("href")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
-                    }
-                }
+                && let Some(file) = files.iter().find(|f| {
+                    f.get("meta")
+                        .and_then(|m| m.get("width"))
+                        .and_then(|w| w.as_u64())
+                        .map(|w| w == 320)
+                        .unwrap_or(false)
+                })
+            {
+                cover_url = file
+                    .get("href")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
             }
         }
     }
@@ -278,14 +273,14 @@ fn parse_v2_track_details(api_resp: &serde_json::Value) -> Result<(Track, Option
         .and_then(|v| v.as_array())
     {
         for artist_ref in artist_ids {
-            if let Some(id) = artist_ref.get("id").and_then(|v| v.as_str()) {
-                if let Some(name) = artist_map.get(id) {
-                    let artist_ref = ArtistRef { name: name.clone() };
-                    if artist.is_none() {
-                        artist = Some(artist_ref.clone());
-                    }
-                    artists.push(artist_ref);
+            if let Some(id) = artist_ref.get("id").and_then(|v| v.as_str())
+                && let Some(name) = artist_map.get(id)
+            {
+                let artist_ref = ArtistRef { name: name.clone() };
+                if artist.is_none() {
+                    artist = Some(artist_ref.clone());
                 }
+                artists.push(artist_ref);
             }
         }
     }
@@ -395,24 +390,23 @@ impl ApiClient {
         let body = resp.text().await?;
         let api_resp: serde_json::Value = serde_json::from_str(&body)?;
 
-        if let Some(included) = api_resp.get("included").and_then(|v| v.as_array()) {
-            if let Some(lyrics_obj) = included.first() {
-                if let Some(attributes) = lyrics_obj.get("attributes") {
-                    let text = attributes
-                        .get("text")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
-                    let lrc = attributes
-                        .get("lrcText")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
+        if let Some(included) = api_resp.get("included").and_then(|v| v.as_array())
+            && let Some(lyrics_obj) = included.first()
+            && let Some(attributes) = lyrics_obj.get("attributes")
+        {
+            let text = attributes
+                .get("text")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let lrc = attributes
+                .get("lrcText")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
 
-                    return Ok(LyricsResponse {
-                        lyrics: text,
-                        subtitles: lrc,
-                    });
-                }
-            }
+            return Ok(LyricsResponse {
+                lyrics: text,
+                subtitles: lrc,
+            });
         }
 
         Ok(LyricsResponse {

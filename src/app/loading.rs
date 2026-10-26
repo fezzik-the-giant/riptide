@@ -89,15 +89,16 @@ impl App {
     }
 
     pub fn load_more_playlist_tracks(&mut self) {
-        if let Some(View::PlaylistDetail(detail)) = self.view_stack.last_mut() {
-            if !detail.tracks.loading && !detail.tracks.exhausted {
-                let uuid = detail.playlist.uuid.clone();
-                let next_url = detail.tracks.pagination_cursor.clone();
-                detail.tracks.loading = true;
-                let _ = self
-                    .api_tx
-                    .send(ApiRequest::LoadPlaylistTracks { uuid, next_url });
-            }
+        if let Some(View::Playlist(detail)) = self.view_stack.last_mut()
+            && !detail.tracks.loading
+            && !detail.tracks.exhausted
+        {
+            let uuid = detail.playlist.uuid.clone();
+            let next_url = detail.tracks.pagination_cursor.clone();
+            detail.tracks.loading = true;
+            let _ = self
+                .api_tx
+                .send(ApiRequest::LoadPlaylistTracks { uuid, next_url });
         }
     }
 

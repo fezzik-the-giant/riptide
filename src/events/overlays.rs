@@ -33,10 +33,8 @@ pub(super) fn handle_command_input(app: &mut App, key: KeyEvent) {
                 app.command.selected = 0;
             }
         }
-        KeyCode::Up => {
-            if app.command.selected > 0 {
-                app.command.selected -= 1;
-            }
+        KeyCode::Up if app.command.selected > 0 => {
+            app.command.selected -= 1;
         }
         KeyCode::Down => {
             let len = app.command.matches().len();
@@ -108,15 +106,11 @@ pub(super) fn handle_sort_palette_input(app: &mut App, key: KeyEvent) {
         KeyCode::Esc => {
             app.sort_palette.active = false;
         }
-        KeyCode::Up => {
-            if app.sort_palette.selected > 0 {
-                app.sort_palette.selected -= 1;
-            }
+        KeyCode::Up if app.sort_palette.selected > 0 => {
+            app.sort_palette.selected -= 1;
         }
-        KeyCode::Down => {
-            if app.sort_palette.selected + 1 < count {
-                app.sort_palette.selected += 1;
-            }
+        KeyCode::Down if app.sort_palette.selected + 1 < count => {
+            app.sort_palette.selected += 1;
         }
         KeyCode::Enter => {
             if let Some((_, field)) = options.get(app.sort_palette.selected) {
@@ -158,10 +152,8 @@ pub(super) fn handle_help_input(app: &mut App, key: KeyEvent) {
             let max = max_scroll(&app.help_query);
             app.help_scroll = (app.help_scroll + 10).min(max);
         }
-        KeyCode::Backspace => {
-            if app.help_query.pop().is_some() {
-                app.help_scroll = 0;
-            }
+        KeyCode::Backspace if app.help_query.pop().is_some() => {
+            app.help_scroll = 0;
         }
         KeyCode::Char(c) => {
             if key.modifiers.contains(KeyModifiers::CONTROL) && (c == 'u' || c == 'U') {
@@ -192,10 +184,8 @@ pub(super) fn handle_artist_selection_input(app: &mut App, key: KeyEvent) {
         KeyCode::Esc => {
             app.artist_selection.active = false;
         }
-        KeyCode::Up => {
-            if app.artist_selection.selected > 0 {
-                app.artist_selection.selected -= 1;
-            }
+        KeyCode::Up if app.artist_selection.selected > 0 => {
+            app.artist_selection.selected -= 1;
         }
         KeyCode::Down => {
             let len = app.artist_selection.artist_names.len();

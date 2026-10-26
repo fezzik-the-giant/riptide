@@ -125,10 +125,7 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
 
         ApiRequest::LoadArtistBio { artist_id } => {
             // A missing bio (404 or empty) is not an error — return empty string.
-            let raw = match client.get_artist_bio(artist_id).await {
-                Ok(bio_text) => bio_text,
-                Err(_) => String::new(),
-            };
+            let raw = client.get_artist_bio(artist_id).await.unwrap_or_default();
             let text = strip_wimplinks(&raw);
             ApiResponse::ArtistBio { artist_id, text }
         }
@@ -242,29 +239,27 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
             } else {
                 // First page uses the playlist endpoint
                 match client.get_playlist_tracks(&uuid, None).await {
-                    Ok((tracks, total, next_url, description, cover)) => {
-                        ApiResponse::PlaylistTracks {
-                            uuid,
-                            tracks,
-                            total,
-                            next_cursor: next_url,
-                            description,
-                            cover,
-                        }
-                    }
+                    Ok(page) => ApiResponse::PlaylistTracks {
+                        uuid,
+                        tracks: page.tracks,
+                        total: page.total,
+                        next_cursor: page.next_url,
+                        description: page.description,
+                        cover: page.cover,
+                    },
                     Err(e) => ApiResponse::Error(e.to_string()),
                 }
             }
         }
 
         ApiRequest::LoadMixTracks { uuid } => match client.get_mix_tracks(&uuid).await {
-            Ok((tracks, total, cover, description)) => ApiResponse::PlaylistTracks {
+            Ok(page) => ApiResponse::PlaylistTracks {
                 uuid,
-                tracks,
-                total,
+                tracks: page.tracks,
+                total: page.total,
                 next_cursor: None,
-                description,
-                cover,
+                description: page.description,
+                cover: page.cover,
             },
             Err(e) => ApiResponse::Error(e.to_string()),
         },

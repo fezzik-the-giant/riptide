@@ -7,7 +7,7 @@ use anyhow::Result;
 use std::collections::HashMap;
 
 use super::parse::{build_included_map, resolve_cover_art};
-use super::playlists::parse_v2_playlist_tracks;
+use super::playlists::{PlaylistPage, parse_v2_playlist_tracks};
 use super::{ApiClient, OPENAPI_BASE};
 use crate::api::models::*;
 
@@ -116,10 +116,7 @@ impl ApiClient {
         self.get_mixes("/userDiscoveryMixes/me").await
     }
 
-    pub async fn get_mix_tracks(
-        &self,
-        mix_id: &str,
-    ) -> Result<(Vec<Track>, u32, Option<String>, Option<String>)> {
+    pub async fn get_mix_tracks(&self, mix_id: &str) -> Result<PlaylistPage> {
         let token = self.access_token().await?;
         let url = format!(
             "{OPENAPI_BASE}/playlists/{mix_id}?countryCode=US&include=items.artists,coverArt"
@@ -150,8 +147,7 @@ impl ApiClient {
         let body = resp.text().await?;
         let api_resp: serde_json::Value = serde_json::from_str(&body)?;
 
-        let (tracks, total, _, description, cover) = parse_v2_playlist_tracks(&api_resp)?;
-        Ok((tracks, total, cover, description))
+        parse_v2_playlist_tracks(&api_resp)
     }
 
     pub async fn get_new_release_mixes(&self) -> Result<Vec<Playlist>> {
