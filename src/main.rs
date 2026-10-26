@@ -184,6 +184,7 @@ fn main() -> Result<()> {
         visualizer_link,
         &config,
     );
+    app.restore_session(app::load_session());
 
     // Reap any staged files left by a previous cancelled update.
     update::cleanup_stale_artifacts();
@@ -292,6 +293,9 @@ fn main() -> Result<()> {
     config.lastfm.enabled = app.lastfm_enabled;
     if let Err(e) = api::auth::save_config(&config) {
         tracing::error!("Failed to save preferences: {e}");
+    }
+    if let Err(e) = app::save_session(app.session().as_ref()) {
+        tracing::error!("Failed to save session: {e}");
     }
 
     // Dropping app closes the command channels, which causes both workers to exit

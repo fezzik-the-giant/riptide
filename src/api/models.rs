@@ -15,7 +15,7 @@ pub struct Page<T> {
 
 // ── References ────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ArtistRef {
     pub name: String,
 }
@@ -39,7 +39,7 @@ impl Artist {
 
 // ── Albums ────────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct MediaMetadata {
     #[serde(default)]
     pub tags: Vec<String>,
@@ -128,7 +128,7 @@ fn tidal_art_url(image_id: &str, size: &str) -> String {
     )
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Album {
     pub id: u64,
     pub title: String,
@@ -140,9 +140,9 @@ pub struct Album {
     pub artist: Option<ArtistRef>,
     #[serde(rename = "mediaMetadata", default)]
     pub media_metadata: Option<MediaMetadata>,
-    #[serde(default, skip_deserializing)]
+    #[serde(skip)]
     pub added_at: Option<String>,
-    #[serde(default, skip_deserializing)]
+    #[serde(skip)]
     pub album_type: Option<String>,
 }
 
@@ -167,7 +167,7 @@ impl Album {
 
 // ── Tracks ────────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Track {
     pub id: u64,
     pub title: String,
@@ -179,12 +179,12 @@ pub struct Track {
     pub album: Album,
     #[serde(rename = "mediaMetadata", default)]
     pub media_metadata: Option<MediaMetadata>,
-    #[serde(default, skip_deserializing)]
+    #[serde(skip)]
     pub added_at: Option<String>,
     /// The entry's `meta.itemId`, set only on rows loaded from a playlist. A
     /// playlist can hold a track more than once, and removing or moving one
     /// copy needs this id rather than the track's.
-    #[serde(default, skip_deserializing)]
+    #[serde(skip)]
     pub playlist_item_id: Option<String>,
 }
 

@@ -318,8 +318,9 @@ fn render_progress(f: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    let ratio = (app.now_playing.active && app.now_playing.duration > 0.0)
-        .then(|| app.now_playing.progress_ratio());
+    let np = &app.now_playing;
+    let ratio =
+        ((np.active || np.resume_at.is_some()) && np.duration > 0.0).then(|| np.progress_ratio());
     let rail_y = if app.visualizer_mode == VisualizerMode::Off {
         area.y + area.height.saturating_sub(1) / 2
     } else {
