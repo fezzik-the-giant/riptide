@@ -41,17 +41,7 @@ touch, touch the other before you move on.
 
 ## Candidates
 
-### Resume the last session
-
-**Issue:** [#59](https://github.com/fezzik-the-giant/riptide/issues/59) — `In review`
-
-`Preferences` persists sorts, volume, shuffle, queue visibility and Atmos. It
-does not persist the queue, the playing track or its position, so a restart
-drops whatever was lined up.
-
-Worth scoping before designing: restoring the queue is cheap, restoring the
-playback position within a track is a different feature, and restoring either
-one means deciding whether riptide starts playing on launch (it should not).
+Nothing open right now.
 
 ## Shipped
 
@@ -191,6 +181,18 @@ MPRIS `LoopStatus` is live and settable. Both modes stay gapless by prefetching
 through `NowPlaying::next_index()`, and stream requests carry a `prefetch` flag
 so repeat track's prefetch of the playing track cannot restart it. `n`/`p` skip
 via `skip_index()`, wrapping only under repeat queue.
+
+### Resume the last session
+
+**Issue:** [#59](https://github.com/fezzik-the-giant/riptide/issues/59) — `Done`
+**Version:** next release (under `[Unreleased]` in `CHANGELOG.md`).
+
+The queue, its unshuffled order, the current track and its position are saved to
+`~/.local/share/riptide/session.json` on clean exit — kept out of `config.json`
+so a broken session costs the queue, not the login. Riptide restores it stopped;
+the first `Space` resumes at the saved position via `NowPlaying::resume_at`,
+which skipping away forfeits. Only track metadata is stored, so no stale stream
+URL can survive a restart.
 
 ## Considered and Rejected
 
