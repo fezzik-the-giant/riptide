@@ -243,7 +243,7 @@ pub fn run_device_auth_flow(config: &mut Config) -> Result<()> {
     println!("║           Tidal Authorization            ║");
     println!("╠══════════════════════════════════════════╣");
     println!("║  Open:                                   ║");
-    println!("║  {:<40}  ║", &auth.verification_uri_complete);
+    println!("║  {:<40}║", &auth.verification_uri_complete);
     println!("╠══════════════════════════════════════════╣");
     println!("║  Code: {:<34}║", &auth.user_code);
     println!("╚══════════════════════════════════════════╝");
