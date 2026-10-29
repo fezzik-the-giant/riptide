@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Tracks from albums with an animated cover now show their cover art while playing (#79). Tidal sends those albums a video cover beside the still one, and riptide was picking the video, which it can't draw, so the art stayed blank
+- Following an artist from search now shows the ❤ beside them straight away (#81). The status line said you were following them, but the heart only appeared after a restart. Unfollowing had the same problem the other way round: the heart stayed
+
+### Internal
+- The log now says whether each track's lyrics were found, synced or not, and a lyrics request that fails (an expired session, a server error) is logged as a failure instead of passing for a track with no lyrics. Errors that only flashed in the status line, such as network failures and unreadable responses, are now logged too, as are failed cover art downloads, and every failed API request logs its HTTP status
 
 ## [2.0.0] - 2026-10-26
 

@@ -754,6 +754,7 @@ impl App {
             }
 
             ApiResponse::TrackArtFailed { track_id, error } => {
+                tracing::warn!("track art unavailable for track {track_id}: {error}");
                 if self.now_playing.track.as_ref().map(|track| track.id) == Some(track_id) {
                     self.now_playing.art_loading = false;
                 }
@@ -769,6 +770,7 @@ impl App {
 
             ApiResponse::ArtistUnfollowed { artist_id } => {
                 self.artists.remove_where(|a| a.id != artist_id);
+                self.rebuild_favorite_artist_ids();
             }
 
             ApiResponse::RadioTracks { tracks } => {
@@ -815,6 +817,7 @@ impl App {
             }
 
             ApiResponse::Error(msg) => {
+                tracing::error!("{msg}");
                 let display_msg = if msg.contains("no stream URL available for track") {
                     // The URL a Play was waiting on is never coming; leaving it
                     // pending would make Play a no-op from then on.

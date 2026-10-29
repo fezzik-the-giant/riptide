@@ -519,9 +519,27 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
                     } else {
                         Vec::new()
                     };
+                    if !synced.is_empty() {
+                        tracing::debug!(
+                            "Lyrics for track {}: {} synced lines",
+                            track_id,
+                            synced.len()
+                        );
+                    } else if !plain.is_empty() {
+                        tracing::debug!(
+                            "Lyrics for track {}: {} unsynced lines",
+                            track_id,
+                            plain.len()
+                        );
+                    } else {
+                        tracing::debug!("No lyrics for track {}", track_id);
+                    }
                     (synced, plain)
                 }
-                Err(_) => (Vec::new(), Vec::new()),
+                Err(e) => {
+                    tracing::warn!("Lyrics request for track {} failed: {e:#}", track_id);
+                    (Vec::new(), Vec::new())
+                }
             };
             ApiResponse::Lyrics {
                 track_id,
