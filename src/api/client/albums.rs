@@ -129,7 +129,7 @@ impl ApiClient {
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await?;
-            tracing::error!("API error fetching favorite albums: {}", body);
+            tracing::error!("API error {} fetching favorite albums: {}", status, body);
             anyhow::bail!("HTTP {} fetching favorite albums", status);
         }
 
@@ -324,7 +324,7 @@ impl ApiClient {
             let status = resp.status();
             if !status.is_success() {
                 let body = resp.text().await?;
-                tracing::error!("API error fetching album tracks: {}", body);
+                tracing::error!("API error {} fetching album tracks: {}", status, body);
                 anyhow::bail!("HTTP {} fetching album tracks", status);
             }
 
