@@ -246,6 +246,9 @@ fn parse_v2_track_details(api_resp: &serde_json::Value) -> Result<(Track, Option
                         .map(|s| s.to_string());
                 }
             } else if let Some("artworks") = item.get("type").and_then(|v| v.as_str())
+                // An animated cover arrives as a second, VIDEO artwork of mp4s
+                // beside the still one.
+                && item.pointer("/attributes/mediaType").and_then(|v| v.as_str()) == Some("IMAGE")
                 && let Some(files) = item
                     .get("attributes")
                     .and_then(|v| v.get("files"))
@@ -525,5 +528,40 @@ mod tests {
     fn favorite_tracks_report_the_collection_count() {
         let (_, total, _) = parse_v2_user_collection_tracks(&collection_page()).unwrap();
         assert_eq!(total, 2);
+    }
+
+    /// Trimmed capture of `GET /tracks/178385845?include=albums.coverArt`, whose
+    /// album has an animated cover: a still and a video artwork, both at 320px.
+    #[test]
+    fn track_details_take_the_still_cover_over_the_animated_one() {
+        let resp = serde_json::json!({
+            "data": {
+                "id": "178385845", "type": "tracks",
+                "attributes": { "title": "This Is The House That Doubt Built", "duration": "PT3M30S" },
+                "relationships": { "albums": { "data": [{ "id": "178385841", "type": "albums" }] } }
+            },
+            "included": [
+                { "id": "178385841", "type": "albums",
+                  "attributes": { "title": "What Separates Me From You" },
+                  "relationships": { "coverArt": { "data": [
+                      { "id": "2xpmpI1s9DzIMW9j8kARIP", "type": "artworks" },
+                      { "id": "2xpmpdbly5B68vNePONEFl", "type": "artworks" }
+                  ] } } },
+                { "id": "2xpmpI1s9DzIMW9j8kARIP", "type": "artworks", "attributes": {
+                    "mediaType": "IMAGE",
+                    "files": [{ "href": "https://resources.tidal.com/images/d0ba6937/320x320.jpg",
+                                "meta": { "width": 320, "height": 320 } }] } },
+                { "id": "2xpmpdbly5B68vNePONEFl", "type": "artworks", "attributes": {
+                    "mediaType": "VIDEO",
+                    "files": [{ "href": "https://resources.tidal.com/videos/d0ba6937/320x320.mp4",
+                                "meta": { "width": 320, "height": 320 } }] } }
+            ]
+        });
+
+        let (_, cover_url) = parse_v2_track_details(&resp).unwrap();
+        assert_eq!(
+            cover_url.as_deref(),
+            Some("https://resources.tidal.com/images/d0ba6937/320x320.jpg")
+        );
     }
 }

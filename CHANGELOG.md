@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Tracks from albums with an animated cover now show their cover art while playing (#79). Tidal sends those albums a video cover beside the still one, and riptide was picking the video, which it can't draw, so the art stayed blank
+
 ## [2.0.0] - 2026-10-26
 
 ### Added
