@@ -3,11 +3,46 @@
 
 //! Colours, spacing constants and small formatting helpers.
 
-use ratatui::style::{Color, Modifier, Style};
+use std::cell::Cell;
 
-pub(super) const ACCENT: Color = Color::Cyan;
+use ratatui::style::{Modifier, Style};
 
-pub(super) const DIM: Color = Color::DarkGray;
+pub(super) use crate::colors::Palette;
+
+thread_local! {
+    /// The palette this frame draws in, installed by `draw`.
+    ///
+    /// A thread-local rather than a parameter because `row_style` and its
+    /// siblings are called from dozens of sites that hold no `&App`; threading
+    /// a palette through each would change every row builder's signature for a
+    /// value that is constant across the frame.
+    static ACTIVE: Cell<Palette> = const { Cell::new(Palette::DEFAULT) };
+}
+
+pub(super) fn palette() -> Palette {
+    ACTIVE.with(Cell::get)
+}
+
+pub(super) fn set_palette(palette: Palette) {
+    ACTIVE.with(|active| active.set(palette));
+}
+
+/// Blank `area` for an overlay. `Clear` alone resets cells to the terminal's
+/// default, which under a fixed theme punches a hole of terminal colour
+/// through the window, so the theme's background goes straight back on.
+pub(super) fn clear_area(f: &mut ratatui::Frame, area: ratatui::layout::Rect) {
+    f.render_widget(ratatui::widgets::Clear, area);
+    paint_background(f, area);
+}
+
+pub(super) fn paint_background(f: &mut ratatui::Frame, area: ratatui::layout::Rect) {
+    if let Some(bg) = palette().background {
+        f.render_widget(
+            ratatui::widgets::Block::default().style(Style::default().bg(bg)),
+            area,
+        );
+    }
+}
 
 pub(super) fn fmt_sample_rate(hz: u32) -> String {
     match hz {
@@ -21,22 +56,6 @@ pub(super) fn fmt_sample_rate(hz: u32) -> String {
     }
 }
 
-/// Selected-row colours.
-///
-/// All four are true colour on purpose. The background has to be — a palette
-/// entry would follow the terminal theme and could land anywhere — and once it
-/// is fixed, every colour drawn over it must be fixed too. `Color::White` is
-/// palette index 15, which light themes remap to their *dark* text colour, so
-/// pairing it with a dark background gives dark-on-dark; `Color::Cyan` and
-/// `Color::DarkGray` are remapped the same way.
-pub(super) const HIGHLIGHT_BG: Color = Color::Rgb(40, 40, 55);
-pub(super) const HIGHLIGHT_FG: Color = Color::Rgb(236, 236, 245);
-pub(super) const HIGHLIGHT_DIM: Color = Color::Rgb(150, 150, 170);
-pub(super) const HIGHLIGHT_ACCENT: Color = Color::Rgb(120, 210, 232);
-
-pub(super) const SELECT_BG: Color = Color::Rgb(30, 100, 200);
-pub(super) const SELECT_FG: Color = Color::Rgb(236, 236, 245);
-
 /// The style a list row is drawn in.
 ///
 /// Every cell of a selected row must carry this background: `layout_row` pads
@@ -47,30 +66,47 @@ pub(super) const SELECT_FG: Color = Color::Rgb(236, 236, 245);
 pub(super) fn row_style(is_selected: bool) -> Style {
     if is_selected {
         Style::default()
-            .bg(HIGHLIGHT_BG)
-            .fg(HIGHLIGHT_FG)
+            .bg(palette().highlight_bg)
+            .fg(palette().highlight_fg)
             .add_modifier(Modifier::BOLD)
     } else {
-        Style::default().fg(Color::White)
+        Style::default().fg(palette().text)
     }
 }
 
 /// Secondary columns — year, track count, the artist beside an album title.
 pub(super) fn row_dim_style(is_selected: bool) -> Style {
     if is_selected {
-        Style::default().bg(HIGHLIGHT_BG).fg(HIGHLIGHT_DIM)
+        Style::default()
+            .bg(palette().highlight_bg)
+            .fg(palette().highlight_dim)
     } else {
-        Style::default().fg(DIM)
+        Style::default().fg(palette().dim)
     }
 }
 
-/// The quality badge, the one cell that keeps its own colour on every row.
+/// The quality badge and the now-playing marker: the cells that keep their own
+/// colour on every row.
+/// The now-playing marker over a row's own style, so it keeps that row's
+/// background — a cursor bar, or a held row's reversed one — and changes only
+/// its colour.
+pub(super) fn marker_style(row: Style) -> Style {
+    let accent = if row.bg.is_some() {
+        palette().highlight_accent
+    } else {
+        palette().accent
+    };
+    row.fg(accent).add_modifier(Modifier::BOLD)
+}
+
 pub(super) fn row_accent_style(is_selected: bool) -> Style {
     let style = Style::default().add_modifier(Modifier::BOLD);
     if is_selected {
-        style.bg(HIGHLIGHT_BG).fg(HIGHLIGHT_ACCENT)
+        style
+            .bg(palette().highlight_bg)
+            .fg(palette().highlight_accent)
     } else {
-        style.fg(ACCENT)
+        style.fg(palette().accent)
     }
 }
 

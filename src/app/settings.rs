@@ -72,9 +72,16 @@ impl App {
         match setting {
             Setting::Atmos => SettingValue::Toggle(self.atmos),
             Setting::Shuffle => SettingValue::Toggle(self.now_playing.shuffle),
-            Setting::Repeat => SettingValue::Choice(self.now_playing.repeat.label()),
+            Setting::Repeat => SettingValue::Choice(self.now_playing.repeat.label().into()),
             Setting::QueuePanel => SettingValue::Toggle(self.queue_visible),
-            Setting::Visualizer => SettingValue::Choice(self.visualizer_mode.label()),
+            Setting::Visualizer => SettingValue::Choice(self.visualizer_mode.label().into()),
+            Setting::Theme => SettingValue::Choice(
+                self.theme_catalog
+                    .find(&self.theme)
+                    .map_or("Default", |entry| entry.name.as_str())
+                    .to_string()
+                    .into(),
+            ),
             Setting::Volume => SettingValue::Percent(self.now_playing.volume),
             Setting::Scrobbling if !self.lastfm_configured => {
                 SettingValue::Unavailable("run riptide --lastfm-auth")
@@ -125,7 +132,7 @@ impl App {
                     self.toggle_queue_visible();
                 }
             }
-            Setting::Repeat | Setting::Visualizer | Setting::Volume => {}
+            Setting::Repeat | Setting::Visualizer | Setting::Theme | Setting::Volume => {}
             Setting::Scrobbling => {
                 self.lastfm_enabled = on;
                 let _ = self.lastfm_tx.send(LastfmCmd::SetEnabled(on));
@@ -147,6 +154,10 @@ impl App {
                     mode.previous()
                 });
             }
+            Setting::Theme => {
+                let next = self.theme_catalog.step(&self.theme, forward).to_string();
+                self.set_theme(&next);
+            }
             Setting::Repeat => {
                 let mode = self.now_playing.repeat;
                 self.set_repeat(if forward {
@@ -156,6 +167,70 @@ impl App {
                 });
             }
             _ => {}
+        }
+    }
+
+    /// Read the themes folder again, so a file saved since the last look
+    /// shows up without a restart.
+    pub(crate) fn reload_themes(&mut self) {
+        if let Some(dir) = &self.themes_dir {
+            self.theme_catalog = crate::colors::catalog::ThemeCatalog::load(dir);
+        }
+    }
+
+    pub(crate) fn open_theme_picker(&mut self) {
+        self.reload_themes();
+        let picker = &mut self.theme_picker;
+        picker.active = true;
+        picker.query.clear();
+        picker.original = self.theme.clone();
+        picker.selected = picker
+            .matches(&self.theme_catalog)
+            .iter()
+            .position(|entry| entry.name.to_lowercase() == self.theme.to_lowercase())
+            .unwrap_or(0);
+    }
+
+    /// Repaint in whatever the cursor is on; called after every move or
+    /// keystroke, which is what makes the picker a preview.
+    pub(crate) fn preview_selected_theme(&mut self) {
+        if let Some(name) = self.theme_picker.selected_name(&self.theme_catalog) {
+            self.preview_theme(&name);
+        }
+    }
+
+    pub(crate) fn keep_selected_theme(&mut self) {
+        if let Some(name) = self.theme_picker.selected_name(&self.theme_catalog) {
+            self.set_theme(&name);
+            self.theme_picker.active = false;
+        }
+    }
+
+    pub(crate) fn cancel_theme_picker(&mut self) {
+        let original = std::mem::take(&mut self.theme_picker.original);
+        self.preview_theme(&original);
+        self.theme_picker.active = false;
+    }
+
+    pub(crate) fn set_theme(&mut self, name: &str) {
+        self.preview_theme(name);
+        self.set_status(format!("Theme: {}", self.theme), StatusLevel::Info);
+    }
+
+    /// [`Self::set_theme`] without the announcement, for the picker, which
+    /// changes theme on every keystroke.
+    pub(crate) fn preview_theme(&mut self, name: &str) {
+        self.theme = self
+            .theme_catalog
+            .find(name)
+            .map_or_else(|| name.to_string(), |entry| entry.name.clone());
+        // Only a cover in hand recomputes: after a restart the queued track's
+        // cover is not fetched until it plays, and its saved colours are the
+        // better answer than none.
+        if self.is_album_theme()
+            && let Some(cover) = self.now_playing_cover().map(<[u8]>::to_vec)
+        {
+            self.set_album_art(Some(&cover));
         }
     }
 
@@ -219,7 +294,158 @@ mod tests {
     use super::*;
     use crate::api::ApiRequest;
     use crate::app::RepeatMode;
-    use crate::app::test_support::{test_app, track, track_tagged};
+    use crate::app::test_support::{solid_png, test_app, track, track_tagged};
+    use crate::colors::Palette;
+    use ratatui::style::Color;
+
+    fn playing_with_cover(t: &mut crate::app::test_support::TestApp) -> u64 {
+        t.app.now_playing.track = Some(track(1));
+        let album_id = t.app.now_playing.track.as_ref().unwrap().album.id;
+        t.app
+            .handle_api_response(crate::api::ApiResponse::AlbumArt {
+                album_id,
+                image_data: solid_png(0xd2, 0x69, 0x1e),
+            });
+        album_id
+    }
+
+    #[test]
+    fn album_mode_without_a_track_is_default() {
+        let mut t = test_app();
+        t.app.set_theme("Album");
+        assert_eq!(t.app.active_palette(), Palette::DEFAULT);
+    }
+
+    #[test]
+    fn album_palette_survives_a_track_change_until_new_art() {
+        let mut t = test_app();
+        t.app.theme = "Album".into();
+        playing_with_cover(&mut t);
+        let themed = t.app.active_palette();
+        assert_ne!(themed, Palette::DEFAULT);
+
+        t.app.now_playing.track = Some(track(2));
+        t.app.now_playing.set_art_bytes(None);
+        t.app.now_playing.art_loading = true;
+        assert_eq!(t.app.active_palette(), themed);
+
+        t.app
+            .handle_api_response(crate::api::ApiResponse::TrackArtFailed {
+                track_id: 2,
+                error: "gone".into(),
+            });
+        assert_eq!(t.app.active_palette(), Palette::DEFAULT);
+    }
+
+    #[test]
+    fn album_with_no_cover_drops_the_previous_palette() {
+        let mut t = test_app();
+        t.app.theme = "Album".into();
+        let album_id = playing_with_cover(&mut t);
+        t.app.now_playing.track = Some(track(2));
+
+        let album = t.app.now_playing.track.as_ref().unwrap().album.clone();
+        assert_eq!(album.id, album_id);
+        assert!(album.cover.is_none());
+        t.app
+            .handle_api_response(crate::api::ApiResponse::AlbumLoaded { album });
+        assert_eq!(t.app.active_palette(), Palette::DEFAULT);
+    }
+
+    #[test]
+    fn failed_album_lookup_drops_the_previous_palette() {
+        let mut t = test_app();
+        t.app.theme = "Album".into();
+        let album_id = playing_with_cover(&mut t);
+        t.app.now_playing.track = Some(track(2));
+
+        t.app
+            .handle_api_response(crate::api::ApiResponse::AlbumLoadFailed {
+                album_id,
+                error: "gone".into(),
+            });
+        assert_eq!(t.app.active_palette(), Palette::DEFAULT);
+    }
+
+    /// Favourite tracks carry no album id or cover; the cover only arrives with
+    /// the track details. Treating "no cover yet" as "no cover" flashed the
+    /// default between every pair of tracks.
+    #[test]
+    fn a_track_without_a_cover_id_keeps_the_palette_until_its_details_arrive() {
+        let favourite = |id| {
+            let mut t = track(id);
+            t.album.id = 0;
+            t.album.cover = None;
+            t
+        };
+        let mut t = test_app();
+        t.app.theme = "Album".into();
+        t.app.now_playing.track = Some(favourite(1));
+        t.app.fetch_now_playing_metadata();
+        t.app
+            .handle_api_response(crate::api::ApiResponse::TrackDetails {
+                track_id: 1,
+                track: favourite(1),
+                cover_url: Some("https://resources.tidal.com/images/one/320x320.jpg".into()),
+            });
+        t.app
+            .handle_api_response(crate::api::ApiResponse::TrackArt {
+                track_id: 1,
+                image_data: solid_png(0xd2, 0x69, 0x1e),
+            });
+        let themed = t.app.active_palette();
+        assert_ne!(themed, Palette::DEFAULT);
+
+        let next = favourite(2);
+        t.app.now_playing.track = Some(next.clone());
+        t.app.fetch_now_playing_metadata();
+        assert_eq!(
+            t.app.active_palette(),
+            themed,
+            "flashed the default before the details"
+        );
+
+        t.app
+            .handle_api_response(crate::api::ApiResponse::TrackDetails {
+                track_id: 2,
+                track: next,
+                cover_url: None,
+            });
+        assert_eq!(t.app.active_palette(), Palette::DEFAULT);
+    }
+
+    #[test]
+    fn switching_to_album_mid_track_recolours_at_once() {
+        let mut t = test_app();
+        playing_with_cover(&mut t);
+        assert_eq!(t.app.active_palette(), Palette::DEFAULT);
+
+        t.app.set_theme("Album");
+        assert_ne!(t.app.active_palette(), Palette::DEFAULT);
+    }
+
+    #[test]
+    fn fixed_theme_palette_is_the_files() {
+        let mut t = test_app();
+        t.app.set_theme("cyberpunk");
+        assert_eq!(t.app.theme, "Cyberpunk");
+        assert_eq!(
+            t.app.active_palette().background,
+            Some(Color::Rgb(0x10, 0x10, 0x14))
+        );
+    }
+
+    #[test]
+    fn unknown_saved_theme_draws_default_and_keeps_the_name() {
+        let mut t = test_app();
+        t.app.theme = "gone".into();
+        assert_eq!(t.app.active_palette(), Palette::DEFAULT);
+        assert_eq!(t.app.theme, "gone");
+        assert!(matches!(
+            t.app.setting_value(Setting::Theme),
+            SettingValue::Choice(label) if label == "Default"
+        ));
+    }
 
     #[test]
     fn atmos_setting_rides_along_with_stream_requests() {

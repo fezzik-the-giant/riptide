@@ -41,7 +41,40 @@ touch, touch the other before you move on.
 
 ## Candidates
 
-Nothing open right now.
+### Theme: colours from the playing album
+
+**Issue:** [#83](https://github.com/fezzik-the-giant/riptide/issues/83) — `In progress`
+
+Design approved: `docs/superpowers/specs/2026-11-05-matugen-theme-design.md`.
+Move to Shipped on merge.
+
+### Theme: fixed themes, user theme files and a picker
+
+**Issue:** [#84](https://github.com/fezzik-the-giant/riptide/issues/84) — `In progress`
+
+Design approved: `docs/superpowers/specs/2026-11-05-fixed-themes-design.md`.
+Same branch as #83. Move to Shipped on merge.
+
+### Theme: colours from the desktop wallpaper (matugen)
+
+**Issue:** none yet.
+
+Built alongside Album mode, then removed before merge (2026-11-05). Riptide read a
+`colors.json` that a shipped matugen template wrote, polling its mtime once a
+second. The reader worked; the integration did not reach a real desktop:
+
+- Desktop shells that drive matugen (serpantinum, on the maintainer's machine)
+  run it with a config they generate (`matugen -c …/render.toml`) and never read
+  `~/.config/matugen/config.toml`, so a template registered there is never
+  rendered.
+- serpantinum's per-user app folder can only override apps it ships; a new app
+  is ignored unless it lives in serpantinum's install directory, which an update
+  overwrites.
+
+Open questions: whether to ask shell projects to ship a Riptide entry, or read
+a palette some shells already publish. The removed code is described in the spec
+and plan above; `colors::Roles` → `Palette::from_roles` in `src/colors/mod.rs` is the
+seam a wallpaper source would plug back into.
 
 ## Shipped
 

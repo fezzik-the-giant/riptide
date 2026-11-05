@@ -6,7 +6,7 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     widgets::{Block, Borders, Paragraph, Wrap},
 };
 
@@ -35,7 +35,7 @@ pub(super) fn render_playlist_detail(
     // ── Playlist cover art ────────────────────────────────────────────────────
     let art_block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(ACCENT));
+        .border_style(Style::default().fg(palette().accent));
     let art_inner = art_block.inner(header_cols[0]);
     f.render_widget(art_block, header_cols[0]);
 
@@ -45,7 +45,7 @@ pub(super) fn render_playlist_detail(
         let spinner = spinner_char(app.tick);
         f.render_widget(
             Paragraph::new(format!("{spinner}"))
-                .style(Style::default().fg(DIM))
+                .style(Style::default().fg(palette().dim))
                 .alignment(Alignment::Center),
             art_inner,
         );
@@ -58,9 +58,9 @@ pub(super) fn render_playlist_detail(
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(if focused {
-            Style::default().fg(ACCENT)
+            Style::default().fg(palette().accent)
         } else {
-            Style::default().fg(DIM)
+            Style::default().fg(palette().border)
         });
     let inner = block.inner(meta_area);
     f.render_widget(block, meta_area);
@@ -80,7 +80,11 @@ pub(super) fn render_playlist_detail(
     // Playlist title (wrapped)
     f.render_widget(
         Paragraph::new(detail.playlist.title.as_str())
-            .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD))
+            .style(
+                Style::default()
+                    .fg(palette().accent)
+                    .add_modifier(Modifier::BOLD),
+            )
             .wrap(Wrap { trim: true })
             .alignment(Alignment::Center),
         sections[0],
@@ -96,7 +100,7 @@ pub(super) fn render_playlist_detail(
     if let Some(header) = header {
         f.render_widget(
             Paragraph::new(header)
-                .style(Style::default().fg(Color::White))
+                .style(Style::default().fg(palette().text))
                 .alignment(Alignment::Center),
             sections[1],
         );
@@ -108,7 +112,7 @@ pub(super) fn render_playlist_detail(
     {
         f.render_widget(
             Paragraph::new(desc.as_str())
-                .style(Style::default().fg(DIM))
+                .style(Style::default().fg(palette().dim))
                 .wrap(Wrap { trim: true })
                 .scroll((detail.description_scroll, 0)),
             sections[2],

@@ -42,6 +42,7 @@ impl Overlays {
     pub(super) const PLAYLIST_PICKER: Self = Self(1 << 6);
     pub(super) const NAME_PROMPT: Self = Self(1 << 7);
     pub(super) const DELETE_CONFIRM: Self = Self(1 << 8);
+    pub(super) const THEME_PICKER: Self = Self(1 << 9);
 
     pub(super) const fn none() -> Self {
         Self(0)

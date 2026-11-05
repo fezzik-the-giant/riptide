@@ -243,6 +243,7 @@ impl App {
                         }
                         self.push_mpris_state();
                     } else if self.now_playing.art_source.is_none() {
+                        self.set_album_art(None);
                         self.now_playing.art_loading = false;
                         self.now_playing.finish_presentation_art_load();
                     }
@@ -256,6 +257,7 @@ impl App {
                     detail.art_loading = false;
                 }
                 if self.now_playing.is_current_album(album_id) {
+                    self.set_album_art(None);
                     self.now_playing.art_loading = false;
                     if self.now_playing.presentation_art_discovering_cover() {
                         self.now_playing.finish_presentation_art_load();
@@ -292,6 +294,7 @@ impl App {
                 );
                 let is_now_playing = self.now_playing.is_current_album(album_id);
                 if is_now_playing {
+                    self.set_album_art(Some(&image_data));
                     self.now_playing.set_art_bytes(Some(image_data.clone()));
                     self.now_playing.art_loading = false;
                 }
@@ -305,6 +308,7 @@ impl App {
 
             ApiResponse::AlbumArtFailed { album_id, error } => {
                 if self.now_playing.is_current_album(album_id) {
+                    self.set_album_art(None);
                     self.now_playing.art_loading = false;
                 }
                 if let Some(View::Album(detail)) = self.view_stack.last_mut()
@@ -656,7 +660,9 @@ impl App {
                     self.now_playing.track = self.now_playing.queue.get(idx).cloned();
 
                     if track_changed {
-                        // Clear old art and lyrics so we don't show the previous track's content
+                        // Clear old art and lyrics so we don't show the previous track's content.
+                        // The album palette is deliberately kept: it changes when the new
+                        // cover arrives, so the colours never flash the default in between.
                         self.now_playing.set_art_bytes(None);
                         self.now_playing.art_loading = true;
                         self.now_playing.lyrics_synced.clear();
@@ -736,6 +742,11 @@ impl App {
                             );
                         }
                     }
+                    // The details are the last word on a cover; with none
+                    // usable and none on screen or on its way, there is none.
+                    if self.now_playing.art_bytes().is_none() && !self.now_playing.art_loading {
+                        self.set_album_art(None);
+                    }
                     // The replacement track may correct title, album, or art;
                     // push now instead of letting the next 500 ms position tick
                     // deliver it.
@@ -748,6 +759,7 @@ impl App {
                 image_data,
             } => {
                 if self.now_playing.track.as_ref().map(|t| t.id) == Some(track_id) {
+                    self.set_album_art(Some(&image_data));
                     self.now_playing.set_art_bytes(Some(image_data));
                     self.now_playing.art_loading = false;
                 }
@@ -756,6 +768,7 @@ impl App {
             ApiResponse::TrackArtFailed { track_id, error } => {
                 tracing::warn!("track art unavailable for track {track_id}: {error}");
                 if self.now_playing.track.as_ref().map(|track| track.id) == Some(track_id) {
+                    self.set_album_art(None);
                     self.now_playing.art_loading = false;
                 }
                 self.set_status(format!("track art: {error}"), StatusLevel::Error);

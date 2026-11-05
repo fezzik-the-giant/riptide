@@ -247,6 +247,29 @@ pub(super) fn handle_name_prompt_input(app: &mut App, key: KeyEvent) {
     }
 }
 
+pub(super) fn handle_theme_picker_input(app: &mut App, key: KeyEvent) {
+    let picker = &mut app.theme_picker;
+    match key.code {
+        KeyCode::Esc => return app.cancel_theme_picker(),
+        KeyCode::Enter => return app.keep_selected_theme(),
+        KeyCode::Up => picker.selected = picker.selected.saturating_sub(1),
+        KeyCode::Down => {
+            let last = picker.matches(&app.theme_catalog).len().saturating_sub(1);
+            picker.selected = (picker.selected + 1).min(last);
+        }
+        KeyCode::Backspace => {
+            picker.query.pop();
+            picker.selected = 0;
+        }
+        KeyCode::Char(c) => {
+            picker.query.push(c);
+            picker.selected = 0;
+        }
+        _ => return,
+    }
+    app.preview_selected_theme();
+}
+
 pub(super) fn handle_settings_input(app: &mut App, key: KeyEvent) {
     let setting = app.settings.selected_setting();
     match key.code {
@@ -255,6 +278,7 @@ pub(super) fn handle_settings_input(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Up => app.settings.previous(),
         KeyCode::Down => app.settings.next(),
+        KeyCode::Enter if setting == crate::app::Setting::Theme => app.open_theme_picker(),
         KeyCode::Enter | KeyCode::Char(' ') => app.toggle_setting(setting),
         KeyCode::Right | KeyCode::Char('l') => app.nudge_setting(setting, true),
         KeyCode::Left | KeyCode::Char('h') => app.nudge_setting(setting, false),

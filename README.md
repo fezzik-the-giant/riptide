@@ -311,6 +311,7 @@ optional — a config from an older version loads fine and picks up the defaults
 | `queue_visible`                                                       | `true` / `false`                                         | `true`       |
 | `atmos`                                                               | `true` / `false`                                         | `false`      |
 | `visualizer_mode`                                                     | `"off"`, `"bars"`, `"outline"`, `"columns"`, `"bricks"`, `"dots"`, `"butterfly"` | `"off"` |
+| `theme`                                                               | a theme's name: `"default"`, `"album"`, `"Catppuccin Mocha"`, … | `"default"`  |
 
 `atmos` picks which mix Riptide asks Tidal for on a release that has a Dolby
 Atmos version. Off requests the stereo master, which arrives as FLAC. On
@@ -330,6 +331,58 @@ and they reappear.
 `ByArtist` only applies to the Tracks and Albums tabs; the Artists and Playlists tabs offer name and date only.
 
 Because preferences are saved on exit, changes made during a session that ends in a crash are not kept.
+
+### Theme
+
+Open `Shift+S`, move to **Theme** and press `Enter` to open the theme picker.
+Type to narrow the list, and move with the arrow keys: the window repaints as you
+go. `Enter` keeps the theme under the cursor and `Esc` puts back the one you had.
+`←` and `→` on the Theme row step through the list without opening the picker.
+
+- **Default** is Riptide's own look, over your terminal's colours.
+- **Album** takes the accent colours from the playing track's cover, and leaves
+  your terminal's background alone. It picks a light or dark scheme from that
+  background, and falls back to Default when nothing is playing or the track has
+  no cover.
+- **Catppuccin Latte, Frappé, Macchiato and Mocha, Nord, Gruvbox Dark, Tokyo
+  Night, Dracula, Rosé Pine and Cyberpunk** paint the whole window, background
+  included, so they look the same in any terminal.
+
+#### Your own themes
+
+Put a `.json` file in `~/.config/riptide/themes/` and it appears in the picker
+under "yours" the next time you open it. A theme is a name plus Catppuccin's
+colour names, so a palette from any Catppuccin port can be copied straight in:
+
+```json
+{
+  "name": "Cyberpunk",
+  "colors": {
+    "base": "#101014", "mantle": "#0a0a0d", "crust": "#050506",
+    "text": "#00f0ff", "subtext0": "#d0006f", "subtext1": "#ff007f",
+    "surface0": "#1a1a24", "surface1": "#262636", "surface2": "#333348",
+    "overlay0": "#4d4d6c", "overlay1": "#666690", "overlay2": "#8080b3",
+    "blue": "#00f0ff", "sapphire": "#00a8ff", "peach": "#ffb800",
+    "green": "#00ff66", "red": "#ff0055", "mauve": "#e600ff",
+    "pink": "#ff007f", "yellow": "#ffea00", "maroon": "#ff0055",
+    "teal": "#00f0ff"
+  }
+}
+```
+
+All 22 colours are required, each written as `#rrggbb`. Riptide paints:
+- the background with `base` and body text with `text`;
+- secondary text with `subtext0` and borders with `overlay0`;
+- tabs, badges and the progress bar with `mauve`;
+- the selection bar with `surface1`;
+- errors with `red` and confirmations with `green`.
+
+The remaining colours are reserved for later use.
+
+Names are matched without regard to case. A file named like a built-in theme
+replaces it, which is how you tweak one. **Default** and **Album** can't be
+replaced. A file with a missing or malformed colour is skipped. The picker says
+how many were skipped, and the log names each one and the reason.
 
 ### Using your own OAuth credentials
 

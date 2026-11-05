@@ -12,17 +12,19 @@ pub enum Setting {
     Repeat,
     QueuePanel,
     Visualizer,
+    Theme,
     Volume,
     Scrobbling,
 }
 
 impl Setting {
-    pub const ALL: [Setting; 7] = [
+    pub const ALL: [Setting; 8] = [
         Setting::Atmos,
         Setting::Shuffle,
         Setting::Repeat,
         Setting::QueuePanel,
         Setting::Visualizer,
+        Setting::Theme,
         Setting::Volume,
         Setting::Scrobbling,
     ];
@@ -34,6 +36,7 @@ impl Setting {
             Setting::Repeat => "Repeat",
             Setting::QueuePanel => "Queue panel",
             Setting::Visualizer => "Visualizer",
+            Setting::Theme => "Theme",
             Setting::Volume => "Volume",
             Setting::Scrobbling => "Last.fm scrobbling",
         }
@@ -49,6 +52,7 @@ impl Setting {
             Setting::Repeat => "Replays the whole queue or just the playing track",
             Setting::QueuePanel => "Show the queue alongside the library",
             Setting::Visualizer => "Spectrum above the progress bar; needs cava installed",
+            Setting::Theme => "Enter to pick; add your own in ~/.config/riptide/themes",
             Setting::Volume => "← → adjusts by 5%",
             Setting::Scrobbling => "Submit plays to Last.fm",
         }
@@ -60,7 +64,8 @@ pub enum SettingValue {
     Toggle(bool),
     Percent(u8),
     /// One of several named options, stepped through with Enter and the arrows.
-    Choice(&'static str),
+    /// Owned only for Theme, whose names come from the user's files.
+    Choice(std::borrow::Cow<'static, str>),
     /// The setting has no value to show and cannot be changed here, with the
     /// reason in place of on/off.
     Unavailable(&'static str),

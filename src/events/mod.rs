@@ -286,6 +286,11 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    if app.theme_picker.active {
+        handle_theme_picker_input(app, key);
+        return;
+    }
+
     if app.name_prompt.active {
         handle_name_prompt_input(app, key);
         return;
@@ -676,6 +681,84 @@ mod tests {
 
     fn press(c: char) -> KeyEvent {
         KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
+    }
+
+    fn on_theme_row() -> TestApp {
+        use crate::app::Setting;
+        let mut t = test_app();
+        t.app.settings.active = true;
+        t.app.settings.selected = Setting::ALL
+            .iter()
+            .position(|s| *s == Setting::Theme)
+            .unwrap();
+        t
+    }
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn type_text(t: &mut TestApp, text: &str) {
+        for c in text.chars() {
+            handle_key(&mut t.app, press(c));
+        }
+    }
+
+    #[test]
+    fn enter_on_theme_row_opens_the_picker() {
+        let mut t = on_theme_row();
+        handle_key(&mut t.app, key(KeyCode::Enter));
+        assert!(t.app.theme_picker.active);
+        assert!(t.app.settings.active);
+    }
+
+    /// `vim_arrows` turns `j` into Down for every list; the picker's filter
+    /// must see it as a letter first.
+    #[test]
+    fn typing_j_goes_into_the_filter() {
+        let mut t = on_theme_row();
+        handle_key(&mut t.app, key(KeyCode::Enter));
+        let before = t.app.theme_picker.selected;
+        handle_key(&mut t.app, press('j'));
+        assert_eq!(t.app.theme_picker.query, "j");
+        assert_eq!(t.app.theme_picker.selected, 0);
+        assert_eq!(before, 0);
+    }
+
+    #[test]
+    fn moving_previews_and_esc_restores() {
+        let mut t = on_theme_row();
+        handle_key(&mut t.app, key(KeyCode::Enter));
+        for _ in 0..3 {
+            handle_key(&mut t.app, key(KeyCode::Down));
+        }
+        assert_ne!(t.app.theme.to_lowercase(), "default");
+        handle_key(&mut t.app, key(KeyCode::Esc));
+        assert_eq!(t.app.theme.to_lowercase(), "default");
+        assert!(!t.app.theme_picker.active);
+        assert!(t.app.settings.active);
+    }
+
+    #[test]
+    fn enter_keeps_the_highlighted_theme() {
+        let mut t = on_theme_row();
+        handle_key(&mut t.app, key(KeyCode::Enter));
+        type_text(&mut t, "cyber");
+        handle_key(&mut t.app, key(KeyCode::Enter));
+        assert_eq!(t.app.theme, "Cyberpunk");
+        assert!(!t.app.theme_picker.active);
+        assert!(t.app.settings.active);
+    }
+
+    #[test]
+    fn enter_with_no_matches_does_nothing() {
+        let mut t = on_theme_row();
+        let before = t.app.theme.clone();
+        handle_key(&mut t.app, key(KeyCode::Enter));
+        type_text(&mut t, "zzzz");
+        handle_key(&mut t.app, key(KeyCode::Enter));
+        assert!(t.app.theme_picker.active);
+        assert_eq!(t.app.theme, before);
     }
 
     /// With Atmos off the first row of this album is hidden, so `selected` 0

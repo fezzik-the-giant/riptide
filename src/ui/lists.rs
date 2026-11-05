@@ -6,7 +6,7 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
@@ -105,7 +105,7 @@ fn empty_text<T>(list: &StatefulList<T>, when_empty: &str) -> String {
 fn render_filter_box(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(ACCENT));
+        .border_style(Style::default().fg(palette().accent));
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -113,10 +113,12 @@ fn render_filter_box(f: &mut Frame, app: &App, area: Rect) {
         Paragraph::new(Line::from(vec![
             Span::styled(
                 "/ ",
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(palette().accent)
+                    .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(app.active_filter(), Style::default().fg(Color::White)),
-            Span::styled(cursor_char(app.tick), Style::default().fg(ACCENT)),
+            Span::styled(app.active_filter(), Style::default().fg(palette().text)),
+            Span::styled(cursor_char(app.tick), Style::default().fg(palette().accent)),
         ])),
         inner,
     );
@@ -133,7 +135,7 @@ pub(super) fn render_artist_list(f: &mut Frame, app: &App, area: Rect) {
             list_title("Artists", &app.artists, app)
         })
         .borders(Borders::TOP)
-        .border_style(Style::default().fg(ACCENT));
+        .border_style(Style::default().fg(palette().accent));
 
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -159,7 +161,7 @@ pub(super) fn render_artist_list(f: &mut Frame, app: &App, area: Rect) {
 
     if items.is_empty() && !loading {
         let p = Paragraph::new(empty_text(&app.artists, "No followed artists found."))
-            .style(Style::default().fg(DIM))
+            .style(Style::default().fg(palette().dim))
             .alignment(Alignment::Center);
         f.render_widget(p, inner);
         return;
@@ -180,7 +182,7 @@ pub(super) fn render_fav_albums_list(f: &mut Frame, app: &App, area: Rect) {
             list_title("Albums", &app.fav_albums, app)
         })
         .borders(Borders::TOP)
-        .border_style(Style::default().fg(ACCENT));
+        .border_style(Style::default().fg(palette().accent));
 
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -188,7 +190,7 @@ pub(super) fn render_fav_albums_list(f: &mut Frame, app: &App, area: Rect) {
     if app.fav_albums.visible_len() == 0 && !loading {
         f.render_widget(
             Paragraph::new(empty_text(&app.fav_albums, "No saved albums found."))
-                .style(Style::default().fg(DIM))
+                .style(Style::default().fg(palette().dim))
                 .alignment(Alignment::Center),
             inner,
         );
@@ -230,7 +232,7 @@ pub(super) fn render_playlist_list(f: &mut Frame, app: &App, area: Rect) {
             list_title("Playlists", &app.playlists, app)
         })
         .borders(Borders::TOP)
-        .border_style(Style::default().fg(ACCENT));
+        .border_style(Style::default().fg(palette().accent));
 
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -249,7 +251,7 @@ pub(super) fn render_playlist_list(f: &mut Frame, app: &App, area: Rect) {
 
     if items.is_empty() && !loading {
         let p = Paragraph::new(empty_text(&app.playlists, "No playlists found."))
-            .style(Style::default().fg(DIM))
+            .style(Style::default().fg(palette().dim))
             .alignment(Alignment::Center);
         f.render_widget(p, inner);
         return;
@@ -411,7 +413,15 @@ pub(super) fn track_row(
     let phase = marquee_phase(app, is_selected);
     let mut cells = vec![
         Cell::fixed(if is_selected { "▶ " } else { "  " }, 2, style),
-        Cell::fixed(if is_playing { "♪ " } else { "  " }, 2, style),
+        Cell::fixed(
+            if is_playing { "♪ " } else { "  " },
+            2,
+            if is_playing {
+                marker_style(style)
+            } else {
+                style
+            },
+        ),
     ];
     if let Some(ordinal) = ordinal {
         cells.push(Cell::fixed(ordinal, 5, style));
@@ -452,7 +462,7 @@ pub(super) fn render_track_list(
     let block = Block::default()
         .title(title)
         .borders(Borders::TOP)
-        .border_style(Style::default().fg(ACCENT));
+        .border_style(Style::default().fg(palette().accent));
 
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -492,7 +502,7 @@ pub(super) fn render_track_list(
 
     if items.is_empty() {
         let p = Paragraph::new(empty_text(tracks, "No tracks."))
-            .style(Style::default().fg(DIM))
+            .style(Style::default().fg(palette().dim))
             .alignment(Alignment::Center);
         f.render_widget(p, inner);
         return;
@@ -509,7 +519,7 @@ mod tests {
     use super::*;
     use crate::api::models::Playlist;
     use crate::app::test_support::test_app;
-    use ratatui::{Terminal, backend::TestBackend};
+    use ratatui::{Terminal, backend::TestBackend, style::Color};
 
     fn playlist(title: &str, number_of_tracks: Option<u32>) -> Playlist {
         Playlist {
@@ -643,7 +653,7 @@ mod tests {
         assert!(text.contains("[MAX]"), "badge missing from {text:?}");
 
         let holes: Vec<u16> = (0..w)
-            .filter(|&x| row[x as usize].bg != HIGHLIGHT_BG)
+            .filter(|&x| row[x as usize].bg != Palette::DEFAULT.highlight_bg)
             .collect();
         assert!(
             holes.is_empty(),

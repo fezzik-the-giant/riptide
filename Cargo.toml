@@ -33,6 +33,8 @@ md5 = "0.7"
 tar = "0.4"
 flate2 = "1"
 sha2 = "0.10"
+material-colors = "0.4.2"
+terminal-colorsaurus = "1.0.3"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

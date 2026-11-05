@@ -6,8 +6,8 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Rect},
-    style::{Color, Modifier, Style},
-    text::Span,
+    style::{Modifier, Style},
+    text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
 
@@ -19,7 +19,11 @@ pub(super) fn render_queue(f: &mut Frame, app: &App, area: Rect) {
     // Both palette colours, so the divider tracks the terminal theme. A fixed
     // dark grey read *stronger* than the focused accent against a light one,
     // which inverted the signal it was there to give.
-    let border_style = Style::default().fg(if focused { ACCENT } else { DIM });
+    let border_style = Style::default().fg(if focused {
+        palette().accent
+    } else {
+        palette().border
+    });
     // No title on the block — ratatui doesn't reserve a row for titles on
     // Borders::LEFT-only blocks, so the title would be overdrawn by content.
     let block = Block::default()
@@ -37,9 +41,11 @@ pub(super) fn render_queue(f: &mut Frame, app: &App, area: Rect) {
     };
     let queue_title = format!(" Queue{shuffle}{repeat} ");
     let title_style = if focused {
-        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(palette().accent)
+            .add_modifier(Modifier::BOLD)
     } else {
-        Style::default().fg(DIM)
+        Style::default().fg(palette().dim)
     };
     f.render_widget(
         Paragraph::new(Span::styled(queue_title, title_style)),
@@ -55,7 +61,7 @@ pub(super) fn render_queue(f: &mut Frame, app: &App, area: Rect) {
         if content_h > 0 {
             f.render_widget(
                 Paragraph::new("no queue")
-                    .style(Style::default().fg(DIM))
+                    .style(Style::default().fg(palette().dim))
                     .alignment(Alignment::Center),
                 Rect::new(inner.x, content_y, inner.width, content_h),
             );
@@ -92,17 +98,31 @@ pub(super) fn render_queue(f: &mut Frame, app: &App, area: Rect) {
         } else {
             ""
         };
-        let title_line = format!("{prefix}{}{}", track.title, heart);
         let line_style = if is_cursor {
             row_style(true)
         } else if is_cur {
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(palette().accent)
+                .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(Color::White)
+            Style::default().fg(palette().text)
         };
+        let prefix_style = if is_cur {
+            marker_style(line_style)
+        } else {
+            line_style
+        };
+        let title = ellipsize(
+            &format!("{}{heart}", track.title),
+            inner.width.saturating_sub(prefix.chars().count() as u16),
+        );
 
         f.render_widget(
-            Paragraph::new(ellipsize(&title_line, inner.width)).style(line_style),
+            Paragraph::new(Line::from(vec![
+                Span::styled(prefix, prefix_style),
+                Span::raw(title),
+            ]))
+            .style(line_style),
             Rect::new(inner.x, y, inner.width, 1),
         );
         f.render_widget(
@@ -134,7 +154,7 @@ mod tests {
         (0..h)
             .filter(|&y| {
                 xs.clone()
-                    .any(|x| buf.cell((x, y)).unwrap().bg == super::HIGHLIGHT_BG)
+                    .any(|x| buf.cell((x, y)).unwrap().bg == super::Palette::DEFAULT.highlight_bg)
             })
             .collect()
     }

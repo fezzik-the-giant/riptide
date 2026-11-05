@@ -15,6 +15,7 @@ mod palette;
 mod playlist_edit;
 mod settings;
 mod sort;
+mod theme_picker;
 
 pub use detail::*;
 pub use keybinds::*;
@@ -24,6 +25,7 @@ pub use palette::*;
 pub use playlist_edit::*;
 pub use settings::*;
 pub use sort::*;
+pub use theme_picker::*;
 
 // ── Tab ───────────────────────────────────────────────────────────────────────
 

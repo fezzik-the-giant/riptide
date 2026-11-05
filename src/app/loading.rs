@@ -134,6 +134,9 @@ impl App {
             self.now_playing.art_loading = true;
             let _ = self.api_tx.send(ApiRequest::LoadAlbum { album_id });
         } else {
+            // No cover yet is not no cover: favourite tracks carry neither id
+            // nor cover, and theirs arrives with the track details. The album
+            // palette waits for those rather than flashing the default.
             self.now_playing.art_loading = false;
         }
     }

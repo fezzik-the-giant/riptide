@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- A Theme row in `Shift+S` brings colour to the accents and the selection bar (#83). **Album** takes its colours from the playing track's cover and changes with every record. It picks a light or dark scheme from your terminal's background, and keeps the previous colours while the next cover loads rather than flashing back in between. The colours are saved with your queue, so they're back the moment Riptide reopens. Your terminal's background is never painted over. **Default** is the look Riptide has always had, and stays the default
+- Ten themes that paint the whole window, background included (#84): Catppuccin Latte, Frappé, Macchiato and Mocha, Nord, Gruvbox Dark, Tokyo Night, Dracula, Rosé Pine and Cyberpunk. Pressing `Enter` on the Theme row now opens a picker. Type to narrow the list, and the window repaints as you move through it; `Enter` keeps the theme and `Esc` puts back the one you had. You can add your own themes as `.json` files in `~/.config/riptide/themes/`, using Catppuccin's colour names, so any Catppuccin palette can be copied in. A file that's missing a colour is skipped, and the picker says how many were.
+
 ### Fixed
 - Tracks from albums with an animated cover now show their cover art while playing (#79). Tidal sends those albums a video cover beside the still one, and riptide was picking the video, which it can't draw, so the art stayed blank
 - Following an artist from search now shows the ❤ beside them straight away (#81). The status line said you were following them, but the heart only appeared after a restart. Unfollowing had the same problem the other way round: the heart stayed

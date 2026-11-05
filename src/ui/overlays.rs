@@ -6,9 +6,9 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph, Wrap},
 };
 
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -19,6 +19,113 @@ use crate::app::{App, NameTarget};
 /// Floor for the update modal so short states keep the roomy look they had
 /// before the box started sizing itself to its content.
 const UPDATE_MODAL_MIN_H: u16 = 7;
+
+pub(super) fn render_theme_picker(f: &mut Frame, app: &App, area: Rect) {
+    use crate::colors::catalog::Origin;
+    const BOX_W: u16 = 40;
+
+    let picker = &app.theme_picker;
+    let matches = picker.matches(&app.theme_catalog);
+    let skipped = app.theme_catalog.skipped;
+
+    let mut lines: Vec<(Line<'static>, Option<usize>)> = Vec::new();
+    let mut origin = None;
+    for (i, entry) in matches.iter().enumerate() {
+        if origin != Some(entry.origin) {
+            origin = Some(entry.origin);
+            let heading = match entry.origin {
+                Origin::Builtin => " built in".to_string(),
+                Origin::User => " yours  ~/.config/riptide/themes".to_string(),
+            };
+            lines.push((
+                Line::styled(heading, Style::default().fg(palette().dim)),
+                None,
+            ));
+        }
+        let style = if i == picker.selected {
+            Style::default()
+                .bg(palette().select_bg)
+                .fg(palette().select_fg)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(palette().text)
+        };
+        let label = format!(" {:<width$}", entry.name, width = BOX_W as usize - 3);
+        lines.push((Line::styled(label, style), Some(i)));
+    }
+    if matches.is_empty() {
+        lines.push((
+            Line::styled(" no match", Style::default().fg(palette().dim)),
+            None,
+        ));
+    }
+
+    // border(2) + input(1) + divider(1) + the list + an optional footer
+    let footer = u16::from(skipped > 0);
+    let box_h = (4 + lines.len() as u16 + footer).min(area.height);
+    let overlay = Rect::new(
+        area.x + area.width.saturating_sub(BOX_W) / 2,
+        area.y + area.height.saturating_sub(box_h) / 2,
+        BOX_W.min(area.width),
+        box_h,
+    );
+    clear_area(f, overlay);
+    let block = Block::default()
+        .title(Span::styled(
+            " theme ",
+            Style::default()
+                .fg(palette().accent)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(palette().accent));
+    let inner = block.inner(overlay);
+    f.render_widget(block, overlay);
+    if inner.height < 3 {
+        return;
+    }
+
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                " › ",
+                Style::default()
+                    .fg(palette().accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(picker.query.clone(), Style::default().fg(palette().text)),
+            Span::styled(cursor_char(app.tick), Style::default().fg(palette().text)),
+        ])),
+        Rect::new(inner.x, inner.y, inner.width, 1),
+    );
+    f.render_widget(
+        Paragraph::new("─".repeat(inner.width as usize))
+            .style(Style::default().fg(palette().border)),
+        Rect::new(inner.x, inner.y + 1, inner.width, 1),
+    );
+
+    let list_h = (inner.height - 2 - footer) as usize;
+    let selected_line = lines
+        .iter()
+        .position(|(_, index)| *index == Some(picker.selected))
+        .unwrap_or(0);
+    let first = selected_line.saturating_sub(list_h.saturating_sub(1));
+    for (row, (line, _)) in lines.iter().skip(first).take(list_h).enumerate() {
+        f.render_widget(
+            Paragraph::new(line.clone()),
+            Rect::new(inner.x, inner.y + 2 + row as u16, inner.width, 1),
+        );
+    }
+
+    if footer > 0 {
+        let noun = if skipped == 1 { "file" } else { "files" };
+        f.render_widget(
+            Paragraph::new(format!(" {skipped} theme {noun} skipped — see log"))
+                .style(Style::default().fg(palette().dim)),
+            Rect::new(inner.x, inner.y + inner.height - 1, inner.width, 1),
+        );
+    }
+}
 
 pub(super) fn render_command_overlay(f: &mut Frame, app: &App, area: Rect) {
     let matches = app.command.matches();
@@ -36,14 +143,16 @@ pub(super) fn render_command_overlay(f: &mut Frame, app: &App, area: Rect) {
         box_h.min(area.height),
     );
 
-    f.render_widget(Clear, overlay);
+    clear_area(f, overlay);
     let block = Block::default()
         .title(Span::styled(
             " command ",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(palette().accent)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(ACCENT));
+        .border_style(Style::default().fg(palette().accent));
     let inner = block.inner(overlay);
     f.render_widget(block, overlay);
 
@@ -59,11 +168,16 @@ pub(super) fn render_command_overlay(f: &mut Frame, app: &App, area: Rect) {
         Paragraph::new(Line::from(vec![
             Span::styled(
                 "/ ",
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(palette().accent)
+                    .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(app.command.input.clone(), Style::default().fg(Color::White)),
-            Span::styled(ghost, Style::default().fg(DIM)),
-            Span::styled(cursor, Style::default().fg(Color::White)),
+            Span::styled(
+                app.command.input.clone(),
+                Style::default().fg(palette().text),
+            ),
+            Span::styled(ghost, Style::default().fg(palette().dim)),
+            Span::styled(cursor, Style::default().fg(palette().text)),
         ])),
         Rect::new(inner.x, inner.y, inner.width, 1),
     );
@@ -74,14 +188,14 @@ pub(super) fn render_command_overlay(f: &mut Frame, app: &App, area: Rect) {
 
     // Thin divider between input and list
     f.render_widget(
-        Paragraph::new("─".repeat(inner.width as usize)).style(Style::default().fg(DIM)),
+        Paragraph::new("─".repeat(inner.width as usize)).style(Style::default().fg(palette().dim)),
         Rect::new(inner.x, inner.y + 1, inner.width, 1),
     );
 
     // Command rows
     if matches.is_empty() {
         f.render_widget(
-            Paragraph::new(" no match").style(Style::default().fg(DIM)),
+            Paragraph::new(" no match").style(Style::default().fg(palette().dim)),
             Rect::new(inner.x, inner.y + 2, inner.width, 1),
         );
     } else {
@@ -93,11 +207,11 @@ pub(super) fn render_command_overlay(f: &mut Frame, app: &App, area: Rect) {
             let selected = i == app.command.selected;
             let style = if selected {
                 Style::default()
-                    .bg(SELECT_BG)
-                    .fg(SELECT_FG)
+                    .bg(palette().select_bg)
+                    .fg(palette().select_fg)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(DIM)
+                Style::default().fg(palette().dim)
             };
             f.render_widget(
                 Paragraph::new(format!(" {cmd}")).style(style),
@@ -123,14 +237,16 @@ pub(super) fn render_sort_overlay(f: &mut Frame, app: &App, area: Rect) {
         box_h.min(area.height),
     );
 
-    f.render_widget(Clear, overlay);
+    clear_area(f, overlay);
     let block = Block::default()
         .title(Span::styled(
             " sort by ",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(palette().accent)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(ACCENT));
+        .border_style(Style::default().fg(palette().accent));
     let inner = block.inner(overlay);
     f.render_widget(block, overlay);
 
@@ -142,11 +258,11 @@ pub(super) fn render_sort_overlay(f: &mut Frame, app: &App, area: Rect) {
         let selected = i == app.sort_palette.selected;
         let style = if selected {
             Style::default()
-                .bg(SELECT_BG)
-                .fg(SELECT_FG)
+                .bg(palette().select_bg)
+                .fg(palette().select_fg)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(DIM)
+            Style::default().fg(palette().dim)
         };
         let prefix = if selected { " ► " } else { "   " };
         f.render_widget(
@@ -170,14 +286,16 @@ pub(super) fn render_artist_selection_modal(f: &mut Frame, app: &App, area: Rect
         box_h.min(area.height),
     );
 
-    f.render_widget(Clear, overlay);
+    clear_area(f, overlay);
     let block = Block::default()
         .title(Span::styled(
             " select artist ",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(palette().accent)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(ACCENT));
+        .border_style(Style::default().fg(palette().accent));
     let inner = block.inner(overlay);
     f.render_widget(block, overlay);
 
@@ -190,11 +308,11 @@ pub(super) fn render_artist_selection_modal(f: &mut Frame, app: &App, area: Rect
         let selected = i == app.artist_selection.selected;
         let style = if selected {
             Style::default()
-                .bg(SELECT_BG)
-                .fg(SELECT_FG)
+                .bg(palette().select_bg)
+                .fg(palette().select_fg)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(Color::White)
+            Style::default().fg(palette().text)
         };
         let prefix = if selected { " ► " } else { "   " };
         let line = format!("{prefix}{}", name);
@@ -228,7 +346,7 @@ pub(super) fn render_playlist_picker(f: &mut Frame, app: &App, area: Rect) {
     let y = area.y + area.height.saturating_sub(box_h) / 2;
     let overlay = Rect::new(x, y, box_w.min(area.width), box_h.min(area.height));
 
-    f.render_widget(Clear, overlay);
+    clear_area(f, overlay);
     let track = picker
         .track
         .as_ref()
@@ -241,10 +359,12 @@ pub(super) fn render_playlist_picker(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .title(Span::styled(
             title,
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(palette().accent)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(ACCENT));
+        .border_style(Style::default().fg(palette().accent));
     let inner = block.inner(overlay);
     f.render_widget(block, overlay);
 
@@ -256,13 +376,13 @@ pub(super) fn render_playlist_picker(f: &mut Frame, app: &App, area: Rect) {
         let selected = i == picker.selected;
         let style = if selected {
             Style::default()
-                .bg(SELECT_BG)
-                .fg(SELECT_FG)
+                .bg(palette().select_bg)
+                .fg(palette().select_fg)
                 .add_modifier(Modifier::BOLD)
         } else if i == 0 {
-            Style::default().fg(ACCENT)
+            Style::default().fg(palette().accent)
         } else {
-            Style::default().fg(Color::White)
+            Style::default().fg(palette().text)
         };
         let prefix = if selected { " ► " } else { "   " };
         let text = ellipsize(label, inner.width.saturating_sub(3));
@@ -280,17 +400,19 @@ pub(super) fn render_name_prompt(f: &mut Frame, app: &App, area: Rect) {
     let y = area.y + area.height.saturating_sub(box_h) / 2;
     let overlay = Rect::new(x, y, box_w.min(area.width), box_h.min(area.height));
 
-    f.render_widget(Clear, overlay);
+    clear_area(f, overlay);
     let block = Block::default()
         .title(Span::styled(
             match app.name_prompt.target {
                 NameTarget::Rename(_) => " rename playlist ",
                 NameTarget::New { .. } => " new playlist ",
             },
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(palette().accent)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(ACCENT));
+        .border_style(Style::default().fg(palette().accent));
     let inner = block.inner(overlay);
     f.render_widget(block, overlay);
 
@@ -301,8 +423,8 @@ pub(super) fn render_name_prompt(f: &mut Frame, app: &App, area: Rect) {
     );
     f.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled(shown, Style::default().fg(Color::White)),
-            Span::styled(cursor, Style::default().fg(ACCENT)),
+            Span::styled(shown, Style::default().fg(palette().text)),
+            Span::styled(cursor, Style::default().fg(palette().accent)),
         ])),
         Rect::new(inner.x + 1, inner.y, inner.width.saturating_sub(1), 1),
     );
@@ -418,14 +540,16 @@ pub(super) fn render_delete_confirm(f: &mut Frame, name: &str, area: Rect) {
     let y = area.y + area.height.saturating_sub(box_h) / 2;
     let overlay = Rect::new(x, y, box_w.min(area.width), box_h.min(area.height));
 
-    f.render_widget(Clear, overlay);
+    clear_area(f, overlay);
     let block = Block::default()
         .title(Span::styled(
             " delete playlist ",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(palette().accent)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(ACCENT));
+        .border_style(Style::default().fg(palette().accent));
     let inner = block.inner(overlay);
     f.render_widget(block, overlay);
 
@@ -433,10 +557,10 @@ pub(super) fn render_delete_confirm(f: &mut Frame, name: &str, area: Rect) {
     let question = format!("{BEFORE}{}{AFTER}", ellipsize(name, name_w as u16));
     f.render_widget(
         Paragraph::new(vec![
-            Line::from(Span::styled(question, Style::default().fg(Color::White))),
+            Line::from(Span::styled(question, Style::default().fg(palette().text))),
             Line::from(Span::styled(
                 "y delete · n cancel",
-                Style::default().fg(DIM),
+                Style::default().fg(palette().dim),
             )),
         ]),
         Rect::new(
@@ -490,14 +614,16 @@ pub(super) fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .title(Span::styled(
             " help ",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(palette().accent)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(ACCENT));
+        .border_style(Style::default().fg(palette().accent));
     let inner = block.inner(overlay);
 
     // Clear only the inner content area
-    f.render_widget(Clear, inner);
+    clear_area(f, inner);
     f.render_widget(block, overlay);
 
     if inner.height == 0 || inner.width < 20 {
@@ -509,14 +635,14 @@ pub(super) fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
     let total_binds = KeybindGroup::total_bind_count();
     let filtered_binds: usize = filtered.iter().map(|g| g.binds.len()).sum();
     let hl_style = Style::default()
-        .bg(SELECT_BG)
-        .fg(SELECT_FG)
+        .bg(palette().select_bg)
+        .fg(palette().select_fg)
         .add_modifier(Modifier::BOLD);
     let has_search = inner.height >= 3 && inner.width >= 20;
 
     let (content_y, content_h) = if has_search {
         let cursor = cursor_char(app.tick);
-        let cursor_style = Style::default().fg(Color::White);
+        let cursor_style = Style::default().fg(palette().text);
         let placeholder = "type to filter…";
         let is_empty = query.is_empty();
 
@@ -527,8 +653,8 @@ pub(super) fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
             "Esc to clear"
         };
         let right_spans: Vec<Span> = vec![
-            Span::styled(count_str.clone(), Style::default().fg(DIM)),
-            Span::styled(esc_hint.to_owned(), Style::default().fg(DIM)),
+            Span::styled(count_str.clone(), Style::default().fg(palette().dim)),
+            Span::styled(esc_hint.to_owned(), Style::default().fg(palette().dim)),
         ];
 
         // The match count and the Esc hint are what tell the user whether the
@@ -543,19 +669,21 @@ pub(super) fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
         let (text, text_style) = if is_empty {
             (
                 ellipsize(placeholder, text_budget as u16),
-                Style::default().fg(DIM),
+                Style::default().fg(palette().dim),
             )
         } else {
             (
                 ellipsize_head(query, text_budget),
-                Style::default().fg(Color::White),
+                Style::default().fg(palette().text),
             )
         };
 
         let left_spans: Vec<Span> = vec![
             Span::styled(
                 "⌕ ",
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(palette().accent)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled(text.clone(), text_style),
             Span::styled(cursor.to_owned(), cursor_style),
@@ -577,7 +705,8 @@ pub(super) fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
         );
 
         f.render_widget(
-            Paragraph::new("─".repeat(inner.width as usize)).style(Style::default().fg(DIM)),
+            Paragraph::new("─".repeat(inner.width as usize))
+                .style(Style::default().fg(palette().dim)),
             Rect::new(inner.x, inner.y + 1, inner.width, 1),
         );
 
@@ -596,17 +725,19 @@ pub(super) fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
     if filtered.is_empty() {
         lines.push(Line::from(Span::styled(
             ellipsize(&format!(" no matches for \"{query}\""), inner.width),
-            Style::default().fg(DIM),
+            Style::default().fg(palette().dim),
         )));
     } else {
         for group in &filtered {
-            let header_base = Style::default().fg(ACCENT).add_modifier(Modifier::BOLD);
+            let header_base = Style::default()
+                .fg(palette().accent)
+                .add_modifier(Modifier::BOLD);
             let header_spans = highlight_spans(group.title, query, header_base, hl_style);
             lines.push(Line::from(header_spans));
 
             for keybind in &group.binds {
-                let key_base = Style::default().fg(ACCENT);
-                let action_base = Style::default().fg(Color::White);
+                let key_base = Style::default().fg(palette().accent);
+                let action_base = Style::default().fg(palette().text);
                 let mut spans: Vec<Span> = Vec::new();
                 spans.push(Span::raw("  "));
                 let key_spans = highlight_spans(keybind.key, query, key_base, hl_style);
@@ -640,7 +771,7 @@ pub(super) fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
         let hint = " ↓ more ";
         f.render_widget(
             Paragraph::new(hint)
-                .style(Style::default().fg(DIM))
+                .style(Style::default().fg(palette().dim))
                 .alignment(Alignment::Right),
             Rect::new(
                 inner.x,
@@ -693,22 +824,22 @@ pub(super) fn render_update_modal(f: &mut Frame, app: &App, area: Rect) {
         UpdateStatus::Confirming => (
             format!("Update available: {current} → {latest}"),
             "Enter install · Esc cancel".to_string(),
-            Style::default().fg(Color::White),
+            Style::default().fg(palette().text),
         ),
         UpdateStatus::Working => (
             "Installing update".to_string(),
             "Downloading, verifying checksum, installing…".to_string(),
-            Style::default().fg(DIM),
+            Style::default().fg(palette().dim),
         ),
         UpdateStatus::Done => (
             format!("Updated to {latest}"),
             "Restart riptide to apply.  Enter/Esc close".to_string(),
-            Style::default().fg(Color::Green),
+            Style::default().fg(palette().success),
         ),
         UpdateStatus::UpToDate => (
             "Riptide is up to date".to_string(),
             format!("Running the latest release (v{current}).  Enter/Esc close"),
-            Style::default().fg(Color::Green),
+            Style::default().fg(palette().success),
         ),
         UpdateStatus::Failed => (
             "Update failed.".to_string(),
@@ -716,7 +847,7 @@ pub(super) fn render_update_modal(f: &mut Frame, app: &App, area: Rect) {
                 .error
                 .clone()
                 .unwrap_or_else(|| "unknown error".into()),
-            Style::default().fg(Color::White),
+            Style::default().fg(palette().text),
         ),
     };
 
@@ -746,14 +877,16 @@ pub(super) fn render_update_modal(f: &mut Frame, app: &App, area: Rect) {
         box_h.min(area.height),
     );
 
-    f.render_widget(Clear, overlay);
+    clear_area(f, overlay);
     let block = Block::default()
         .title(Span::styled(
             " update ",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(palette().accent)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(ACCENT));
+        .border_style(Style::default().fg(palette().accent));
     let inner = block.inner(overlay);
     f.render_widget(block, overlay);
 
@@ -783,7 +916,7 @@ pub(super) fn render_update_modal(f: &mut Frame, app: &App, area: Rect) {
     {
         f.render_widget(
             Paragraph::new(footer)
-                .style(Style::default().fg(DIM))
+                .style(Style::default().fg(palette().dim))
                 .alignment(Alignment::Center),
             Rect::new(inner.x, inner.bottom() - 1, inner.width, 1),
         );
@@ -800,19 +933,19 @@ pub(super) fn render_toast(f: &mut Frame, app: &App, area: Rect) {
 
     let (border_color, text_color) = match level {
         StatusLevel::Error => (
-            Color::Red,
+            palette().error,
             if fading {
-                Color::DarkGray
+                palette().dim
             } else {
-                Color::White
+                palette().text
             },
         ),
         StatusLevel::Info => (
-            ACCENT,
+            palette().accent,
             if fading {
-                Color::DarkGray
+                palette().dim
             } else {
-                Color::White
+                palette().text
             },
         ),
     };
@@ -826,7 +959,7 @@ pub(super) fn render_toast(f: &mut Frame, app: &App, area: Rect) {
     let y = area.y + area.height.saturating_sub(toast_h + 10);
     let toast_rect = Rect::new(x, y, toast_w, toast_h);
 
-    f.render_widget(Clear, toast_rect);
+    clear_area(f, toast_rect);
     f.render_widget(
         Paragraph::new(msg.as_str())
             .alignment(Alignment::Center)
@@ -864,14 +997,16 @@ pub(super) fn render_settings_modal(f: &mut Frame, app: &App, area: Rect) {
         box_h.min(area.height),
     );
 
-    f.render_widget(Clear, overlay);
+    clear_area(f, overlay);
     let block = Block::default()
         .title(Span::styled(
             " settings ",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(palette().accent)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(ACCENT));
+        .border_style(Style::default().fg(palette().accent));
     let inner = block.inner(overlay);
     f.render_widget(block, overlay);
 
@@ -891,12 +1026,12 @@ pub(super) fn render_settings_modal(f: &mut Frame, app: &App, area: Rect) {
         let selected = i == app.settings.selected;
 
         let (value, value_color) = match app.setting_value(*setting) {
-            SettingValue::Toggle(true) => ("on".to_string(), ACCENT),
-            SettingValue::Toggle(false) => ("off".to_string(), DIM),
-            SettingValue::Percent(pct) => (format!("{pct}%"), Color::White),
-            SettingValue::Choice("Off") => ("off".to_string(), DIM),
-            SettingValue::Choice(label) => (label.to_lowercase(), ACCENT),
-            SettingValue::Unavailable(reason) => (reason.to_string(), DIM),
+            SettingValue::Toggle(true) => ("on".to_string(), palette().accent),
+            SettingValue::Toggle(false) => ("off".to_string(), palette().dim),
+            SettingValue::Percent(pct) => (format!("{pct}%"), palette().text),
+            SettingValue::Choice(label) if label == "Off" => ("off".to_string(), palette().dim),
+            SettingValue::Choice(label) => (label.to_lowercase(), palette().accent),
+            SettingValue::Unavailable(reason) => (reason.to_string(), palette().dim),
         };
 
         let label = setting.label();
@@ -907,13 +1042,13 @@ pub(super) fn render_settings_modal(f: &mut Frame, app: &App, area: Rect) {
 
         let (row_style, value_style) = if selected {
             let base = Style::default()
-                .bg(SELECT_BG)
-                .fg(SELECT_FG)
+                .bg(palette().select_bg)
+                .fg(palette().select_fg)
                 .add_modifier(Modifier::BOLD);
             (base, base)
         } else {
             (
-                Style::default().fg(Color::White),
+                Style::default().fg(palette().text),
                 Style::default().fg(value_color),
             )
         };
@@ -935,7 +1070,7 @@ pub(super) fn render_settings_modal(f: &mut Frame, app: &App, area: Rect) {
         // border while every other line stood off it.
         f.render_widget(
             Paragraph::new(app.settings.selected_setting().help())
-                .style(Style::default().fg(DIM))
+                .style(Style::default().fg(palette().dim))
                 .wrap(Wrap { trim: true }),
             Rect::new(
                 rect.x + 2,
@@ -948,7 +1083,8 @@ pub(super) fn render_settings_modal(f: &mut Frame, app: &App, area: Rect) {
 
     if let Some(rect) = next_row(1) {
         f.render_widget(
-            Paragraph::new("─".repeat(rect.width as usize)).style(Style::default().fg(DIM)),
+            Paragraph::new("─".repeat(rect.width as usize))
+                .style(Style::default().fg(palette().dim)),
             rect,
         );
     }
@@ -964,7 +1100,7 @@ pub(super) fn render_settings_modal(f: &mut Frame, app: &App, area: Rect) {
                 "  {} · user {user} · auth gen {}",
                 app.account.country_code, app.account.auth_generation
             ))
-            .style(Style::default().fg(DIM)),
+            .style(Style::default().fg(palette().dim)),
             rect,
         );
     }
@@ -972,7 +1108,7 @@ pub(super) fn render_settings_modal(f: &mut Frame, app: &App, area: Rect) {
     if let Some(rect) = next_row(1) {
         f.render_widget(
             Paragraph::new(format!("  token expires {}", app.account.token_expiry()))
-                .style(Style::default().fg(DIM)),
+                .style(Style::default().fg(palette().dim)),
             rect,
         );
     }
@@ -980,7 +1116,7 @@ pub(super) fn render_settings_modal(f: &mut Frame, app: &App, area: Rect) {
     if let Some(rect) = next_row(1) {
         f.render_widget(
             Paragraph::new("  ↑↓ move   ←→ change   enter toggle   esc close")
-                .style(Style::default().fg(DIM)),
+                .style(Style::default().fg(palette().dim)),
             rect,
         );
     }
@@ -1013,6 +1149,15 @@ mod tests {
             crate::visualizer::VisualizerLink::for_test().0,
             &crate::api::models::Config::default(),
         )
+    }
+
+    #[test]
+    fn picker_reports_skipped_files() {
+        let mut app = settings_app();
+        app.theme_catalog.skipped = 2;
+        app.theme_picker.active = true;
+        let text = render_modal(&app, 80, 30);
+        assert!(text.contains("2 theme files skipped — see log"), "{text}");
     }
 
     fn render_modal(app: &App, width: u16, height: u16) -> String {
@@ -1073,7 +1218,7 @@ mod tests {
     /// below the list is context; the settings themselves are the modal.
     #[test]
     fn settings_modal_drops_its_footer_before_its_rows() {
-        let text = render_modal(&settings_app(), 80, 11);
+        let text = render_modal(&settings_app(), 80, 12);
 
         assert!(
             text.contains("Last.fm scrobbling"),
