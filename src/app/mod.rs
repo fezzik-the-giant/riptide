@@ -174,6 +174,11 @@ pub struct App {
     pub status: Option<(String, StatusLevel, std::time::Instant)>,
 
     pub visualizer_mode: VisualizerMode,
+    pub theme_source: crate::colors::ThemeSource,
+    /// Whether the terminal's background is dark, asked once at startup;
+    /// Album mode picks the matching Material scheme from it.
+    pub terminal_dark: bool,
+    album_palette: Option<crate::colors::Palette>,
     pub visualizer: VisualizerLink,
 
     pub api_tx: mpsc::UnboundedSender<ApiRequest>,
@@ -272,6 +277,9 @@ impl App {
             marquee_epoch: std::time::Instant::now(),
             status: None,
             visualizer_mode: prefs.visualizer_mode,
+            theme_source: prefs.theme,
+            terminal_dark: true,
+            album_palette: None,
             visualizer,
             api_tx,
             player_tx,
@@ -294,6 +302,39 @@ impl App {
         app
     }
 
+    pub fn active_palette(&self) -> crate::colors::Palette {
+        use crate::colors::{Palette, ThemeSource};
+        match self.theme_source {
+            ThemeSource::Default => Palette::DEFAULT,
+            ThemeSource::Album if self.now_playing.track.is_none() => Palette::DEFAULT,
+            ThemeSource::Album => self.album_palette.unwrap_or(Palette::DEFAULT),
+        }
+    }
+
+    /// The only writer of the album palette. Called when the playing track's
+    /// cover arrives or is known to be missing — never when a track change
+    /// merely clears the old cover, so the previous colours hold while the new
+    /// one loads instead of flashing the default between tracks.
+    ///
+    /// Extraction costs a few milliseconds, so it only runs in Album mode;
+    /// switching to Album recomputes from whatever cover is showing.
+    pub(crate) fn set_album_art(&mut self, bytes: Option<&[u8]>) {
+        self.album_palette = match bytes {
+            Some(bytes) if self.theme_source == crate::colors::ThemeSource::Album => {
+                crate::colors::album::palette_from_cover(bytes, self.terminal_dark)
+            }
+            _ => None,
+        };
+    }
+
+    /// `DEFAULT_ART` is the Riptide logo standing in for a cover that never
+    /// came; theming from it would paint the app in the logo's colours.
+    pub(crate) fn now_playing_cover(&self) -> Option<&[u8]> {
+        self.now_playing
+            .art_bytes()
+            .filter(|bytes| *bytes != DEFAULT_ART)
+    }
+
     /// Snapshot the persistable UI choices for writing back to `Config`.
     pub fn preferences(&self) -> Preferences {
         Preferences {
@@ -307,6 +348,7 @@ impl App {
             queue_visible: self.queue_visible,
             atmos: self.atmos,
             visualizer_mode: self.visualizer_mode,
+            theme: self.theme_source,
         }
     }
 

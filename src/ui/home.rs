@@ -106,7 +106,7 @@ fn render_home_art(f: &mut Frame, app: &App, area: Rect) {
     let frame = Rect::new(area.x, area.y, cols + 2, rows + 2);
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(DIM));
+        .border_style(Style::default().fg(palette().dim));
     let inner = block.inner(frame);
     f.render_widget(block, frame);
 
@@ -115,7 +115,7 @@ fn render_home_art(f: &mut Frame, app: &App, area: Rect) {
     } else if app.home_art.loading {
         f.render_widget(
             Paragraph::new(spinner_char(app.tick).to_string())
-                .style(Style::default().fg(DIM))
+                .style(Style::default().fg(palette().dim))
                 .alignment(Alignment::Center),
             inner,
         );
@@ -131,7 +131,11 @@ fn render_home_art(f: &mut Frame, app: &App, area: Rect) {
         if below.height > 0 {
             f.render_widget(
                 Paragraph::new(mix.title.as_str())
-                    .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD))
+                    .style(
+                        Style::default()
+                            .fg(palette().accent)
+                            .add_modifier(Modifier::BOLD),
+                    )
                     .wrap(Wrap { trim: true })
                     .alignment(Alignment::Center),
                 below,
@@ -148,7 +152,10 @@ pub(super) fn render_home_section(
 ) {
     if section.loading {
         let text = format!("{} Loading...", spinner_char(app.tick));
-        f.render_widget(Paragraph::new(text).style(Style::default().fg(DIM)), area);
+        f.render_widget(
+            Paragraph::new(text).style(Style::default().fg(palette().dim)),
+            area,
+        );
         return;
     }
 
@@ -162,7 +169,7 @@ pub(super) fn render_home_section(
 
     if section.items.is_empty() {
         f.render_widget(
-            Paragraph::new("No items").style(Style::default().fg(DIM)),
+            Paragraph::new("No items").style(Style::default().fg(palette().dim)),
             area,
         );
         return;

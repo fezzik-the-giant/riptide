@@ -75,6 +75,7 @@ impl App {
             Setting::Repeat => SettingValue::Choice(self.now_playing.repeat.label()),
             Setting::QueuePanel => SettingValue::Toggle(self.queue_visible),
             Setting::Visualizer => SettingValue::Choice(self.visualizer_mode.label()),
+            Setting::Theme => SettingValue::Choice(self.theme_source.label()),
             Setting::Volume => SettingValue::Percent(self.now_playing.volume),
             Setting::Scrobbling if !self.lastfm_configured => {
                 SettingValue::Unavailable("run riptide --lastfm-auth")
@@ -125,7 +126,7 @@ impl App {
                     self.toggle_queue_visible();
                 }
             }
-            Setting::Repeat | Setting::Visualizer | Setting::Volume => {}
+            Setting::Repeat | Setting::Visualizer | Setting::Theme | Setting::Volume => {}
             Setting::Scrobbling => {
                 self.lastfm_enabled = on;
                 let _ = self.lastfm_tx.send(LastfmCmd::SetEnabled(on));
@@ -147,6 +148,14 @@ impl App {
                     mode.previous()
                 });
             }
+            Setting::Theme => {
+                let source = self.theme_source;
+                self.set_theme_source(if forward {
+                    source.next()
+                } else {
+                    source.previous()
+                });
+            }
             Setting::Repeat => {
                 let mode = self.now_playing.repeat;
                 self.set_repeat(if forward {
@@ -157,6 +166,15 @@ impl App {
             }
             _ => {}
         }
+    }
+
+    pub(crate) fn set_theme_source(&mut self, source: crate::colors::ThemeSource) {
+        self.theme_source = source;
+        if source == crate::colors::ThemeSource::Album {
+            let cover = self.now_playing_cover().map(<[u8]>::to_vec);
+            self.set_album_art(cover.as_deref());
+        }
+        self.set_status(format!("Theme: {}", source.label()), StatusLevel::Info);
     }
 
     /// Only crossing Off starts or stops CAVA: switching between two drawn
@@ -219,7 +237,87 @@ mod tests {
     use super::*;
     use crate::api::ApiRequest;
     use crate::app::RepeatMode;
-    use crate::app::test_support::{test_app, track, track_tagged};
+    use crate::app::test_support::{solid_png, test_app, track, track_tagged};
+    use crate::colors::{Palette, ThemeSource};
+
+    fn playing_with_cover(t: &mut crate::app::test_support::TestApp) -> u64 {
+        t.app.now_playing.track = Some(track(1));
+        let album_id = t.app.now_playing.track.as_ref().unwrap().album.id;
+        t.app
+            .handle_api_response(crate::api::ApiResponse::AlbumArt {
+                album_id,
+                image_data: solid_png(0xd2, 0x69, 0x1e),
+            });
+        album_id
+    }
+
+    #[test]
+    fn album_mode_without_a_track_is_default() {
+        let mut t = test_app();
+        t.app.set_theme_source(ThemeSource::Album);
+        assert_eq!(t.app.active_palette(), Palette::DEFAULT);
+    }
+
+    #[test]
+    fn album_palette_survives_a_track_change_until_new_art() {
+        let mut t = test_app();
+        t.app.theme_source = ThemeSource::Album;
+        playing_with_cover(&mut t);
+        let themed = t.app.active_palette();
+        assert_ne!(themed, Palette::DEFAULT);
+
+        t.app.now_playing.track = Some(track(2));
+        t.app.now_playing.set_art_bytes(None);
+        t.app.now_playing.art_loading = true;
+        assert_eq!(t.app.active_palette(), themed);
+
+        t.app
+            .handle_api_response(crate::api::ApiResponse::TrackArtFailed {
+                track_id: 2,
+                error: "gone".into(),
+            });
+        assert_eq!(t.app.active_palette(), Palette::DEFAULT);
+    }
+
+    #[test]
+    fn album_with_no_cover_drops_the_previous_palette() {
+        let mut t = test_app();
+        t.app.theme_source = ThemeSource::Album;
+        let album_id = playing_with_cover(&mut t);
+        t.app.now_playing.track = Some(track(2));
+
+        let album = t.app.now_playing.track.as_ref().unwrap().album.clone();
+        assert_eq!(album.id, album_id);
+        assert!(album.cover.is_none());
+        t.app
+            .handle_api_response(crate::api::ApiResponse::AlbumLoaded { album });
+        assert_eq!(t.app.active_palette(), Palette::DEFAULT);
+    }
+
+    #[test]
+    fn failed_album_lookup_drops_the_previous_palette() {
+        let mut t = test_app();
+        t.app.theme_source = ThemeSource::Album;
+        let album_id = playing_with_cover(&mut t);
+        t.app.now_playing.track = Some(track(2));
+
+        t.app
+            .handle_api_response(crate::api::ApiResponse::AlbumLoadFailed {
+                album_id,
+                error: "gone".into(),
+            });
+        assert_eq!(t.app.active_palette(), Palette::DEFAULT);
+    }
+
+    #[test]
+    fn switching_to_album_mid_track_recolours_at_once() {
+        let mut t = test_app();
+        playing_with_cover(&mut t);
+        assert_eq!(t.app.active_palette(), Palette::DEFAULT);
+
+        t.app.set_theme_source(ThemeSource::Album);
+        assert_ne!(t.app.active_palette(), Palette::DEFAULT);
+    }
 
     #[test]
     fn atmos_setting_rides_along_with_stream_requests() {

@@ -47,7 +47,7 @@ fn render_art(f: &mut Frame, app: &App, area: Rect) {
     };
     f.render_widget(
         Paragraph::new(message)
-            .style(Style::default().fg(DIM))
+            .style(Style::default().fg(palette().dim))
             .alignment(Alignment::Center),
         Rect::new(area.x, area.y + area.height / 2, area.width, 1),
     );
@@ -67,7 +67,7 @@ fn render_art_hud(f: &mut Frame, app: &App, area: Rect) {
 
     let block = Block::default()
         .borders(Borders::TOP)
-        .border_style(Style::default().fg(DIM));
+        .border_style(Style::default().fg(palette().dim));
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -88,7 +88,7 @@ fn render_art_hud(f: &mut Frame, app: &App, area: Rect) {
             .fg(Color::White)
             .add_modifier(Modifier::BOLD),
     );
-    render_centered_row(f, inner, 1, &metadata, Style::default().fg(DIM));
+    render_centered_row(f, inner, 1, &metadata, Style::default().fg(palette().dim));
 
     if let Some(progress_area) = inset_row(inner, 2, 2) {
         f.render_widget(progress_rail(app, progress_area.width), progress_area);
@@ -108,10 +108,13 @@ fn render_art_hud(f: &mut Frame, app: &App, area: Rect) {
             status_area.width.saturating_sub(left_width),
             1,
         );
-        f.render_widget(Paragraph::new(time).style(Style::default().fg(DIM)), left);
+        f.render_widget(
+            Paragraph::new(time).style(Style::default().fg(palette().dim)),
+            left,
+        );
         f.render_widget(
             Paragraph::new(format!("Volume: {}%", app.now_playing.volume))
-                .style(Style::default().fg(DIM))
+                .style(Style::default().fg(palette().dim))
                 .alignment(Alignment::Right),
             right,
         );
@@ -146,10 +149,13 @@ fn inset_row(area: Rect, offset: u16, inset: u16) -> Option<Rect> {
 fn progress_rail(app: &App, width: u16) -> Paragraph<'static> {
     let played = progress_columns(width, app.now_playing.progress_ratio());
     Paragraph::new(Line::from(vec![
-        Span::styled("━".repeat(played as usize), Style::default().fg(ACCENT)),
+        Span::styled(
+            "━".repeat(played as usize),
+            Style::default().fg(palette().accent),
+        ),
         Span::styled(
             "━".repeat(width.saturating_sub(played) as usize),
-            Style::default().fg(DIM),
+            Style::default().fg(palette().dim),
         ),
     ]))
 }

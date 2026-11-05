@@ -3,11 +3,29 @@
 
 //! Colours, spacing constants and small formatting helpers.
 
+use std::cell::Cell;
+
 use ratatui::style::{Color, Modifier, Style};
 
-pub(super) const ACCENT: Color = Color::Cyan;
+pub(super) use crate::colors::Palette;
 
-pub(super) const DIM: Color = Color::DarkGray;
+thread_local! {
+    /// The palette this frame draws in, installed by `draw`.
+    ///
+    /// A thread-local rather than a parameter because `row_style` and its
+    /// siblings are called from dozens of sites that hold no `&App`; threading
+    /// a palette through each would change every row builder's signature for a
+    /// value that is constant across the frame.
+    static ACTIVE: Cell<Palette> = const { Cell::new(Palette::DEFAULT) };
+}
+
+pub(super) fn palette() -> Palette {
+    ACTIVE.with(Cell::get)
+}
+
+pub(super) fn set_palette(palette: Palette) {
+    ACTIVE.with(|active| active.set(palette));
+}
 
 pub(super) fn fmt_sample_rate(hz: u32) -> String {
     match hz {
@@ -21,22 +39,6 @@ pub(super) fn fmt_sample_rate(hz: u32) -> String {
     }
 }
 
-/// Selected-row colours.
-///
-/// All four are true colour on purpose. The background has to be — a palette
-/// entry would follow the terminal theme and could land anywhere — and once it
-/// is fixed, every colour drawn over it must be fixed too. `Color::White` is
-/// palette index 15, which light themes remap to their *dark* text colour, so
-/// pairing it with a dark background gives dark-on-dark; `Color::Cyan` and
-/// `Color::DarkGray` are remapped the same way.
-pub(super) const HIGHLIGHT_BG: Color = Color::Rgb(40, 40, 55);
-pub(super) const HIGHLIGHT_FG: Color = Color::Rgb(236, 236, 245);
-pub(super) const HIGHLIGHT_DIM: Color = Color::Rgb(150, 150, 170);
-pub(super) const HIGHLIGHT_ACCENT: Color = Color::Rgb(120, 210, 232);
-
-pub(super) const SELECT_BG: Color = Color::Rgb(30, 100, 200);
-pub(super) const SELECT_FG: Color = Color::Rgb(236, 236, 245);
-
 /// The style a list row is drawn in.
 ///
 /// Every cell of a selected row must carry this background: `layout_row` pads
@@ -47,8 +49,8 @@ pub(super) const SELECT_FG: Color = Color::Rgb(236, 236, 245);
 pub(super) fn row_style(is_selected: bool) -> Style {
     if is_selected {
         Style::default()
-            .bg(HIGHLIGHT_BG)
-            .fg(HIGHLIGHT_FG)
+            .bg(palette().highlight_bg)
+            .fg(palette().highlight_fg)
             .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::White)
@@ -58,9 +60,11 @@ pub(super) fn row_style(is_selected: bool) -> Style {
 /// Secondary columns — year, track count, the artist beside an album title.
 pub(super) fn row_dim_style(is_selected: bool) -> Style {
     if is_selected {
-        Style::default().bg(HIGHLIGHT_BG).fg(HIGHLIGHT_DIM)
+        Style::default()
+            .bg(palette().highlight_bg)
+            .fg(palette().highlight_dim)
     } else {
-        Style::default().fg(DIM)
+        Style::default().fg(palette().dim)
     }
 }
 
@@ -68,9 +72,11 @@ pub(super) fn row_dim_style(is_selected: bool) -> Style {
 pub(super) fn row_accent_style(is_selected: bool) -> Style {
     let style = Style::default().add_modifier(Modifier::BOLD);
     if is_selected {
-        style.bg(HIGHLIGHT_BG).fg(HIGHLIGHT_ACCENT)
+        style
+            .bg(palette().highlight_bg)
+            .fg(palette().highlight_accent)
     } else {
-        style.fg(ACCENT)
+        style.fg(palette().accent)
     }
 }
 

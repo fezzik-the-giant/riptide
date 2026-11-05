@@ -56,6 +56,7 @@ use theme::*;
 use visualizer::*;
 
 pub fn draw(f: &mut Frame, app: &App) {
+    set_palette(app.active_palette());
     let area = f.area();
     let overlays = Overlays::none()
         .with(Overlays::COMMAND, app.command.active)

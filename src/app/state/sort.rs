@@ -61,6 +61,8 @@ pub struct Preferences {
     pub atmos: bool,
     #[serde(default)]
     pub visualizer_mode: VisualizerMode,
+    #[serde(default)]
+    pub theme: crate::colors::ThemeSource,
 }
 
 fn default_volume() -> u8 {
@@ -83,6 +85,7 @@ impl Default for Preferences {
             queue_visible: default_queue_visible(),
             atmos: false,
             visualizer_mode: VisualizerMode::Off,
+            theme: crate::colors::ThemeSource::Default,
         }
     }
 }
@@ -108,5 +111,17 @@ impl SortPalette {
             ],
             Tab::Search => &[],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::colors::ThemeSource;
+
+    #[test]
+    fn preferences_without_theme_load_as_default() {
+        let prefs: Preferences = serde_json::from_str("{}").unwrap();
+        assert_eq!(prefs.theme, ThemeSource::Default);
     }
 }

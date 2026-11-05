@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- A Theme row in `Shift+S` brings colour to the accents and the selection bar (#83). **Album** takes its colours from the playing track's cover and changes with every record. It picks a light or dark scheme from your terminal's background, and keeps the previous colours while the next cover loads rather than flashing back in between. Your terminal's background is never painted over. **Default** is the look Riptide has always had, and stays the default
+
 ### Fixed
 - Tracks from albums with an animated cover now show their cover art while playing (#79). Tidal sends those albums a video cover beside the still one, and riptide was picking the video, which it can't draw, so the art stayed blank
 

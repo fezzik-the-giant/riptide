@@ -17,12 +17,14 @@ use crate::app::App;
 pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
     let cols = Layout::horizontal([Constraint::Min(0), Constraint::Length(20)]).split(area);
 
-    let hint = Span::styled(get_context_hint(app), Style::default().fg(DIM));
+    let hint = Span::styled(get_context_hint(app), Style::default().fg(palette().dim));
     let line = match update_notice(app) {
         Some(notice) => Line::from(vec![
             Span::styled(
                 notice,
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(palette().accent)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::raw("  "),
             hint,

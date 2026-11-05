@@ -39,7 +39,7 @@ pub(super) fn render_album_detail(
     // ── Album art ─────────────────────────────────────────────────────────────
     let art_block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(ACCENT));
+        .border_style(Style::default().fg(palette().accent));
     let art_inner = art_block.inner(header_cols[0]);
     f.render_widget(art_block, header_cols[0]);
 
@@ -49,7 +49,7 @@ pub(super) fn render_album_detail(
         let spinner = spinner_char(app.tick);
         f.render_widget(
             Paragraph::new(format!("{spinner}"))
-                .style(Style::default().fg(DIM))
+                .style(Style::default().fg(palette().dim))
                 .alignment(Alignment::Center),
             art_inner,
         );
@@ -87,7 +87,9 @@ pub(super) fn render_album_detail(
             if !title_line.is_empty() {
                 meta_lines.push(Line::from(Span::styled(
                     title_line.clone(),
-                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(palette().accent)
+                        .add_modifier(Modifier::BOLD),
                 )));
                 title_line.clear();
             }
@@ -97,7 +99,9 @@ pub(super) fn render_album_detail(
     if !title_line.is_empty() {
         meta_lines.push(Line::from(Span::styled(
             title_line,
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(palette().accent)
+                .add_modifier(Modifier::BOLD),
         )));
     }
 
@@ -108,13 +112,15 @@ pub(super) fn render_album_detail(
 
     let mut counts_spans = vec![Span::styled(
         format!("{year}  •  {n_tracks} tracks"),
-        Style::default().fg(DIM),
+        Style::default().fg(palette().dim),
     )];
     if let Some(badge) = quality_badge {
         counts_spans.push(Span::styled("  ", Style::default()));
         counts_spans.push(Span::styled(
             badge,
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(palette().accent)
+                .add_modifier(Modifier::BOLD),
         ));
     }
     meta_lines.push(Line::from(counts_spans));
@@ -122,7 +128,7 @@ pub(super) fn render_album_detail(
     let info = Paragraph::new(meta_lines).block(
         Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(DIM)),
+            .border_style(Style::default().fg(palette().dim)),
     );
     f.render_widget(info, header_cols[1]);
 

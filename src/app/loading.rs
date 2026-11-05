@@ -134,6 +134,7 @@ impl App {
             self.now_playing.art_loading = true;
             let _ = self.api_tx.send(ApiRequest::LoadAlbum { album_id });
         } else {
+            self.set_album_art(None);
             self.now_playing.art_loading = false;
         }
     }

@@ -14,6 +14,7 @@ use tokio::sync::mpsc;
 
 mod api;
 mod app;
+mod colors;
 mod events;
 mod lastfm;
 mod manifest;
@@ -161,6 +162,18 @@ fn main() -> Result<()> {
         })
         .expect("spawn worker thread");
 
+    // Asked before raw mode because the reply arrives on stdin, which the event
+    // loop owns from then on. Terminals that cannot answer are detected well
+    // inside the timeout, so this costs nothing where it is unsupported.
+    let terminal_dark = !matches!(
+        terminal_colorsaurus::theme_mode(terminal_colorsaurus::QueryOptions::default()),
+        Ok(terminal_colorsaurus::ThemeMode::Light)
+    );
+    tracing::info!(
+        "terminal background: {}",
+        if terminal_dark { "dark" } else { "light" }
+    );
+
     // Set up terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -184,6 +197,7 @@ fn main() -> Result<()> {
         visualizer_link,
         &config,
     );
+    app.terminal_dark = terminal_dark;
     app.restore_session(app::load_session());
 
     // Reap any staged files left by a previous cancelled update.

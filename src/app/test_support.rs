@@ -97,3 +97,13 @@ pub(crate) fn track(id: u64) -> crate::api::models::Track {
         playlist_item_id: None,
     }
 }
+
+/// A real, decodable cover, for the paths that derive a palette from art.
+pub(crate) fn solid_png(r: u8, g: u8, b: u8) -> Vec<u8> {
+    let image = image::RgbImage::from_pixel(64, 64, image::Rgb([r, g, b]));
+    let mut png = Vec::new();
+    image
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .unwrap();
+    png
+}

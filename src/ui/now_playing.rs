@@ -44,7 +44,7 @@ pub(super) fn now_playing_height(terminal_rows: u16) -> u16 {
 pub(super) fn render_now_playing(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .borders(Borders::TOP)
-        .border_style(Style::default().fg(DIM));
+        .border_style(Style::default().fg(palette().dim));
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -126,20 +126,22 @@ pub(super) fn render_now_playing(f: &mut Frame, app: &App, area: Rect) {
                 )),
                 Line::from(Span::styled(
                     t.album.title.as_str(),
-                    Style::default().fg(DIM),
+                    Style::default().fg(palette().dim),
                 )),
             ];
             if let Some(label) = quality_label {
                 lines.push(Line::from(Span::styled(
                     label,
-                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(palette().accent)
+                        .add_modifier(Modifier::BOLD),
                 )));
             }
             lines
         }
         None => vec![Line::from(Span::styled(
             "No track playing",
-            Style::default().fg(DIM),
+            Style::default().fg(palette().dim),
         ))],
     };
     f.render_widget(Paragraph::new(track_info), cols[0]);
@@ -155,7 +157,7 @@ pub(super) fn render_now_playing(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(
         Paragraph::new(vec![Line::from(time_str), Line::from(volume_str)])
             .alignment(Alignment::Right)
-            .style(Style::default().fg(DIM)),
+            .style(Style::default().fg(palette().dim)),
         cols[2],
     );
 }
@@ -195,7 +197,7 @@ pub(super) fn render_now_playing_art(f: &mut Frame, app: &App, area: Rect) {
         if !render_image(f, bytes, area) {
             f.render_widget(
                 Paragraph::new("No artwork")
-                    .style(Style::default().fg(DIM))
+                    .style(Style::default().fg(palette().dim))
                     .alignment(Alignment::Center),
                 area,
             );
@@ -203,7 +205,7 @@ pub(super) fn render_now_playing_art(f: &mut Frame, app: &App, area: Rect) {
     } else if np.art_loading {
         f.render_widget(
             Paragraph::new(spinner_char(app.tick).to_string())
-                .style(Style::default().fg(DIM))
+                .style(Style::default().fg(palette().dim))
                 .alignment(Alignment::Center),
             area,
         );
@@ -216,7 +218,7 @@ pub(super) fn render_lyrics(f: &mut Frame, app: &App, area: Rect) {
     if np.lyrics_loading {
         let spinner = spinner_char(app.tick);
         f.render_widget(
-            Paragraph::new(spinner.to_string()).style(Style::default().fg(DIM)),
+            Paragraph::new(spinner.to_string()).style(Style::default().fg(palette().dim)),
             Rect::new(area.x, area.y + area.height / 2, area.width, 1),
         );
         return;
@@ -251,7 +253,7 @@ pub(super) fn render_lyrics(f: &mut Frame, app: &App, area: Rect) {
     let cur_style = Style::default()
         .fg(Color::White)
         .add_modifier(Modifier::BOLD);
-    let context_style = Style::default().fg(DIM);
+    let context_style = Style::default().fg(palette().dim);
     let row = |y: u16| Rect::new(area.x, y, area.width, 1);
 
     for (i, text) in current.iter().enumerate() {

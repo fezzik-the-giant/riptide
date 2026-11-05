@@ -40,10 +40,12 @@ pub(super) fn render_command_overlay(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .title(Span::styled(
             " command ",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(palette().accent)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(ACCENT));
+        .border_style(Style::default().fg(palette().accent));
     let inner = block.inner(overlay);
     f.render_widget(block, overlay);
 
@@ -59,10 +61,12 @@ pub(super) fn render_command_overlay(f: &mut Frame, app: &App, area: Rect) {
         Paragraph::new(Line::from(vec![
             Span::styled(
                 "/ ",
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(palette().accent)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled(app.command.input.clone(), Style::default().fg(Color::White)),
-            Span::styled(ghost, Style::default().fg(DIM)),
+            Span::styled(ghost, Style::default().fg(palette().dim)),
             Span::styled(cursor, Style::default().fg(Color::White)),
         ])),
         Rect::new(inner.x, inner.y, inner.width, 1),
@@ -74,14 +78,14 @@ pub(super) fn render_command_overlay(f: &mut Frame, app: &App, area: Rect) {
 
     // Thin divider between input and list
     f.render_widget(
-        Paragraph::new("─".repeat(inner.width as usize)).style(Style::default().fg(DIM)),
+        Paragraph::new("─".repeat(inner.width as usize)).style(Style::default().fg(palette().dim)),
         Rect::new(inner.x, inner.y + 1, inner.width, 1),
     );
 
     // Command rows
     if matches.is_empty() {
         f.render_widget(
-            Paragraph::new(" no match").style(Style::default().fg(DIM)),
+            Paragraph::new(" no match").style(Style::default().fg(palette().dim)),
             Rect::new(inner.x, inner.y + 2, inner.width, 1),
         );
     } else {
@@ -93,11 +97,11 @@ pub(super) fn render_command_overlay(f: &mut Frame, app: &App, area: Rect) {
             let selected = i == app.command.selected;
             let style = if selected {
                 Style::default()
-                    .bg(SELECT_BG)
-                    .fg(SELECT_FG)
+                    .bg(palette().select_bg)
+                    .fg(palette().select_fg)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(DIM)
+                Style::default().fg(palette().dim)
             };
             f.render_widget(
                 Paragraph::new(format!(" {cmd}")).style(style),
@@ -127,10 +131,12 @@ pub(super) fn render_sort_overlay(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .title(Span::styled(
             " sort by ",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(palette().accent)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(ACCENT));
+        .border_style(Style::default().fg(palette().accent));
     let inner = block.inner(overlay);
     f.render_widget(block, overlay);
 
@@ -142,11 +148,11 @@ pub(super) fn render_sort_overlay(f: &mut Frame, app: &App, area: Rect) {
         let selected = i == app.sort_palette.selected;
         let style = if selected {
             Style::default()
-                .bg(SELECT_BG)
-                .fg(SELECT_FG)
+                .bg(palette().select_bg)
+                .fg(palette().select_fg)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(DIM)
+            Style::default().fg(palette().dim)
         };
         let prefix = if selected { " ► " } else { "   " };
         f.render_widget(
@@ -174,10 +180,12 @@ pub(super) fn render_artist_selection_modal(f: &mut Frame, app: &App, area: Rect
     let block = Block::default()
         .title(Span::styled(
             " select artist ",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(palette().accent)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(ACCENT));
+        .border_style(Style::default().fg(palette().accent));
     let inner = block.inner(overlay);
     f.render_widget(block, overlay);
 
@@ -190,8 +198,8 @@ pub(super) fn render_artist_selection_modal(f: &mut Frame, app: &App, area: Rect
         let selected = i == app.artist_selection.selected;
         let style = if selected {
             Style::default()
-                .bg(SELECT_BG)
-                .fg(SELECT_FG)
+                .bg(palette().select_bg)
+                .fg(palette().select_fg)
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::White)
@@ -241,10 +249,12 @@ pub(super) fn render_playlist_picker(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .title(Span::styled(
             title,
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(palette().accent)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(ACCENT));
+        .border_style(Style::default().fg(palette().accent));
     let inner = block.inner(overlay);
     f.render_widget(block, overlay);
 
@@ -256,11 +266,11 @@ pub(super) fn render_playlist_picker(f: &mut Frame, app: &App, area: Rect) {
         let selected = i == picker.selected;
         let style = if selected {
             Style::default()
-                .bg(SELECT_BG)
-                .fg(SELECT_FG)
+                .bg(palette().select_bg)
+                .fg(palette().select_fg)
                 .add_modifier(Modifier::BOLD)
         } else if i == 0 {
-            Style::default().fg(ACCENT)
+            Style::default().fg(palette().accent)
         } else {
             Style::default().fg(Color::White)
         };
@@ -287,10 +297,12 @@ pub(super) fn render_name_prompt(f: &mut Frame, app: &App, area: Rect) {
                 NameTarget::Rename(_) => " rename playlist ",
                 NameTarget::New { .. } => " new playlist ",
             },
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(palette().accent)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(ACCENT));
+        .border_style(Style::default().fg(palette().accent));
     let inner = block.inner(overlay);
     f.render_widget(block, overlay);
 
@@ -302,7 +314,7 @@ pub(super) fn render_name_prompt(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled(shown, Style::default().fg(Color::White)),
-            Span::styled(cursor, Style::default().fg(ACCENT)),
+            Span::styled(cursor, Style::default().fg(palette().accent)),
         ])),
         Rect::new(inner.x + 1, inner.y, inner.width.saturating_sub(1), 1),
     );
@@ -422,10 +434,12 @@ pub(super) fn render_delete_confirm(f: &mut Frame, name: &str, area: Rect) {
     let block = Block::default()
         .title(Span::styled(
             " delete playlist ",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(palette().accent)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(ACCENT));
+        .border_style(Style::default().fg(palette().accent));
     let inner = block.inner(overlay);
     f.render_widget(block, overlay);
 
@@ -436,7 +450,7 @@ pub(super) fn render_delete_confirm(f: &mut Frame, name: &str, area: Rect) {
             Line::from(Span::styled(question, Style::default().fg(Color::White))),
             Line::from(Span::styled(
                 "y delete · n cancel",
-                Style::default().fg(DIM),
+                Style::default().fg(palette().dim),
             )),
         ]),
         Rect::new(
@@ -490,10 +504,12 @@ pub(super) fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .title(Span::styled(
             " help ",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(palette().accent)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(ACCENT));
+        .border_style(Style::default().fg(palette().accent));
     let inner = block.inner(overlay);
 
     // Clear only the inner content area
@@ -509,8 +525,8 @@ pub(super) fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
     let total_binds = KeybindGroup::total_bind_count();
     let filtered_binds: usize = filtered.iter().map(|g| g.binds.len()).sum();
     let hl_style = Style::default()
-        .bg(SELECT_BG)
-        .fg(SELECT_FG)
+        .bg(palette().select_bg)
+        .fg(palette().select_fg)
         .add_modifier(Modifier::BOLD);
     let has_search = inner.height >= 3 && inner.width >= 20;
 
@@ -527,8 +543,8 @@ pub(super) fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
             "Esc to clear"
         };
         let right_spans: Vec<Span> = vec![
-            Span::styled(count_str.clone(), Style::default().fg(DIM)),
-            Span::styled(esc_hint.to_owned(), Style::default().fg(DIM)),
+            Span::styled(count_str.clone(), Style::default().fg(palette().dim)),
+            Span::styled(esc_hint.to_owned(), Style::default().fg(palette().dim)),
         ];
 
         // The match count and the Esc hint are what tell the user whether the
@@ -543,7 +559,7 @@ pub(super) fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
         let (text, text_style) = if is_empty {
             (
                 ellipsize(placeholder, text_budget as u16),
-                Style::default().fg(DIM),
+                Style::default().fg(palette().dim),
             )
         } else {
             (
@@ -555,7 +571,9 @@ pub(super) fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
         let left_spans: Vec<Span> = vec![
             Span::styled(
                 "⌕ ",
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(palette().accent)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled(text.clone(), text_style),
             Span::styled(cursor.to_owned(), cursor_style),
@@ -577,7 +595,8 @@ pub(super) fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
         );
 
         f.render_widget(
-            Paragraph::new("─".repeat(inner.width as usize)).style(Style::default().fg(DIM)),
+            Paragraph::new("─".repeat(inner.width as usize))
+                .style(Style::default().fg(palette().dim)),
             Rect::new(inner.x, inner.y + 1, inner.width, 1),
         );
 
@@ -596,16 +615,18 @@ pub(super) fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
     if filtered.is_empty() {
         lines.push(Line::from(Span::styled(
             ellipsize(&format!(" no matches for \"{query}\""), inner.width),
-            Style::default().fg(DIM),
+            Style::default().fg(palette().dim),
         )));
     } else {
         for group in &filtered {
-            let header_base = Style::default().fg(ACCENT).add_modifier(Modifier::BOLD);
+            let header_base = Style::default()
+                .fg(palette().accent)
+                .add_modifier(Modifier::BOLD);
             let header_spans = highlight_spans(group.title, query, header_base, hl_style);
             lines.push(Line::from(header_spans));
 
             for keybind in &group.binds {
-                let key_base = Style::default().fg(ACCENT);
+                let key_base = Style::default().fg(palette().accent);
                 let action_base = Style::default().fg(Color::White);
                 let mut spans: Vec<Span> = Vec::new();
                 spans.push(Span::raw("  "));
@@ -640,7 +661,7 @@ pub(super) fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
         let hint = " ↓ more ";
         f.render_widget(
             Paragraph::new(hint)
-                .style(Style::default().fg(DIM))
+                .style(Style::default().fg(palette().dim))
                 .alignment(Alignment::Right),
             Rect::new(
                 inner.x,
@@ -698,7 +719,7 @@ pub(super) fn render_update_modal(f: &mut Frame, app: &App, area: Rect) {
         UpdateStatus::Working => (
             "Installing update".to_string(),
             "Downloading, verifying checksum, installing…".to_string(),
-            Style::default().fg(DIM),
+            Style::default().fg(palette().dim),
         ),
         UpdateStatus::Done => (
             format!("Updated to {latest}"),
@@ -750,10 +771,12 @@ pub(super) fn render_update_modal(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .title(Span::styled(
             " update ",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(palette().accent)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(ACCENT));
+        .border_style(Style::default().fg(palette().accent));
     let inner = block.inner(overlay);
     f.render_widget(block, overlay);
 
@@ -783,7 +806,7 @@ pub(super) fn render_update_modal(f: &mut Frame, app: &App, area: Rect) {
     {
         f.render_widget(
             Paragraph::new(footer)
-                .style(Style::default().fg(DIM))
+                .style(Style::default().fg(palette().dim))
                 .alignment(Alignment::Center),
             Rect::new(inner.x, inner.bottom() - 1, inner.width, 1),
         );
@@ -801,19 +824,11 @@ pub(super) fn render_toast(f: &mut Frame, app: &App, area: Rect) {
     let (border_color, text_color) = match level {
         StatusLevel::Error => (
             Color::Red,
-            if fading {
-                Color::DarkGray
-            } else {
-                Color::White
-            },
+            if fading { palette().dim } else { Color::White },
         ),
         StatusLevel::Info => (
-            ACCENT,
-            if fading {
-                Color::DarkGray
-            } else {
-                Color::White
-            },
+            palette().accent,
+            if fading { palette().dim } else { Color::White },
         ),
     };
 
@@ -868,10 +883,12 @@ pub(super) fn render_settings_modal(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .title(Span::styled(
             " settings ",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(palette().accent)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(ACCENT));
+        .border_style(Style::default().fg(palette().accent));
     let inner = block.inner(overlay);
     f.render_widget(block, overlay);
 
@@ -891,12 +908,12 @@ pub(super) fn render_settings_modal(f: &mut Frame, app: &App, area: Rect) {
         let selected = i == app.settings.selected;
 
         let (value, value_color) = match app.setting_value(*setting) {
-            SettingValue::Toggle(true) => ("on".to_string(), ACCENT),
-            SettingValue::Toggle(false) => ("off".to_string(), DIM),
+            SettingValue::Toggle(true) => ("on".to_string(), palette().accent),
+            SettingValue::Toggle(false) => ("off".to_string(), palette().dim),
             SettingValue::Percent(pct) => (format!("{pct}%"), Color::White),
-            SettingValue::Choice("Off") => ("off".to_string(), DIM),
-            SettingValue::Choice(label) => (label.to_lowercase(), ACCENT),
-            SettingValue::Unavailable(reason) => (reason.to_string(), DIM),
+            SettingValue::Choice("Off") => ("off".to_string(), palette().dim),
+            SettingValue::Choice(label) => (label.to_lowercase(), palette().accent),
+            SettingValue::Unavailable(reason) => (reason.to_string(), palette().dim),
         };
 
         let label = setting.label();
@@ -907,8 +924,8 @@ pub(super) fn render_settings_modal(f: &mut Frame, app: &App, area: Rect) {
 
         let (row_style, value_style) = if selected {
             let base = Style::default()
-                .bg(SELECT_BG)
-                .fg(SELECT_FG)
+                .bg(palette().select_bg)
+                .fg(palette().select_fg)
                 .add_modifier(Modifier::BOLD);
             (base, base)
         } else {
@@ -935,7 +952,7 @@ pub(super) fn render_settings_modal(f: &mut Frame, app: &App, area: Rect) {
         // border while every other line stood off it.
         f.render_widget(
             Paragraph::new(app.settings.selected_setting().help())
-                .style(Style::default().fg(DIM))
+                .style(Style::default().fg(palette().dim))
                 .wrap(Wrap { trim: true }),
             Rect::new(
                 rect.x + 2,
@@ -948,7 +965,8 @@ pub(super) fn render_settings_modal(f: &mut Frame, app: &App, area: Rect) {
 
     if let Some(rect) = next_row(1) {
         f.render_widget(
-            Paragraph::new("─".repeat(rect.width as usize)).style(Style::default().fg(DIM)),
+            Paragraph::new("─".repeat(rect.width as usize))
+                .style(Style::default().fg(palette().dim)),
             rect,
         );
     }
@@ -964,7 +982,7 @@ pub(super) fn render_settings_modal(f: &mut Frame, app: &App, area: Rect) {
                 "  {} · user {user} · auth gen {}",
                 app.account.country_code, app.account.auth_generation
             ))
-            .style(Style::default().fg(DIM)),
+            .style(Style::default().fg(palette().dim)),
             rect,
         );
     }
@@ -972,7 +990,7 @@ pub(super) fn render_settings_modal(f: &mut Frame, app: &App, area: Rect) {
     if let Some(rect) = next_row(1) {
         f.render_widget(
             Paragraph::new(format!("  token expires {}", app.account.token_expiry()))
-                .style(Style::default().fg(DIM)),
+                .style(Style::default().fg(palette().dim)),
             rect,
         );
     }
@@ -980,7 +998,7 @@ pub(super) fn render_settings_modal(f: &mut Frame, app: &App, area: Rect) {
     if let Some(rect) = next_row(1) {
         f.render_widget(
             Paragraph::new("  ↑↓ move   ←→ change   enter toggle   esc close")
-                .style(Style::default().fg(DIM)),
+                .style(Style::default().fg(palette().dim)),
             rect,
         );
     }
@@ -1073,7 +1091,7 @@ mod tests {
     /// below the list is context; the settings themselves are the modal.
     #[test]
     fn settings_modal_drops_its_footer_before_its_rows() {
-        let text = render_modal(&settings_app(), 80, 11);
+        let text = render_modal(&settings_app(), 80, 12);
 
         assert!(
             text.contains("Last.fm scrobbling"),

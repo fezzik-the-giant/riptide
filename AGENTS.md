@@ -363,6 +363,19 @@ because the evidence (one track fetched 88 times) was buried in noise and no
 message named the anomaly.
 
 ### UI Patterns
+- Themed colours come from `palette()` in `src/ui/theme.rs`, which `draw`
+  installs once per frame from `App::active_palette()`. Never write a
+  `Color::` literal for an accent, dim, highlight or select role — it would stay
+  cyan under every theme. Body text (`Color::White`) and status red/green are
+  left to the terminal on purpose: a palette must not repaint meaning.
+- Album mode must never theme from `DEFAULT_ART` (the logo standing in for a
+  missing cover) — `App::now_playing_cover()` filters it — and
+  `App::set_album_art` is the only writer of the album palette. A track change
+  does not call it, which is what stops the colours flashing the default
+  between covers.
+- `material-colors` is pinned to 0.4.2: 0.5 needs rustc 1.97. Riptide decodes
+  covers with its own `image` crate and calls the quantizer directly, so the
+  crate's `image` feature stays off.
 - The artist, search and Home views share one tab strip: `render_carousel` in
   `src/ui/carousel.rs` draws the bordered block whose title is the strip and
   returns the area for the active tab's content. It owns the strip's padding —

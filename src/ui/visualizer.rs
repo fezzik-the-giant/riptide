@@ -11,7 +11,7 @@ use ratatui::{
 };
 use std::time::Duration;
 
-use super::{ACCENT, DIM};
+use super::palette;
 use crate::visualizer::{SpectrumState, VisualizerMode};
 
 /// About twenty missed frames at CAVA's 30 FPS. Past that the capture has
@@ -35,7 +35,7 @@ impl Widget for ProgressRail {
                 area.y,
                 "─".repeat(area.width as usize),
                 area.width as usize,
-                Style::default().fg(DIM),
+                Style::default().fg(palette().dim),
             );
             return;
         };
@@ -44,11 +44,11 @@ impl Widget for ProgressRail {
         let played = (ratio * f64::from(area.width)).floor() as u16;
         for offset in 0..area.width {
             let (symbol, color) = if offset < played || ratio == 1.0 {
-                ("━", ACCENT)
+                ("━", palette().accent)
             } else if offset == played && ratio > 0.0 {
-                ("╸", ACCENT)
+                ("╸", palette().accent)
             } else {
-                ("─", DIM)
+                ("─", palette().dim)
             };
             if let Some(cell) = buffer.cell_mut((area.x + offset, area.y)) {
                 cell.set_symbol(symbol)
@@ -104,7 +104,7 @@ fn render_diagnostic(message: &str, area: Rect, buffer: &mut Buffer) {
     let row = Rect::new(area.x, area.y + area.height / 2, area.width, 1);
     Paragraph::new(message)
         .alignment(Alignment::Center)
-        .style(Style::default().fg(DIM))
+        .style(Style::default().fg(palette().dim))
         .render(row, buffer);
 }
 
@@ -134,7 +134,7 @@ fn render_outline(area: Rect, input: &[f32], buffer: &mut Buffer) {
         for x in start..end {
             if let Some(cell) = buffer.cell_mut((x, y)) {
                 cell.set_symbol(BLOCKS[cell_fill as usize])
-                    .set_style(Style::default().fg(ACCENT));
+                    .set_style(Style::default().fg(palette().accent));
             }
         }
     }
@@ -159,7 +159,7 @@ fn render_vertical_band(area: Rect, level: f32, start: u16, end: u16, buffer: &m
         for x in start..end {
             if let Some(cell) = buffer.cell_mut((x, area.y + y_offset)) {
                 cell.set_symbol(BLOCKS[cell_fill as usize])
-                    .set_style(Style::default().fg(ACCENT));
+                    .set_style(Style::default().fg(palette().accent));
             }
         }
     }
@@ -174,7 +174,8 @@ fn render_bricks(area: Rect, input: &[f32], buffer: &mut Buffer) {
         for row in 0..filled_rows.min(area.height) {
             let y = area.bottom() - 1 - row;
             if let Some(cell) = buffer.cell_mut((x, y)) {
-                cell.set_symbol("▄").set_style(Style::default().fg(ACCENT));
+                cell.set_symbol("▄")
+                    .set_style(Style::default().fg(palette().accent));
             }
         }
     }
@@ -261,7 +262,8 @@ fn render_dot_grid(area: Rect, dots: &[bool], dot_width: usize, buffer: &mut Buf
                 && let Some(cell) =
                     buffer.cell_mut((area.x + cell_x as u16, area.y + cell_y as u16))
             {
-                cell.set_char(symbol).set_style(Style::default().fg(ACCENT));
+                cell.set_char(symbol)
+                    .set_style(Style::default().fg(palette().accent));
             }
         }
     }

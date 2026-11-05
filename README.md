@@ -311,6 +311,7 @@ optional — a config from an older version loads fine and picks up the defaults
 | `queue_visible`                                                       | `true` / `false`                                         | `true`       |
 | `atmos`                                                               | `true` / `false`                                         | `false`      |
 | `visualizer_mode`                                                     | `"off"`, `"bars"`, `"outline"`, `"columns"`, `"bricks"`, `"dots"`, `"butterfly"` | `"off"` |
+| `theme`                                                               | `"default"`, `"album"`                                   | `"default"`  |
 
 `atmos` picks which mix Riptide asks Tidal for on a release that has a Dolby
 Atmos version. Off requests the stereo master, which arrives as FLAC. On
@@ -330,6 +331,16 @@ and they reappear.
 `ByArtist` only applies to the Tracks and Albums tabs; the Artists and Playlists tabs offer name and date only.
 
 Because preferences are saved on exit, changes made during a session that ends in a crash are not kept.
+
+### Theme
+
+The **Theme** row in `Shift+S` sets where the accents and the selection bar get
+their colour. Your terminal's background is never painted over.
+
+- **Default** is Riptide's own look.
+- **Album** takes its colours from the cover of the playing track and changes with
+  every record. It picks a light or dark scheme from your terminal's background,
+  and falls back to Default when nothing is playing or the track has no cover.
 
 ### Using your own OAuth credentials
 
