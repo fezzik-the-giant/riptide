@@ -61,6 +61,9 @@ impl Widget for ProgressRail {
 pub(super) struct Spectrum<'a> {
     pub mode: VisualizerMode,
     pub state: &'a SpectrumState,
+    /// CAVA hears every app on the output device, so while riptide is silent
+    /// any frame it delivers is someone else's audio.
+    pub playing: bool,
     pub tick: u64,
 }
 
@@ -71,7 +74,9 @@ impl Widget for Spectrum<'_> {
         }
 
         let bands = match self.state {
-            SpectrumState::Active(frame) if frame.received_at.elapsed() <= FRAME_STALE_AFTER => {
+            SpectrumState::Active(frame)
+                if self.playing && frame.received_at.elapsed() <= FRAME_STALE_AFTER =>
+            {
                 frame.bands.as_slice()
             }
             SpectrumState::Active(_) => &[] as &[f32],
@@ -515,6 +520,7 @@ mod tests {
                     Spectrum {
                         mode,
                         state: &state,
+                        playing: true,
                         tick: 11,
                     }
                     .render(area, &mut first);
@@ -522,6 +528,7 @@ mod tests {
                     Spectrum {
                         mode,
                         state: &state,
+                        playing: true,
                         tick: 11,
                     }
                     .render(area, &mut second);
@@ -565,6 +572,7 @@ mod tests {
         Spectrum {
             mode: VisualizerMode::Bars,
             state: &SpectrumState::Unavailable,
+            playing: true,
             tick: 0,
         }
         .render(area, &mut unavailable);
@@ -574,6 +582,7 @@ mod tests {
         Spectrum {
             mode: VisualizerMode::Bars,
             state: &SpectrumState::Starting,
+            playing: true,
             tick: 0,
         }
         .render(area, &mut starting);
@@ -587,6 +596,7 @@ mod tests {
         Spectrum {
             mode: VisualizerMode::Bars,
             state: &stale_state,
+            playing: true,
             tick: 0,
         }
         .render(area, &mut stale);
@@ -599,10 +609,39 @@ mod tests {
                 bands: vec![1.0; 64],
                 received_at: Instant::now(),
             }),
+            playing: true,
             tick: 0,
         }
         .render(area, &mut off);
         assert_eq!(symbols(&off, area), ["                    "; 3]);
+    }
+
+    #[test]
+    fn other_apps_audio_does_not_move_the_spectrum_while_riptide_is_not_playing() {
+        let area = Rect::new(0, 0, 20, 3);
+        let loud = SpectrumState::Active(SpectrumFrame {
+            bands: vec![1.0; 64],
+            received_at: Instant::now(),
+        });
+        let mut paused = Buffer::empty(area);
+        Spectrum {
+            mode: VisualizerMode::Bars,
+            state: &loud,
+            playing: false,
+            tick: 0,
+        }
+        .render(area, &mut paused);
+        assert_eq!(symbols(&paused, area), ["                    "; 3]);
+
+        let mut unavailable = Buffer::empty(area);
+        Spectrum {
+            mode: VisualizerMode::Bars,
+            state: &SpectrumState::Unavailable,
+            playing: false,
+            tick: 0,
+        }
+        .render(area, &mut unavailable);
+        assert!(symbols(&unavailable, area)[1].contains("cava unavailable"));
     }
 
     #[test]

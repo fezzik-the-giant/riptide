@@ -66,8 +66,9 @@ carry as `cava` (`pacman -S cava`, `dnf install cava`, `apt install cava`,
 Press `v` to cycle through Bars, Outline, Columns, Bricks, Dots and Butterfly,
 and `V` to turn it off. If CAVA is missing or fails to start, the status line
 says so and `v` tries again. CAVA listens to your default output device rather
-than to Riptide alone, so the spectrum also moves for browser audio,
-notifications or another player. Nothing it does can interrupt playback.
+than to Riptide alone, so while a track plays the spectrum also moves for
+browser audio, notifications or another player. It lies flat whenever Riptide
+is paused or stopped. Nothing it does can interrupt playback.
 
 ## Installation
 
