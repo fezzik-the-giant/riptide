@@ -6,7 +6,7 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
@@ -107,7 +107,7 @@ pub(super) fn render_album_detail(
 
     meta_lines.push(Line::from(Span::styled(
         artist_name,
-        Style::default().fg(Color::White),
+        Style::default().fg(palette().text),
     )));
 
     let mut counts_spans = vec![Span::styled(
@@ -128,7 +128,7 @@ pub(super) fn render_album_detail(
     let info = Paragraph::new(meta_lines).block(
         Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(palette().dim)),
+            .border_style(Style::default().fg(palette().border)),
     );
     f.render_widget(info, header_cols[1]);
 

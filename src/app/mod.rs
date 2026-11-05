@@ -174,11 +174,20 @@ pub struct App {
     pub status: Option<(String, StatusLevel, std::time::Instant)>,
 
     pub visualizer_mode: VisualizerMode,
-    pub theme_source: crate::colors::ThemeSource,
+    /// The chosen theme's name, kept even when it no longer resolves, so a
+    /// theme file restored later comes back without being picked again.
+    pub theme: String,
+    pub theme_catalog: crate::colors::catalog::ThemeCatalog,
+    /// Where user theme files are read from. `None` in tests, so they never
+    /// read the real `~/.config`; `main` sets it.
+    pub themes_dir: Option<std::path::PathBuf>,
+    pub theme_picker: ThemePicker,
     /// Whether the terminal's background is dark, asked once at startup;
     /// Album mode picks the matching Material scheme from it.
     pub terminal_dark: bool,
-    album_palette: Option<crate::colors::Palette>,
+    /// Kept as roles rather than a palette so the session can save them: the
+    /// restored track's cover is not fetched until it plays.
+    pub(crate) album_roles: Option<crate::colors::Roles>,
     pub visualizer: VisualizerLink,
 
     pub api_tx: mpsc::UnboundedSender<ApiRequest>,
@@ -277,9 +286,12 @@ impl App {
             marquee_epoch: std::time::Instant::now(),
             status: None,
             visualizer_mode: prefs.visualizer_mode,
-            theme_source: prefs.theme,
+            theme: prefs.theme.clone(),
+            theme_catalog: crate::colors::catalog::ThemeCatalog::builtin_only(),
+            themes_dir: None,
+            theme_picker: ThemePicker::default(),
             terminal_dark: true,
-            album_palette: None,
+            album_roles: None,
             visualizer,
             api_tx,
             player_tx,
@@ -303,12 +315,24 @@ impl App {
     }
 
     pub fn active_palette(&self) -> crate::colors::Palette {
-        use crate::colors::{Palette, ThemeSource};
-        match self.theme_source {
-            ThemeSource::Default => Palette::DEFAULT,
-            ThemeSource::Album if self.now_playing.track.is_none() => Palette::DEFAULT,
-            ThemeSource::Album => self.album_palette.unwrap_or(Palette::DEFAULT),
+        use crate::colors::{Palette, catalog::ThemeKind};
+        match self
+            .theme_catalog
+            .find(&self.theme)
+            .map(|entry| &entry.kind)
+        {
+            Some(ThemeKind::Fixed(palette)) => *palette,
+            Some(ThemeKind::Album) if self.now_playing.track.is_some() => self
+                .album_roles
+                .map_or(Palette::DEFAULT, |roles| Palette::from_roles(&roles)),
+            _ => Palette::DEFAULT,
         }
+    }
+
+    pub(crate) fn is_album_theme(&self) -> bool {
+        self.theme_catalog
+            .find(&self.theme)
+            .is_some_and(|entry| entry.kind == crate::colors::catalog::ThemeKind::Album)
     }
 
     /// The only writer of the album palette. Called when the playing track's
@@ -319,9 +343,9 @@ impl App {
     /// Extraction costs a few milliseconds, so it only runs in Album mode;
     /// switching to Album recomputes from whatever cover is showing.
     pub(crate) fn set_album_art(&mut self, bytes: Option<&[u8]>) {
-        self.album_palette = match bytes {
-            Some(bytes) if self.theme_source == crate::colors::ThemeSource::Album => {
-                crate::colors::album::palette_from_cover(bytes, self.terminal_dark)
+        self.album_roles = match bytes {
+            Some(bytes) if self.is_album_theme() => {
+                crate::colors::album::roles_from_cover(bytes, self.terminal_dark)
             }
             _ => None,
         };
@@ -348,7 +372,7 @@ impl App {
             queue_visible: self.queue_visible,
             atmos: self.atmos,
             visualizer_mode: self.visualizer_mode,
-            theme: self.theme_source,
+            theme: self.theme.clone(),
         }
     }
 

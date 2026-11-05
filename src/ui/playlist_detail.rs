@@ -6,7 +6,7 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     widgets::{Block, Borders, Paragraph, Wrap},
 };
 
@@ -60,7 +60,7 @@ pub(super) fn render_playlist_detail(
         .border_style(if focused {
             Style::default().fg(palette().accent)
         } else {
-            Style::default().fg(palette().dim)
+            Style::default().fg(palette().border)
         });
     let inner = block.inner(meta_area);
     f.render_widget(block, meta_area);
@@ -100,7 +100,7 @@ pub(super) fn render_playlist_detail(
     if let Some(header) = header {
         f.render_widget(
             Paragraph::new(header)
-                .style(Style::default().fg(Color::White))
+                .style(Style::default().fg(palette().text))
                 .alignment(Alignment::Center),
             sections[1],
         );

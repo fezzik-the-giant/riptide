@@ -40,7 +40,7 @@ pub(super) fn render_tab_bar(f: &mut Frame, app: &App, area: Rect) {
     for (i, tab) in Tab::ALL.iter().enumerate() {
         if i > 0 {
             f.render_widget(
-                Paragraph::new(SEP).style(Style::default().fg(palette().dim)),
+                Paragraph::new(SEP).style(Style::default().fg(palette().border)),
                 Rect::new(x, text_y, sep_w, 1),
             );
             x += sep_w;

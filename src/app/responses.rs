@@ -742,6 +742,11 @@ impl App {
                             );
                         }
                     }
+                    // The details are the last word on a cover; with none
+                    // usable and none on screen or on its way, there is none.
+                    if self.now_playing.art_bytes().is_none() && !self.now_playing.art_loading {
+                        self.set_album_art(None);
+                    }
                     // The replacement track may correct title, album, or art;
                     // push now instead of letting the next 500 ms position tick
                     // deliver it.

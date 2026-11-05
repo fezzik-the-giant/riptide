@@ -61,10 +61,15 @@ pub struct Preferences {
     pub atmos: bool,
     #[serde(default)]
     pub visualizer_mode: VisualizerMode,
-    #[serde(default)]
-    pub theme: crate::colors::ThemeSource,
+    /// A theme's name, matched case-insensitively: `"default"`, `"album"`, or
+    /// a fixed theme such as `"Catppuccin Mocha"`.
+    #[serde(default = "default_theme")]
+    pub theme: String,
 }
 
+fn default_theme() -> String {
+    "default".to_string()
+}
 fn default_volume() -> u8 {
     100
 }
@@ -85,7 +90,7 @@ impl Default for Preferences {
             queue_visible: default_queue_visible(),
             atmos: false,
             visualizer_mode: VisualizerMode::Off,
-            theme: crate::colors::ThemeSource::Default,
+            theme: default_theme(),
         }
     }
 }
@@ -117,11 +122,12 @@ impl SortPalette {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::colors::ThemeSource;
 
     #[test]
-    fn preferences_without_theme_load_as_default() {
+    fn old_theme_values_still_load() {
+        let prefs: Preferences = serde_json::from_str(r#"{"theme":"album"}"#).unwrap();
+        assert_eq!(prefs.theme, "album");
         let prefs: Preferences = serde_json::from_str("{}").unwrap();
-        assert_eq!(prefs.theme, ThemeSource::Default);
+        assert_eq!(prefs.theme, "default");
     }
 }

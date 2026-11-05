@@ -198,6 +198,14 @@ fn main() -> Result<()> {
         &config,
     );
     app.terminal_dark = terminal_dark;
+    app.themes_dir = Some(colors::catalog::themes_dir());
+    app.reload_themes();
+    if app.theme_catalog.find(&app.theme).is_none() {
+        app.set_status(
+            format!("Theme {} not found — using Default", app.theme),
+            app::StatusLevel::Info,
+        );
+    }
     app.restore_session(app::load_session());
 
     // Reap any staged files left by a previous cancelled update.

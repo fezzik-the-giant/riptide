@@ -6,6 +6,8 @@
 use ratatui::style::Color;
 
 pub mod album;
+pub mod catalog;
+pub mod theme_file;
 
 /// The roles a theme recolours. Body text and status colours are not among
 /// them: body text follows the terminal's foreground, and red or green carry a
@@ -27,6 +29,19 @@ pub struct Palette {
     pub highlight_accent: Color,
     pub select_bg: Color,
     pub select_fg: Color,
+    /// Only fixed themes paint the window; `None` leaves the terminal's own
+    /// background showing, which is what Default and Album promise.
+    pub background: Option<Color>,
+    pub text: Color,
+    /// Split from `dim` because a theme's secondary-text colour can be loud —
+    /// Cyberpunk's is magenta — and right for a row's second line but wrong on
+    /// every border.
+    pub border: Color,
+    pub error: Color,
+    pub success: Color,
+    /// The artist biography: a paragraph, so softer than body text but far
+    /// brighter than `dim`.
+    pub bio: Color,
 }
 
 impl Palette {
@@ -39,11 +54,46 @@ impl Palette {
         highlight_accent: Color::Rgb(120, 210, 232),
         select_bg: Color::Rgb(30, 100, 200),
         select_fg: Color::Rgb(236, 236, 245),
+        background: None,
+        text: Color::White,
+        border: Color::DarkGray,
+        error: Color::Red,
+        success: Color::Green,
+        bio: Color::Rgb(180, 180, 180),
     };
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rgb(pub u8, pub u8, pub u8);
+
+impl std::str::FromStr for Rgb {
+    type Err = String;
+
+    fn from_str(hex: &str) -> Result<Self, String> {
+        let invalid = || format!("{hex:?} is not #rrggbb");
+        let digits = hex
+            .strip_prefix('#')
+            .filter(|d| d.len() == 6 && d.is_ascii())
+            .ok_or_else(invalid)?;
+        let channel =
+            |at: usize| u8::from_str_radix(&digits[at..at + 2], 16).map_err(|_| invalid());
+        Ok(Rgb(channel(0)?, channel(2)?, channel(4)?))
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Rgb {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let hex = String::deserialize(deserializer)?;
+        hex.parse().map_err(serde::de::Error::custom)
+    }
+}
+
+impl serde::Serialize for Rgb {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let Rgb(r, g, b) = self;
+        serializer.serialize_str(&format!("#{r:02x}{g:02x}{b:02x}"))
+    }
+}
 
 impl From<Rgb> for Color {
     fn from(Rgb(r, g, b): Rgb) -> Self {
@@ -52,7 +102,7 @@ impl From<Rgb> for Color {
 }
 
 /// The Material roles Riptide reads from a scheme.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Roles {
     pub primary: Rgb,
     pub on_primary: Rgb,
@@ -76,43 +126,9 @@ impl Palette {
             highlight_accent: roles.primary.into(),
             select_bg: roles.primary.into(),
             select_fg: roles.on_primary.into(),
+            border: roles.outline.into(),
+            ..Palette::DEFAULT
         }
-    }
-}
-
-/// Where the palette comes from, as chosen in Settings.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ThemeSource {
-    Album,
-    /// `other` so a config written by a newer version with a source this one
-    /// lacks still loads, rather than failing the whole preferences block.
-    #[default]
-    #[serde(other)]
-    Default,
-}
-
-impl ThemeSource {
-    const CYCLE: [ThemeSource; 2] = [Self::Default, Self::Album];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Default => "Default",
-            Self::Album => "Album",
-        }
-    }
-
-    pub fn next(self) -> Self {
-        self.step(1)
-    }
-
-    pub fn previous(self) -> Self {
-        self.step(Self::CYCLE.len() - 1)
-    }
-
-    fn step(self, by: usize) -> Self {
-        let at = Self::CYCLE.iter().position(|&s| s == self).unwrap_or(0);
-        Self::CYCLE[(at + by) % Self::CYCLE.len()]
     }
 }
 
@@ -131,18 +147,11 @@ mod tests {
         assert_eq!(p.highlight_accent, Color::Rgb(120, 210, 232));
         assert_eq!(p.select_bg, Color::Rgb(30, 100, 200));
         assert_eq!(p.select_fg, Color::Rgb(236, 236, 245));
-    }
-
-    #[test]
-    fn theme_source_cycles_and_wraps() {
-        assert_eq!(ThemeSource::Default.next(), ThemeSource::Album);
-        assert_eq!(ThemeSource::Album.next(), ThemeSource::Default);
-        assert_eq!(ThemeSource::Album.previous(), ThemeSource::Default);
-    }
-
-    #[test]
-    fn unknown_theme_source_loads_as_default() {
-        let source: ThemeSource = serde_json::from_str("\"neon\"").unwrap();
-        assert_eq!(source, ThemeSource::Default);
+        assert_eq!(p.background, None);
+        assert_eq!(p.text, Color::White);
+        assert_eq!(p.border, Color::DarkGray);
+        assert_eq!(p.error, Color::Red);
+        assert_eq!(p.success, Color::Green);
+        assert_eq!(p.bio, Color::Rgb(180, 180, 180));
     }
 }

@@ -37,7 +37,10 @@ pub(super) fn render_carousel(
     let mut spans = vec![Span::raw(" ")];
     for (i, (label, active)) in labels.iter().enumerate() {
         if i > 0 {
-            spans.push(Span::styled(SEPARATOR, Style::default().fg(palette().dim)));
+            spans.push(Span::styled(
+                SEPARATOR,
+                Style::default().fg(palette().border),
+            ));
         }
         let style = if *active {
             Style::default()
@@ -52,7 +55,7 @@ pub(super) fn render_carousel(
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(palette().dim))
+        .border_style(Style::default().fg(palette().border))
         .title(Line::from(spans));
 
     let inner = block.inner(area);

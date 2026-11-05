@@ -6,7 +6,7 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
 };
@@ -36,7 +36,7 @@ pub(super) fn render_footer(f: &mut Frame, app: &App, area: Rect) {
     let help_span = Span::styled(
         "? show keybinds",
         Style::default()
-            .fg(Color::White)
+            .fg(palette().text)
             .add_modifier(Modifier::BOLD),
     );
     f.render_widget(

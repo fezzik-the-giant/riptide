@@ -6,7 +6,7 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
@@ -44,7 +44,7 @@ pub(super) fn now_playing_height(terminal_rows: u16) -> u16 {
 pub(super) fn render_now_playing(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .borders(Borders::TOP)
-        .border_style(Style::default().fg(palette().dim));
+        .border_style(Style::default().fg(palette().border));
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -117,12 +117,12 @@ pub(super) fn render_now_playing(f: &mut Frame, app: &App, area: Rect) {
                 Line::from(Span::styled(
                     format!("{}{}", t.title, heart),
                     Style::default()
-                        .fg(Color::White)
+                        .fg(palette().text)
                         .add_modifier(Modifier::BOLD),
                 )),
                 Line::from(Span::styled(
                     t.all_artist_names(),
-                    Style::default().fg(Color::White),
+                    Style::default().fg(palette().text),
                 )),
                 Line::from(Span::styled(
                     t.album.title.as_str(),
@@ -251,7 +251,7 @@ pub(super) fn render_lyrics(f: &mut Frame, app: &App, area: Rect) {
     let current = wrap_in_two(&lines[cur].1, area.width);
     let cur_top = area.y + area.height.saturating_sub(current.len() as u16) / 2;
     let cur_style = Style::default()
-        .fg(Color::White)
+        .fg(palette().text)
         .add_modifier(Modifier::BOLD);
     let context_style = Style::default().fg(palette().dim);
     let row = |y: u16| Rect::new(area.x, y, area.width, 1);

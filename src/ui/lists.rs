@@ -6,7 +6,7 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
@@ -117,7 +117,7 @@ fn render_filter_box(f: &mut Frame, app: &App, area: Rect) {
                     .fg(palette().accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(app.active_filter(), Style::default().fg(Color::White)),
+            Span::styled(app.active_filter(), Style::default().fg(palette().text)),
             Span::styled(cursor_char(app.tick), Style::default().fg(palette().accent)),
         ])),
         inner,
@@ -413,7 +413,15 @@ pub(super) fn track_row(
     let phase = marquee_phase(app, is_selected);
     let mut cells = vec![
         Cell::fixed(if is_selected { "▶ " } else { "  " }, 2, style),
-        Cell::fixed(if is_playing { "♪ " } else { "  " }, 2, style),
+        Cell::fixed(
+            if is_playing { "♪ " } else { "  " },
+            2,
+            if is_playing {
+                marker_style(style)
+            } else {
+                style
+            },
+        ),
     ];
     if let Some(ordinal) = ordinal {
         cells.push(Cell::fixed(ordinal, 5, style));
@@ -511,7 +519,7 @@ mod tests {
     use super::*;
     use crate::api::models::Playlist;
     use crate::app::test_support::test_app;
-    use ratatui::{Terminal, backend::TestBackend};
+    use ratatui::{Terminal, backend::TestBackend, style::Color};
 
     fn playlist(title: &str, number_of_tracks: Option<u32>) -> Playlist {
         Playlist {

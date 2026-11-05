@@ -6,9 +6,9 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph, Wrap},
 };
 
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -19,6 +19,113 @@ use crate::app::{App, NameTarget};
 /// Floor for the update modal so short states keep the roomy look they had
 /// before the box started sizing itself to its content.
 const UPDATE_MODAL_MIN_H: u16 = 7;
+
+pub(super) fn render_theme_picker(f: &mut Frame, app: &App, area: Rect) {
+    use crate::colors::catalog::Origin;
+    const BOX_W: u16 = 40;
+
+    let picker = &app.theme_picker;
+    let matches = picker.matches(&app.theme_catalog);
+    let skipped = app.theme_catalog.skipped;
+
+    let mut lines: Vec<(Line<'static>, Option<usize>)> = Vec::new();
+    let mut origin = None;
+    for (i, entry) in matches.iter().enumerate() {
+        if origin != Some(entry.origin) {
+            origin = Some(entry.origin);
+            let heading = match entry.origin {
+                Origin::Builtin => " built in".to_string(),
+                Origin::User => " yours  ~/.config/riptide/themes".to_string(),
+            };
+            lines.push((
+                Line::styled(heading, Style::default().fg(palette().dim)),
+                None,
+            ));
+        }
+        let style = if i == picker.selected {
+            Style::default()
+                .bg(palette().select_bg)
+                .fg(palette().select_fg)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(palette().text)
+        };
+        let label = format!(" {:<width$}", entry.name, width = BOX_W as usize - 3);
+        lines.push((Line::styled(label, style), Some(i)));
+    }
+    if matches.is_empty() {
+        lines.push((
+            Line::styled(" no match", Style::default().fg(palette().dim)),
+            None,
+        ));
+    }
+
+    // border(2) + input(1) + divider(1) + the list + an optional footer
+    let footer = u16::from(skipped > 0);
+    let box_h = (4 + lines.len() as u16 + footer).min(area.height);
+    let overlay = Rect::new(
+        area.x + area.width.saturating_sub(BOX_W) / 2,
+        area.y + area.height.saturating_sub(box_h) / 2,
+        BOX_W.min(area.width),
+        box_h,
+    );
+    clear_area(f, overlay);
+    let block = Block::default()
+        .title(Span::styled(
+            " theme ",
+            Style::default()
+                .fg(palette().accent)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(palette().accent));
+    let inner = block.inner(overlay);
+    f.render_widget(block, overlay);
+    if inner.height < 3 {
+        return;
+    }
+
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                " › ",
+                Style::default()
+                    .fg(palette().accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(picker.query.clone(), Style::default().fg(palette().text)),
+            Span::styled(cursor_char(app.tick), Style::default().fg(palette().text)),
+        ])),
+        Rect::new(inner.x, inner.y, inner.width, 1),
+    );
+    f.render_widget(
+        Paragraph::new("─".repeat(inner.width as usize))
+            .style(Style::default().fg(palette().border)),
+        Rect::new(inner.x, inner.y + 1, inner.width, 1),
+    );
+
+    let list_h = (inner.height - 2 - footer) as usize;
+    let selected_line = lines
+        .iter()
+        .position(|(_, index)| *index == Some(picker.selected))
+        .unwrap_or(0);
+    let first = selected_line.saturating_sub(list_h.saturating_sub(1));
+    for (row, (line, _)) in lines.iter().skip(first).take(list_h).enumerate() {
+        f.render_widget(
+            Paragraph::new(line.clone()),
+            Rect::new(inner.x, inner.y + 2 + row as u16, inner.width, 1),
+        );
+    }
+
+    if footer > 0 {
+        let noun = if skipped == 1 { "file" } else { "files" };
+        f.render_widget(
+            Paragraph::new(format!(" {skipped} theme {noun} skipped — see log"))
+                .style(Style::default().fg(palette().dim)),
+            Rect::new(inner.x, inner.y + inner.height - 1, inner.width, 1),
+        );
+    }
+}
 
 pub(super) fn render_command_overlay(f: &mut Frame, app: &App, area: Rect) {
     let matches = app.command.matches();
@@ -36,7 +143,7 @@ pub(super) fn render_command_overlay(f: &mut Frame, app: &App, area: Rect) {
         box_h.min(area.height),
     );
 
-    f.render_widget(Clear, overlay);
+    clear_area(f, overlay);
     let block = Block::default()
         .title(Span::styled(
             " command ",
@@ -65,9 +172,12 @@ pub(super) fn render_command_overlay(f: &mut Frame, app: &App, area: Rect) {
                     .fg(palette().accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(app.command.input.clone(), Style::default().fg(Color::White)),
+            Span::styled(
+                app.command.input.clone(),
+                Style::default().fg(palette().text),
+            ),
             Span::styled(ghost, Style::default().fg(palette().dim)),
-            Span::styled(cursor, Style::default().fg(Color::White)),
+            Span::styled(cursor, Style::default().fg(palette().text)),
         ])),
         Rect::new(inner.x, inner.y, inner.width, 1),
     );
@@ -127,7 +237,7 @@ pub(super) fn render_sort_overlay(f: &mut Frame, app: &App, area: Rect) {
         box_h.min(area.height),
     );
 
-    f.render_widget(Clear, overlay);
+    clear_area(f, overlay);
     let block = Block::default()
         .title(Span::styled(
             " sort by ",
@@ -176,7 +286,7 @@ pub(super) fn render_artist_selection_modal(f: &mut Frame, app: &App, area: Rect
         box_h.min(area.height),
     );
 
-    f.render_widget(Clear, overlay);
+    clear_area(f, overlay);
     let block = Block::default()
         .title(Span::styled(
             " select artist ",
@@ -202,7 +312,7 @@ pub(super) fn render_artist_selection_modal(f: &mut Frame, app: &App, area: Rect
                 .fg(palette().select_fg)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(Color::White)
+            Style::default().fg(palette().text)
         };
         let prefix = if selected { " ► " } else { "   " };
         let line = format!("{prefix}{}", name);
@@ -236,7 +346,7 @@ pub(super) fn render_playlist_picker(f: &mut Frame, app: &App, area: Rect) {
     let y = area.y + area.height.saturating_sub(box_h) / 2;
     let overlay = Rect::new(x, y, box_w.min(area.width), box_h.min(area.height));
 
-    f.render_widget(Clear, overlay);
+    clear_area(f, overlay);
     let track = picker
         .track
         .as_ref()
@@ -272,7 +382,7 @@ pub(super) fn render_playlist_picker(f: &mut Frame, app: &App, area: Rect) {
         } else if i == 0 {
             Style::default().fg(palette().accent)
         } else {
-            Style::default().fg(Color::White)
+            Style::default().fg(palette().text)
         };
         let prefix = if selected { " ► " } else { "   " };
         let text = ellipsize(label, inner.width.saturating_sub(3));
@@ -290,7 +400,7 @@ pub(super) fn render_name_prompt(f: &mut Frame, app: &App, area: Rect) {
     let y = area.y + area.height.saturating_sub(box_h) / 2;
     let overlay = Rect::new(x, y, box_w.min(area.width), box_h.min(area.height));
 
-    f.render_widget(Clear, overlay);
+    clear_area(f, overlay);
     let block = Block::default()
         .title(Span::styled(
             match app.name_prompt.target {
@@ -313,7 +423,7 @@ pub(super) fn render_name_prompt(f: &mut Frame, app: &App, area: Rect) {
     );
     f.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled(shown, Style::default().fg(Color::White)),
+            Span::styled(shown, Style::default().fg(palette().text)),
             Span::styled(cursor, Style::default().fg(palette().accent)),
         ])),
         Rect::new(inner.x + 1, inner.y, inner.width.saturating_sub(1), 1),
@@ -430,7 +540,7 @@ pub(super) fn render_delete_confirm(f: &mut Frame, name: &str, area: Rect) {
     let y = area.y + area.height.saturating_sub(box_h) / 2;
     let overlay = Rect::new(x, y, box_w.min(area.width), box_h.min(area.height));
 
-    f.render_widget(Clear, overlay);
+    clear_area(f, overlay);
     let block = Block::default()
         .title(Span::styled(
             " delete playlist ",
@@ -447,7 +557,7 @@ pub(super) fn render_delete_confirm(f: &mut Frame, name: &str, area: Rect) {
     let question = format!("{BEFORE}{}{AFTER}", ellipsize(name, name_w as u16));
     f.render_widget(
         Paragraph::new(vec![
-            Line::from(Span::styled(question, Style::default().fg(Color::White))),
+            Line::from(Span::styled(question, Style::default().fg(palette().text))),
             Line::from(Span::styled(
                 "y delete · n cancel",
                 Style::default().fg(palette().dim),
@@ -513,7 +623,7 @@ pub(super) fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
     let inner = block.inner(overlay);
 
     // Clear only the inner content area
-    f.render_widget(Clear, inner);
+    clear_area(f, inner);
     f.render_widget(block, overlay);
 
     if inner.height == 0 || inner.width < 20 {
@@ -532,7 +642,7 @@ pub(super) fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
 
     let (content_y, content_h) = if has_search {
         let cursor = cursor_char(app.tick);
-        let cursor_style = Style::default().fg(Color::White);
+        let cursor_style = Style::default().fg(palette().text);
         let placeholder = "type to filter…";
         let is_empty = query.is_empty();
 
@@ -564,7 +674,7 @@ pub(super) fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
         } else {
             (
                 ellipsize_head(query, text_budget),
-                Style::default().fg(Color::White),
+                Style::default().fg(palette().text),
             )
         };
 
@@ -627,7 +737,7 @@ pub(super) fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
 
             for keybind in &group.binds {
                 let key_base = Style::default().fg(palette().accent);
-                let action_base = Style::default().fg(Color::White);
+                let action_base = Style::default().fg(palette().text);
                 let mut spans: Vec<Span> = Vec::new();
                 spans.push(Span::raw("  "));
                 let key_spans = highlight_spans(keybind.key, query, key_base, hl_style);
@@ -714,7 +824,7 @@ pub(super) fn render_update_modal(f: &mut Frame, app: &App, area: Rect) {
         UpdateStatus::Confirming => (
             format!("Update available: {current} → {latest}"),
             "Enter install · Esc cancel".to_string(),
-            Style::default().fg(Color::White),
+            Style::default().fg(palette().text),
         ),
         UpdateStatus::Working => (
             "Installing update".to_string(),
@@ -724,12 +834,12 @@ pub(super) fn render_update_modal(f: &mut Frame, app: &App, area: Rect) {
         UpdateStatus::Done => (
             format!("Updated to {latest}"),
             "Restart riptide to apply.  Enter/Esc close".to_string(),
-            Style::default().fg(Color::Green),
+            Style::default().fg(palette().success),
         ),
         UpdateStatus::UpToDate => (
             "Riptide is up to date".to_string(),
             format!("Running the latest release (v{current}).  Enter/Esc close"),
-            Style::default().fg(Color::Green),
+            Style::default().fg(palette().success),
         ),
         UpdateStatus::Failed => (
             "Update failed.".to_string(),
@@ -737,7 +847,7 @@ pub(super) fn render_update_modal(f: &mut Frame, app: &App, area: Rect) {
                 .error
                 .clone()
                 .unwrap_or_else(|| "unknown error".into()),
-            Style::default().fg(Color::White),
+            Style::default().fg(palette().text),
         ),
     };
 
@@ -767,7 +877,7 @@ pub(super) fn render_update_modal(f: &mut Frame, app: &App, area: Rect) {
         box_h.min(area.height),
     );
 
-    f.render_widget(Clear, overlay);
+    clear_area(f, overlay);
     let block = Block::default()
         .title(Span::styled(
             " update ",
@@ -823,12 +933,20 @@ pub(super) fn render_toast(f: &mut Frame, app: &App, area: Rect) {
 
     let (border_color, text_color) = match level {
         StatusLevel::Error => (
-            Color::Red,
-            if fading { palette().dim } else { Color::White },
+            palette().error,
+            if fading {
+                palette().dim
+            } else {
+                palette().text
+            },
         ),
         StatusLevel::Info => (
             palette().accent,
-            if fading { palette().dim } else { Color::White },
+            if fading {
+                palette().dim
+            } else {
+                palette().text
+            },
         ),
     };
 
@@ -841,7 +959,7 @@ pub(super) fn render_toast(f: &mut Frame, app: &App, area: Rect) {
     let y = area.y + area.height.saturating_sub(toast_h + 10);
     let toast_rect = Rect::new(x, y, toast_w, toast_h);
 
-    f.render_widget(Clear, toast_rect);
+    clear_area(f, toast_rect);
     f.render_widget(
         Paragraph::new(msg.as_str())
             .alignment(Alignment::Center)
@@ -879,7 +997,7 @@ pub(super) fn render_settings_modal(f: &mut Frame, app: &App, area: Rect) {
         box_h.min(area.height),
     );
 
-    f.render_widget(Clear, overlay);
+    clear_area(f, overlay);
     let block = Block::default()
         .title(Span::styled(
             " settings ",
@@ -910,8 +1028,8 @@ pub(super) fn render_settings_modal(f: &mut Frame, app: &App, area: Rect) {
         let (value, value_color) = match app.setting_value(*setting) {
             SettingValue::Toggle(true) => ("on".to_string(), palette().accent),
             SettingValue::Toggle(false) => ("off".to_string(), palette().dim),
-            SettingValue::Percent(pct) => (format!("{pct}%"), Color::White),
-            SettingValue::Choice("Off") => ("off".to_string(), palette().dim),
+            SettingValue::Percent(pct) => (format!("{pct}%"), palette().text),
+            SettingValue::Choice(label) if label == "Off" => ("off".to_string(), palette().dim),
             SettingValue::Choice(label) => (label.to_lowercase(), palette().accent),
             SettingValue::Unavailable(reason) => (reason.to_string(), palette().dim),
         };
@@ -930,7 +1048,7 @@ pub(super) fn render_settings_modal(f: &mut Frame, app: &App, area: Rect) {
             (base, base)
         } else {
             (
-                Style::default().fg(Color::White),
+                Style::default().fg(palette().text),
                 Style::default().fg(value_color),
             )
         };
@@ -1031,6 +1149,15 @@ mod tests {
             crate::visualizer::VisualizerLink::for_test().0,
             &crate::api::models::Config::default(),
         )
+    }
+
+    #[test]
+    fn picker_reports_skipped_files() {
+        let mut app = settings_app();
+        app.theme_catalog.skipped = 2;
+        app.theme_picker.active = true;
+        let text = render_modal(&app, 80, 30);
+        assert!(text.contains("2 theme files skipped — see log"), "{text}");
     }
 
     fn render_modal(app: &App, width: u16, height: u16) -> String {

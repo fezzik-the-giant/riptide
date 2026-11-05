@@ -21,6 +21,10 @@ pub struct Session {
     pub queue_index: usize,
     #[serde(default)]
     pub position: f64,
+    /// The playing track's Album-mode colours, so they are back on the first
+    /// frame rather than after the cover is fetched on play.
+    #[serde(default)]
+    pub album_colours: Option<crate::colors::Roles>,
 }
 
 fn session_path() -> PathBuf {
@@ -73,6 +77,7 @@ impl App {
             original_queue: np.original_queue.clone(),
             queue_index: np.queue_index,
             position,
+            album_colours: self.album_roles,
         })
     }
 
@@ -84,6 +89,7 @@ impl App {
         }
         let index = session.queue_index.min(session.queue.len() - 1);
         let track = session.queue[index].clone();
+        self.album_roles = session.album_colours;
         let np = &mut self.now_playing;
         np.duration = f64::from(track.duration);
         np.position = session.position.clamp(0.0, np.duration);
@@ -120,9 +126,36 @@ mod tests {
             original_queue: Vec::new(),
             queue_index: 1,
             position,
+            album_colours: None,
         });
         t.drain_api();
         t
+    }
+
+    /// The restored track's cover is not fetched until it plays, so without
+    /// its saved colours Album mode would open in the default.
+    #[test]
+    fn album_colours_survive_a_restart() {
+        use crate::app::test_support::solid_png;
+        let mut before = test_app();
+        before.app.theme = "Album".into();
+        before.app.now_playing.queue = vec![track(1)];
+        before.app.now_playing.track = Some(track(1));
+        before.app.set_album_art(Some(&solid_png(0xd2, 0x69, 0x1e)));
+        let themed = before.app.active_palette();
+        let saved = serde_json::to_string(&before.app.session().unwrap()).unwrap();
+
+        let mut after = test_app();
+        after.app.theme = "Album".into();
+        after
+            .app
+            .restore_session(serde_json::from_str(&saved).unwrap());
+        assert_eq!(after.app.active_palette(), themed);
+
+        // Opening the picker re-applies Album; with no cover fetched yet that
+        // must not throw the saved colours away.
+        after.app.set_theme("Album");
+        assert_eq!(after.app.active_palette(), themed);
     }
 
     #[test]

@@ -6,7 +6,7 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
 };
 
@@ -106,7 +106,7 @@ fn render_home_art(f: &mut Frame, app: &App, area: Rect) {
     let frame = Rect::new(area.x, area.y, cols + 2, rows + 2);
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(palette().dim));
+        .border_style(Style::default().fg(palette().border));
     let inner = block.inner(frame);
     f.render_widget(block, frame);
 
@@ -161,7 +161,7 @@ pub(super) fn render_home_section(
 
     if let Some(ref error) = section.error {
         f.render_widget(
-            Paragraph::new(format!("Error: {error}")).style(Style::default().fg(Color::Red)),
+            Paragraph::new(format!("Error: {error}")).style(Style::default().fg(palette().error)),
             area,
         );
         return;

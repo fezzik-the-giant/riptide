@@ -6,7 +6,7 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Rect, Size},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
@@ -67,7 +67,7 @@ fn render_art_hud(f: &mut Frame, app: &App, area: Rect) {
 
     let block = Block::default()
         .borders(Borders::TOP)
-        .border_style(Style::default().fg(palette().dim));
+        .border_style(Style::default().fg(palette().border));
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -85,7 +85,7 @@ fn render_art_hud(f: &mut Frame, app: &App, area: Rect) {
         0,
         title,
         Style::default()
-            .fg(Color::White)
+            .fg(palette().text)
             .add_modifier(Modifier::BOLD),
     );
     render_centered_row(f, inner, 1, &metadata, Style::default().fg(palette().dim));

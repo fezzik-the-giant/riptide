@@ -16,7 +16,7 @@ use material_colors::{
     theme::ThemeBuilder,
 };
 
-use super::{Palette, Rgb, Roles};
+use super::{Rgb, Roles};
 
 /// The dominant colours survive a heavy downscale. Measured in a release build
 /// on a busy 320px cover: 26 ms at 128px, 8 ms at 64px. It runs on the UI
@@ -27,7 +27,7 @@ const SAMPLE_EDGE: u32 = 64;
 const MAX_COLORS: usize = 128;
 
 /// `None` when the bytes are not a decodable image.
-pub fn palette_from_cover(bytes: &[u8], dark: bool) -> Option<Palette> {
+pub fn roles_from_cover(bytes: &[u8], dark: bool) -> Option<Roles> {
     let started = std::time::Instant::now();
     let image = image::load_from_memory(bytes).ok()?;
     let pixels: Vec<Argb> = image
@@ -45,7 +45,7 @@ pub fn palette_from_cover(bytes: &[u8], dark: bool) -> Option<Palette> {
         started.elapsed().as_secs_f64() * 1000.0,
         seed.to_hex_with_pound()
     );
-    Some(Palette::from_roles(&roles(&scheme)))
+    Some(roles(&scheme))
 }
 
 fn roles(scheme: &Scheme) -> Roles {
@@ -64,6 +64,11 @@ fn roles(scheme: &Scheme) -> Roles {
 mod tests {
     use super::*;
     use crate::app::test_support::solid_png;
+    use crate::colors::Palette;
+
+    fn palette_from_cover(bytes: &[u8], dark: bool) -> Option<Palette> {
+        roles_from_cover(bytes, dark).map(|roles| Palette::from_roles(&roles))
+    }
     use ratatui::style::Color;
 
     #[test]

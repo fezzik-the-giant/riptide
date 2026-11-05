@@ -48,6 +48,13 @@ touch, touch the other before you move on.
 Design approved: `docs/superpowers/specs/2026-11-05-matugen-theme-design.md`.
 Move to Shipped on merge.
 
+### Theme: fixed themes, user theme files and a picker
+
+**Issue:** [#84](https://github.com/fezzik-the-giant/riptide/issues/84) — `In progress`
+
+Design approved: `docs/superpowers/specs/2026-11-05-fixed-themes-design.md`.
+Same branch as #83. Move to Shipped on merge.
+
 ### Theme: colours from the desktop wallpaper (matugen)
 
 **Issue:** none yet.

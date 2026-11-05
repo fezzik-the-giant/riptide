@@ -6,7 +6,7 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
 };
 
@@ -44,7 +44,7 @@ pub(super) fn render_artist_art(
 ) {
     let art_block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(palette().dim));
+        .border_style(Style::default().fg(palette().border));
     let inner = art_block.inner(area);
     f.render_widget(art_block, area);
 
@@ -78,7 +78,7 @@ pub(super) fn render_artist_bio(
         .border_style(if focused {
             Style::default().fg(palette().accent)
         } else {
-            Style::default().fg(palette().dim)
+            Style::default().fg(palette().border)
         });
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -129,7 +129,7 @@ pub(super) fn render_artist_bio(
         };
         f.render_widget(
             Paragraph::new(clean)
-                .style(Style::default().fg(Color::Rgb(180, 180, 180)))
+                .style(Style::default().fg(palette().bio))
                 .wrap(Wrap { trim: true })
                 .scroll((detail.bio_scroll, 0)),
             bio_area,

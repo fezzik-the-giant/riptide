@@ -6,7 +6,7 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
@@ -49,7 +49,7 @@ pub(super) fn render_search_modal(f: &mut Frame, app: &App, area: Rect) {
     let input_text = format!("{}{}", app.search.query, cursor);
     f.render_widget(
         Paragraph::new(input_text)
-            .style(Style::default().fg(Color::White))
+            .style(Style::default().fg(palette().text))
             .alignment(Alignment::Left),
         inner,
     );
@@ -118,7 +118,7 @@ pub(super) fn render_search_results(f: &mut Frame, app: &App, area: Rect) {
         let block = Block::default()
             .title(format!(" Searching {spinner} "))
             .borders(Borders::TOP)
-            .border_style(Style::default().fg(palette().dim));
+            .border_style(Style::default().fg(palette().border));
         f.render_widget(block, area);
         return;
     }

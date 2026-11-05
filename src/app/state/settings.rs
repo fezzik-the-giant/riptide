@@ -52,7 +52,7 @@ impl Setting {
             Setting::Repeat => "Replays the whole queue or just the playing track",
             Setting::QueuePanel => "Show the queue alongside the library",
             Setting::Visualizer => "Spectrum above the progress bar; needs cava installed",
-            Setting::Theme => "Album takes the accent colours from the playing track's cover",
+            Setting::Theme => "Enter to pick; add your own in ~/.config/riptide/themes",
             Setting::Volume => "← → adjusts by 5%",
             Setting::Scrobbling => "Submit plays to Last.fm",
         }
@@ -64,7 +64,8 @@ pub enum SettingValue {
     Toggle(bool),
     Percent(u8),
     /// One of several named options, stepped through with Enter and the arrows.
-    Choice(&'static str),
+    /// Owned only for Theme, whose names come from the user's files.
+    Choice(std::borrow::Cow<'static, str>),
     /// The setting has no value to show and cannot be changed here, with the
     /// reason in place of on/off.
     Unavailable(&'static str),

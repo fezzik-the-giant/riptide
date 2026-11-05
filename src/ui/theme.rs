@@ -5,7 +5,7 @@
 
 use std::cell::Cell;
 
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 
 pub(super) use crate::colors::Palette;
 
@@ -25,6 +25,23 @@ pub(super) fn palette() -> Palette {
 
 pub(super) fn set_palette(palette: Palette) {
     ACTIVE.with(|active| active.set(palette));
+}
+
+/// Blank `area` for an overlay. `Clear` alone resets cells to the terminal's
+/// default, which under a fixed theme punches a hole of terminal colour
+/// through the window, so the theme's background goes straight back on.
+pub(super) fn clear_area(f: &mut ratatui::Frame, area: ratatui::layout::Rect) {
+    f.render_widget(ratatui::widgets::Clear, area);
+    paint_background(f, area);
+}
+
+pub(super) fn paint_background(f: &mut ratatui::Frame, area: ratatui::layout::Rect) {
+    if let Some(bg) = palette().background {
+        f.render_widget(
+            ratatui::widgets::Block::default().style(Style::default().bg(bg)),
+            area,
+        );
+    }
 }
 
 pub(super) fn fmt_sample_rate(hz: u32) -> String {
@@ -53,7 +70,7 @@ pub(super) fn row_style(is_selected: bool) -> Style {
             .fg(palette().highlight_fg)
             .add_modifier(Modifier::BOLD)
     } else {
-        Style::default().fg(Color::White)
+        Style::default().fg(palette().text)
     }
 }
 
@@ -68,7 +85,20 @@ pub(super) fn row_dim_style(is_selected: bool) -> Style {
     }
 }
 
-/// The quality badge, the one cell that keeps its own colour on every row.
+/// The quality badge and the now-playing marker: the cells that keep their own
+/// colour on every row.
+/// The now-playing marker over a row's own style, so it keeps that row's
+/// background — a cursor bar, or a held row's reversed one — and changes only
+/// its colour.
+pub(super) fn marker_style(row: Style) -> Style {
+    let accent = if row.bg.is_some() {
+        palette().highlight_accent
+    } else {
+        palette().accent
+    };
+    row.fg(accent).add_modifier(Modifier::BOLD)
+}
+
 pub(super) fn row_accent_style(is_selected: bool) -> Style {
     let style = Style::default().add_modifier(Modifier::BOLD);
     if is_selected {
