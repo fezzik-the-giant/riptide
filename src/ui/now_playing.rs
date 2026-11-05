@@ -330,6 +330,7 @@ fn render_progress(f: &mut Frame, app: &App, area: Rect) {
             Spectrum {
                 mode: app.visualizer_mode,
                 state: &app.visualizer.spectrum_rx.borrow(),
+                playing: np.active && !np.paused,
                 tick: app.tick,
             },
             Rect::new(area.x, area.y, area.width, area.height - 1),
