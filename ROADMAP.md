@@ -41,23 +41,9 @@ touch, touch the other before you move on.
 
 ## Candidates
 
-### Theme: colours from the playing album
-
-**Issue:** [#83](https://github.com/fezzik-the-giant/riptide/issues/83) — `In progress`
-
-Design approved: `docs/superpowers/specs/2026-11-05-matugen-theme-design.md`.
-Move to Shipped on merge.
-
-### Theme: fixed themes, user theme files and a picker
-
-**Issue:** [#84](https://github.com/fezzik-the-giant/riptide/issues/84) — `In progress`
-
-Design approved: `docs/superpowers/specs/2026-11-05-fixed-themes-design.md`.
-Same branch as #83. Move to Shipped on merge.
-
 ### Theme: colours from the desktop wallpaper (matugen)
 
-**Issue:** none yet.
+**Issue:** [#86](https://github.com/fezzik-the-giant/riptide/issues/86) — `Backlog`
 
 Built alongside Album mode, then removed before merge (2026-11-05). Riptide read a
 `colors.json` that a shipped matugen template wrote, polling its mtime once a
@@ -72,8 +58,9 @@ second. The reader worked; the integration did not reach a real desktop:
   overwrites.
 
 Open questions: whether to ask shell projects to ship a Riptide entry, or read
-a palette some shells already publish. The removed code is described in the spec
-and plan above; `colors::Roles` → `Palette::from_roles` in `src/colors/mod.rs` is the
+a palette some shells already publish. The removed code is described in
+`docs/superpowers/specs/2026-11-05-matugen-theme-design.md` and its plan;
+`colors::Roles` → `Palette::from_roles` in `src/colors/mod.rs` is the
 seam a wallpaper source would plug back into.
 
 ## Shipped
@@ -81,6 +68,25 @@ seam a wallpaper source would plug back into.
 `CHANGELOG.md` stays the user-facing record of what a release contained; an
 entry moved here only needs the version and a line on what landed, so a later
 session can tell the work is done without reading the changelog.
+
+### Theme: colours from the playing album
+
+**Issue:** [#83](https://github.com/fezzik-the-giant/riptide/issues/83) — `Done`
+**Version:** next release (under `[Unreleased]` in `CHANGELOG.md`). Merged in [PR #85](https://github.com/fezzik-the-giant/riptide/pull/85).
+
+The Theme row's Album mode takes the accents and selection bar from the playing
+cover with `material-colors`, leaves the terminal background alone, picks light
+or dark from the terminal's own background, and saves the colours with the
+session so a restart opens in them.
+
+### Theme: fixed themes, user theme files and a picker
+
+**Issue:** [#84](https://github.com/fezzik-the-giant/riptide/issues/84) — `Done`
+**Version:** next release (under `[Unreleased]` in `CHANGELOG.md`). Merged in [PR #85](https://github.com/fezzik-the-giant/riptide/pull/85).
+
+Ten built-in themes that paint the whole window, user themes from
+`~/.config/riptide/themes/` in Catppuccin's 22-role JSON, and a filterable
+picker with live preview opened from the Theme row.
 
 ### PR #40 — CAVA visualizer
 
