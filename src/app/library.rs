@@ -72,6 +72,7 @@ impl App {
                 self.artists.selected = self.artists.selected.saturating_add(1);
             }
             self.artists.refilter();
+            self.rebuild_favorite_artist_ids();
         }
         self.set_status(format!("Following {}", artist.name), StatusLevel::Info);
     }
@@ -375,5 +376,30 @@ impl App {
 
     pub fn clear_active_filter(&mut self) {
         self.edit_active_filter(|f| f.clear());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::api::ApiResponse;
+    use crate::api::models::Artist;
+    use crate::app::test_support::test_app;
+
+    #[test]
+    fn the_follow_heart_tracks_follow_and_unfollow() {
+        let mut t = test_app();
+        let artist = Artist {
+            id: 7,
+            name: "Architects".to_string(),
+            added_at: None,
+        };
+
+        t.app.toggle_follow_artist(&artist);
+        assert!(t.app.favorite_artist_ids.contains(&7));
+
+        t.app.toggle_follow_artist(&artist);
+        t.app
+            .handle_api_response(ApiResponse::ArtistUnfollowed { artist_id: 7 });
+        assert!(!t.app.favorite_artist_ids.contains(&7));
     }
 }

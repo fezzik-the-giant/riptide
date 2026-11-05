@@ -210,7 +210,11 @@ impl ApiClient {
             let status = resp.status();
             if !status.is_success() {
                 let body = resp.text().await?;
-                tracing::error!("API error on /userCollectionArtists/me: {}", body);
+                tracing::error!(
+                    "API error {} on /userCollectionArtists/me: {}",
+                    status,
+                    body
+                );
                 anyhow::bail!("HTTP {}", status);
             }
 
@@ -243,7 +247,12 @@ impl ApiClient {
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await?;
-            tracing::error!("API error fetching artist {}: {}", artist_id, body);
+            tracing::error!(
+                "API error {} fetching artist {}: {}",
+                status,
+                artist_id,
+                body
+            );
             anyhow::bail!("HTTP {}", status);
         }
 

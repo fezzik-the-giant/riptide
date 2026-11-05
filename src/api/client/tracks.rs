@@ -337,7 +337,7 @@ impl ApiClient {
             let status = resp.status();
             if !status.is_success() {
                 let body = resp.text().await?;
-                tracing::error!("API error on /userCollectionTracks/me: {}", body);
+                tracing::error!("API error {} on /userCollectionTracks/me: {}", status, body);
                 anyhow::bail!("HTTP {}", status);
             }
 
@@ -381,13 +381,14 @@ impl ApiClient {
             .await?;
 
         let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await?;
-            tracing::debug!("API response for lyrics: {}", body);
+        if status == reqwest::StatusCode::NOT_FOUND {
             return Ok(LyricsResponse {
                 lyrics: None,
                 subtitles: None,
             });
+        }
+        if !status.is_success() {
+            anyhow::bail!("HTTP {status}");
         }
 
         let body = resp.text().await?;
