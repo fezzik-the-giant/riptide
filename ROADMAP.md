@@ -72,7 +72,7 @@ session can tell the work is done without reading the changelog.
 ### Theme: colours from the playing album
 
 **Issue:** [#83](https://github.com/fezzik-the-giant/riptide/issues/83) — `Done`
-**Version:** next release (under `[Unreleased]` in `CHANGELOG.md`). Merged in [PR #85](https://github.com/fezzik-the-giant/riptide/pull/85).
+**Version:** 2.1.0. Merged in [PR #85](https://github.com/fezzik-the-giant/riptide/pull/85).
 
 The Theme row's Album mode takes the accents and selection bar from the playing
 cover with `material-colors`, leaves the terminal background alone, picks light
@@ -82,7 +82,7 @@ session so a restart opens in them.
 ### Theme: fixed themes, user theme files and a picker
 
 **Issue:** [#84](https://github.com/fezzik-the-giant/riptide/issues/84) — `Done`
-**Version:** next release (under `[Unreleased]` in `CHANGELOG.md`). Merged in [PR #85](https://github.com/fezzik-the-giant/riptide/pull/85).
+**Version:** 2.1.0. Merged in [PR #85](https://github.com/fezzik-the-giant/riptide/pull/85).
 
 Ten built-in themes that paint the whole window, user themes from
 `~/.config/riptide/themes/` in Catppuccin's 22-role JSON, and a filterable
@@ -91,7 +91,7 @@ picker with live preview opened from the Theme row.
 ### PR #40 — CAVA visualizer
 
 **Issue:** none — tracked as [PR #40](https://github.com/fezzik-the-giant/riptide/pull/40) instead.
-**Version:** next release (under `[Unreleased]` in `CHANGELOG.md`).
+**Version:** 2.0.0.
 
 @dghelm's draft, finished by the maintainer. The dependency question was settled
 in favour of spawning `cava` as an optional child process: embedding cavacore
@@ -101,7 +101,7 @@ would mean capturing and buffering PCM ourselves for no gain, and a missing
 ### Now-playing bar that scales with the terminal
 
 **Issue:** [#63](https://github.com/fezzik-the-giant/riptide/issues/63) — `Done`
-**Version:** next release (under `[Unreleased]` in `CHANGELOG.md`).
+**Version:** 2.0.0.
 
 The bar takes a third of the terminal's height, capped at 30 rows
 (`now_playing_height` in `src/ui/now_playing.rs`). Below 11 rows — a 6-row
@@ -114,7 +114,7 @@ track info.
 ### Queue pane that collapses on narrow terminals
 
 **Issue:** [#65](https://github.com/fezzik-the-giant/riptide/issues/65) — `Done`
-**Version:** next release (under `[Unreleased]` in `CHANGELOG.md`).
+**Version:** 2.0.0.
 
 The queue pane hides whenever showing it would leave the list under 60 columns
 — what a track row needs to keep its artist column — so it shows at 86 columns
@@ -126,7 +126,7 @@ cannot stay in, or move into, a pane that is not on screen.
 ### Album results in search
 
 **Issue:** [#55](https://github.com/fezzik-the-giant/riptide/issues/55) — `Done`
-**Version:** next release (under `[Unreleased]` in `CHANGELOG.md`).
+**Version:** 2.0.0.
 
 Albums needed their own `/searchResults` request, like the other three panes:
 `include=albums.artists`, repeated on every cursor page or those return bare
@@ -138,7 +138,7 @@ as the tracks pane does.
 ### Periodic update check
 
 **Issue:** [#68](https://github.com/fezzik-the-giant/riptide/issues/68) — `Done`
-**Version:** next release (under `[Unreleased]` in `CHANGELOG.md`).
+**Version:** 2.0.0.
 
 The update actor ran one check 3 s after startup and never again, and none at
 all on package-managed installs. `tick` now sends `UpdateCmd::Check` once the
@@ -158,7 +158,7 @@ installs being classed as `Script`: ownership is now asked of `rpm -qf` after
 ### Cheaper Nix CI
 
 **Issue:** [#62](https://github.com/fezzik-the-giant/riptide/issues/62) — `Done` ([PR #70](https://github.com/fezzik-the-giant/riptide/pull/70))
-**Version:** next release (under `[Unreleased]` in `CHANGELOG.md`).
+**Version:** 2.0.0.
 
 The `nix` job in `.github/workflows/ci.yml` took 4–5 minutes against under one
 for Lint and Test, and ran far more often than it needed to. `ci.yml` fired on
@@ -190,7 +190,7 @@ proportion to one flake.
 
 **Issue:** [#57](https://github.com/fezzik-the-giant/riptide/issues/57) — `Done`,
 delivered as sub-issues #71–#74 (design: `docs/superpowers/specs/2026-10-16-playlist-editing-design.md`)
-**Version:** next release (under `[Unreleased]` in `CHANGELOG.md`).
+**Version:** 2.0.0.
 
 Your own playlists can be created (`N`, or `+ New playlist…` in the `P` picker),
 filled from any track row (`P`), and edited: `d` removes an entry, `m` moves one,
@@ -202,7 +202,7 @@ which is also what the Playlists tab's `Yours` badge reads.
 ### Seek from the keyboard
 
 **Issue:** [#58](https://github.com/fezzik-the-giant/riptide/issues/58) — `Done`
-**Version:** next release (under `[Unreleased]` in `CHANGELOG.md`).
+**Version:** 2.0.0.
 
 `,` / `.` seek 5 s and `<` / `>` 30 s, bound in `handle_global_key`
 (`src/events/global.rs`) so they work with the queue focused and in fullscreen
@@ -213,7 +213,7 @@ past the end moves on to the next track exactly as `playerctl` does.
 ### Repeat / loop mode
 
 **Issue:** [#56](https://github.com/fezzik-the-giant/riptide/issues/56) — `Done`
-**Version:** next release (under `[Unreleased]` in `CHANGELOG.md`).
+**Version:** 2.0.0.
 
 `Z` cycles off / queue / track, also a `Shift+S` row and a persisted pref;
 MPRIS `LoopStatus` is live and settable. Both modes stay gapless by prefetching
@@ -224,7 +224,7 @@ via `skip_index()`, wrapping only under repeat queue.
 ### Resume the last session
 
 **Issue:** [#59](https://github.com/fezzik-the-giant/riptide/issues/59) — `Done`
-**Version:** next release (under `[Unreleased]` in `CHANGELOG.md`).
+**Version:** 2.0.0.
 
 The queue, its unshuffled order, the current track and its position are saved to
 `~/.local/share/riptide/session.json` on clean exit — kept out of `config.json`

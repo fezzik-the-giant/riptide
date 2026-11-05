@@ -6,7 +6,7 @@
 %global debug_package %{nil}
 
 Name:           riptide
-Version:        2.0.0
+Version:        2.1.0
 Release:        1%{?dist}
 Summary:        Terminal UI music player for Tidal
 License:        GPL-3.0-or-later
@@ -55,6 +55,14 @@ cargo test --release --locked
 %{_bindir}/%{name}
 
 %changelog
+* Thu Nov 05 2026 Fezzik the Giant <noreply@github.com> - 2.1.0-1
+- Added: A Theme row in Shift+S brings colour to the accents and the selection bar (#83).
+- Added: Ten themes that paint the whole window, background included (#84): Catppuccin Latte, Frappé, Macchiato and Mocha, Nord, Gruvbox Dark, Tokyo Night, Dracula, Rosé Pine and Cyberpunk.
+- Fixed: Tracks from albums with an animated cover now show their cover art while playing (#79).
+- Fixed: Following an artist from search now shows the ❤ beside them straight away (#81).
+- Fixed: The visualizer now lies flat while Riptide is paused or stopped (#87).
+- Internal: The log now says whether each track's lyrics were found, synced or not, and a lyrics request that fails (an expired session, a server error) is logged as a failure instead of passing for a track with no lyrics.
+
 * Mon Oct 26 2026 Fezzik the Giant <noreply@github.com> - 2.0.0-1
 - Added: Playlists can now be created and filled from riptide (#57, #71).
 - Added: The Playlists tab labels every playlist as Yours, Tidal (curated by Tidal), User (made by someone else) or Mix, so the ones you can edit stand out (#71).
