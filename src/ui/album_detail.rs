@@ -5,7 +5,7 @@
 
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Layout, Rect},
+    layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
@@ -20,40 +20,21 @@ pub(super) fn render_album_detail(
     detail: &crate::app::AlbumDetail,
     area: Rect,
 ) {
-    // Left column: art (top) + metadata (below).  Right column: full-height track list.
-    let art_cols = (area.width / 4).max(10);
-    let art_rows = (art_cols / 2).max(5).min(area.height.saturating_sub(7)); // cap so metadata fits
-    let art_box_h = art_rows + 2; // +2 borders
-    let left_col_w = art_cols + 2;
-
-    // Horizontal split: left sidebar | tracks
+    let frame = art_frame(sidebar_art_bounds(area));
+    let left_col_w = frame.width.max(DETAIL_SIDEBAR_MIN_W);
     let cols = Layout::horizontal([Constraint::Length(left_col_w), Constraint::Min(0)]).split(area);
-
-    // Left sidebar: art (fixed) + metadata (remainder)
     let left_rows =
-        Layout::vertical([Constraint::Length(art_box_h), Constraint::Min(0)]).split(cols[0]);
-
-    // Alias for clarity — art area is left_rows[0], metadata is left_rows[1]
+        Layout::vertical([Constraint::Length(frame.height), Constraint::Min(0)]).split(cols[0]);
     let header_cols = [left_rows[0], left_rows[1]];
 
-    // ── Album art ─────────────────────────────────────────────────────────────
-    let art_block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(palette().accent));
-    let art_inner = art_block.inner(header_cols[0]);
-    f.render_widget(art_block, header_cols[0]);
-
-    if let Some(bytes) = &detail.art_bytes {
-        render_image(f, bytes, art_inner);
-    } else if detail.art_loading {
-        let spinner = spinner_char(app.tick);
-        f.render_widget(
-            Paragraph::new(format!("{spinner}"))
-                .style(Style::default().fg(palette().dim))
-                .alignment(Alignment::Center),
-            art_inner,
-        );
-    }
+    render_framed_art(
+        f,
+        frame,
+        detail.art_bytes.as_deref(),
+        detail.art_loading,
+        app.tick,
+        palette().accent,
+    );
 
     // ── Album metadata ────────────────────────────────────────────────────────
     let year = detail

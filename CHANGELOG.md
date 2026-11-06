@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Cover art now sits snugly in its border on Home and in the artist, album and playlist views, and all four show it at the same size (#90). The border used to float clear of the picture, with a strip of blank space along one side, because the frame was sized on a guessed font shape and drawn with lines that run through the middle of their cells. Artist art was also stuck at a small fixed size while the others grew with the window. The frame now follows your terminal's real cell size as you resize, the art column no longer leaves an empty band beside it, and the artist's name moves into the bio's border so the bio gets more room.
+
 ## [2.1.0] - 2026-11-05
 
 ### Added
