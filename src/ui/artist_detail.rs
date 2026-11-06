@@ -7,11 +7,16 @@ use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Layout, Rect},
     style::{Modifier, Style},
+    text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
 };
 
 use super::*;
 use crate::app::App;
+
+/// Narrowest the sidebar gets on a small window, so the bio stays readable once
+/// the art has shrunk.
+const ARTIST_SIDEBAR_MIN_W: u16 = 22;
 
 pub(super) fn render_artist_detail(
     f: &mut Frame,
@@ -19,51 +24,22 @@ pub(super) fn render_artist_detail(
     detail: &crate::app::ArtistDetail,
     area: Rect,
 ) {
-    let art_col_w: u16 = 22;
-    let art_inner_w = art_col_w.saturating_sub(2);
-    let art_h = art_inner_w / 2;
-    let art_box_h = art_h + 2;
-
-    let cols = Layout::horizontal([Constraint::Length(art_col_w), Constraint::Min(0)]).split(area);
-
+    let frame = art_frame(sidebar_art_bounds(area));
+    let sidebar_w = frame.width.max(ARTIST_SIDEBAR_MIN_W);
+    let cols = Layout::horizontal([Constraint::Length(sidebar_w), Constraint::Min(0)]).split(area);
     let left_rows =
-        Layout::vertical([Constraint::Length(art_box_h), Constraint::Min(0)]).split(cols[0]);
+        Layout::vertical([Constraint::Length(frame.height), Constraint::Min(0)]).split(cols[0]);
 
-    render_artist_art(f, app, detail, left_rows[0]);
-
+    render_framed_art(
+        f,
+        frame,
+        detail.art_bytes.as_deref(),
+        detail.art_loading,
+        app.tick,
+        palette().border,
+    );
     render_artist_bio(f, app, detail, left_rows[1]);
-    //use Render carousel tabs to render
     render_carousel_tabs(f, app, detail, cols[1]);
-}
-
-pub(super) fn render_artist_art(
-    f: &mut Frame,
-    app: &App,
-    detail: &crate::app::ArtistDetail,
-    area: Rect,
-) {
-    let art_block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(palette().border));
-    let inner = art_block.inner(area);
-    f.render_widget(art_block, area);
-
-    let w = inner.width;
-    let h = inner.height;
-    if w == 0 || h == 0 {
-        return;
-    }
-
-    if let Some(bytes) = &detail.art_bytes {
-        render_image(f, bytes, inner);
-    } else if detail.art_loading {
-        f.render_widget(
-            Paragraph::new(spinner_char(app.tick).to_string())
-                .style(Style::default().fg(palette().dim))
-                .alignment(Alignment::Center),
-            inner,
-        );
-    }
 }
 
 pub(super) fn render_artist_bio(
@@ -73,8 +49,19 @@ pub(super) fn render_artist_bio(
     area: Rect,
 ) {
     let focused = detail.focus == ArtistDetailFocus::Bio;
+    // The name rides in the border: under a cover limited by the window's
+    // height the box has five rows, and a name line plus a spacer left the bio
+    // just one of them.
+    let name = Span::styled(
+        format!(" {} ", detail.artist.name),
+        Style::default()
+            .fg(palette().accent)
+            .add_modifier(Modifier::BOLD),
+    );
     let block = Block::default()
         .borders(Borders::ALL)
+        .title(Line::from(name))
+        .title_alignment(Alignment::Center)
         .border_style(if focused {
             Style::default().fg(palette().accent)
         } else {
@@ -83,34 +70,12 @@ pub(super) fn render_artist_bio(
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    if inner.height == 0 {
-        return;
-    }
-
-    // Artist name always at the top.
-    f.render_widget(
-        Paragraph::new(detail.artist.name.as_str())
-            .style(
-                Style::default()
-                    .fg(palette().accent)
-                    .add_modifier(Modifier::BOLD),
-            )
-            .alignment(Alignment::Center),
-        Rect::new(inner.x, inner.y, inner.width, 1),
-    );
-
-    if inner.height < 3 {
-        return;
-    }
-
-    let bio_area = Rect::new(inner.x, inner.y + 2, inner.width, inner.height - 2);
-
     if detail.bio_loading {
         f.render_widget(
             Paragraph::new(spinner_char(app.tick).to_string())
                 .style(Style::default().fg(palette().dim))
                 .alignment(Alignment::Center),
-            bio_area,
+            inner,
         );
     } else if let Some(bio) = &detail.bio {
         // Strip HTML tags that Tidal sometimes includes.
@@ -132,14 +97,14 @@ pub(super) fn render_artist_bio(
                 .style(Style::default().fg(palette().bio))
                 .wrap(Wrap { trim: true })
                 .scroll((detail.bio_scroll, 0)),
-            bio_area,
+            inner,
         );
     } else {
         f.render_widget(
             Paragraph::new("No biography available.")
                 .style(Style::default().fg(palette().dim))
                 .alignment(Alignment::Center),
-            bio_area,
+            inner,
         );
     }
 }

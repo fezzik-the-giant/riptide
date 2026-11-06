@@ -15,6 +15,7 @@ use crate::app::{CachedImage, image_content_hash};
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 enum ImageResize {
     Fit,
+    Fill,
     Scale,
 }
 
@@ -158,35 +159,26 @@ fn should_release_scaled_protocol(previous: ImageFrameState, next: ImageFrameSta
 
 /// The terminal's cell size in pixels, queried once at startup.
 ///
-/// Needed to frame an image snugly: `Resize::Fit` preserves the source's aspect
-/// ratio, so a box laid out on a guessed cell ratio leaves the border floating
-/// clear of the picture on any font that is not exactly twice as tall as wide.
+/// Needed to frame an image snugly: covers are square in pixels, so a box laid
+/// out on a guessed cell ratio is visibly oblong on any font that is not exactly
+/// twice as tall as wide.
 pub(super) fn cell_size() -> (u16, u16) {
     let size = get_picker().font_size();
     (size.width.max(1), size.height.max(1))
 }
 
-/// How many whole cells `bytes` covers at its natural size.
-///
-/// `Resize::Fit` only ever scales an image *down* — an image smaller than its
-/// area renders at native size and leaves the rest blank. So a frame drawn
-/// around one has to be capped at this, or the border floats clear of the
-/// picture. Reads the header only, not the pixels.
-pub(super) fn image_cells(bytes: &[u8]) -> Option<(u16, u16)> {
-    let (w, h) = image::ImageReader::new(std::io::Cursor::new(bytes))
-        .with_guessed_format()
-        .ok()?
-        .into_dimensions()
-        .ok()?;
-    let (cell_w, cell_h) = cell_size();
-    Some((
-        (w / cell_w as u32).max(1) as u16,
-        (h / cell_h as u32).max(1) as u16,
-    ))
-}
-
 pub(super) fn render_image(f: &mut Frame, bytes: &[u8], area: Rect) -> bool {
     render_image_with_resize(f, bytes, area, ImageResize::Fit, image_content_hash(bytes))
+}
+
+/// Covers `area` edge to edge, cropping whatever overhangs it.
+///
+/// For an image framed by a border: a frame laid out in whole cells is only
+/// square to within one of them, so `Resize::Fit` would leave up to a cell of
+/// blank between the cover and one edge of its border. Filling crops less than
+/// a cell's worth of the cover instead.
+pub(super) fn render_filled_image(f: &mut Frame, bytes: &[u8], area: Rect) -> bool {
+    render_image_with_resize(f, bytes, area, ImageResize::Fill, image_content_hash(bytes))
 }
 
 pub(super) fn render_scaled_image(f: &mut Frame, image: &CachedImage, area: Rect) -> bool {
@@ -230,7 +222,7 @@ fn render_image_with_resize(
                 cache.clear();
             }
 
-            let img = match image::load_from_memory(bytes) {
+            let mut img = match image::load_from_memory(bytes) {
                 Ok(img) => img,
                 Err(error) => {
                     tracing::warn!(%error, bytes = bytes.len(), "failed to decode artwork");
@@ -240,8 +232,16 @@ fn render_image_with_resize(
                     return false;
                 }
             };
+            if resize == ImageResize::Fill {
+                let (cell_w, cell_h) = cell_size();
+                img = img.resize_to_fill(
+                    u32::from(area.width) * u32::from(cell_w),
+                    u32::from(area.height) * u32::from(cell_h),
+                    image::imageops::FilterType::CatmullRom,
+                );
+            }
             let protocol_resize = match resize {
-                ImageResize::Fit => Resize::Fit(None),
+                ImageResize::Fit | ImageResize::Fill => Resize::Fit(None),
                 ImageResize::Scale => Resize::Scale(Some(FilterType::CatmullRom)),
             };
             let protocol = match get_picker().new_protocol(img, area.into(), protocol_resize) {
@@ -259,7 +259,7 @@ fn render_image_with_resize(
             return false;
         };
         let render_area = match resize {
-            ImageResize::Fit => area,
+            ImageResize::Fit | ImageResize::Fill => area,
             ImageResize::Scale => centered_protocol_area(area, protocol.size()),
         };
         f.render_widget(Image::new(protocol), render_area);
