@@ -4,7 +4,7 @@
 use super::{App, QueueSource, StatusLevel, View};
 use crate::api::models::*;
 use crate::api::{ApiRequest, ApiResponse};
-use crate::player::{PlayerCmd, PlayerEvent};
+use crate::player::{MediaKey, PlayerCmd, PlayerEvent};
 
 impl App {
     pub fn handle_api_response(&mut self, resp: ApiResponse) {
@@ -1042,6 +1042,11 @@ impl App {
                     self.push_mpris_state();
                 }
             }
+            PlayerEvent::MediaKey(key) => match key {
+                MediaKey::Next => self.next_track(),
+                MediaKey::Previous => self.prev_track(),
+                MediaKey::PlayPause => self.toggle_pause(),
+            },
         }
     }
 }

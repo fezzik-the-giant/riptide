@@ -637,7 +637,7 @@ mod tests {
     use crate::app::test_support::track;
     use crate::app::{QueueAt, RepeatMode};
     use crate::mpris::MprisState;
-    use crate::player::{PlayerCmd, PlayerEvent};
+    use crate::player::{MediaKey, PlayerCmd, PlayerEvent};
     use tokio::sync::mpsc;
 
     fn make_app() -> App {
@@ -936,6 +936,25 @@ mod tests {
         settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
 
         assert_in_sync(&app, &mpv, "after the track ended mid-prefetch");
+    }
+
+    #[test]
+    fn media_keys_move_through_the_app_queue() {
+        let (mut app, mut api_rx, mut player_rx) = make_app_watching_all();
+        let mut mpv = FakeMpv::default();
+
+        app.play_tracks((1..=4).map(track).collect(), 0);
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+
+        app.handle_player_event(PlayerEvent::MediaKey(MediaKey::Next));
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        assert_in_sync(&app, &mpv, "after the next media key");
+        assert_eq!(app.now_playing.track.as_ref().map(|t| t.id), Some(2));
+
+        app.handle_player_event(PlayerEvent::MediaKey(MediaKey::Previous));
+        settle(&mut app, &mut mpv, &mut api_rx, &mut player_rx);
+        assert_in_sync(&app, &mpv, "after the previous media key");
+        assert_eq!(app.now_playing.track.as_ref().map(|t| t.id), Some(1));
     }
 
     #[test]

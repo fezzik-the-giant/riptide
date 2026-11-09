@@ -42,6 +42,31 @@ pub enum PlayerEvent {
     Codec(String),
     Error(String),
     CurrVolume(u8),
+    /// A media key or macOS Now Playing control that mpv received.
+    MediaKey(MediaKey),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediaKey {
+    Next,
+    Previous,
+    PlayPause,
+}
+
+/// mpv handles media keys itself by default, so NEXT would advance its own
+/// prefetched playlist without the app noticing. Rebind them to messages the
+/// app turns into its own queue commands.
+const MEDIA_KEY_BINDINGS: [(&str, &str, MediaKey); 3] = [
+    ("NEXT", "riptide-next", MediaKey::Next),
+    ("PREV", "riptide-prev", MediaKey::Previous),
+    ("PLAYPAUSE", "riptide-playpause", MediaKey::PlayPause),
+];
+
+fn media_key_for_message(message: &str) -> Option<MediaKey> {
+    MEDIA_KEY_BINDINGS
+        .iter()
+        .find(|(_, m, _)| *m == message)
+        .map(|(_, _, key)| *key)
 }
 
 pub struct PlayerWorker {
@@ -86,6 +111,13 @@ impl PlayerWorker {
         // Spawn read task
         let event_tx_clone = self.event_tx.clone();
         let _read_task = tokio::spawn(read_loop(read_half, event_tx_clone));
+
+        for (key, message, _) in MEDIA_KEY_BINDINGS {
+            let _ = ipc_tx.send(IpcRequest::Write(
+                json!({"command": ["keybind", key, format!("script-message {message}")]})
+                    .to_string(),
+            ));
+        }
 
         // Ticker for position polling
         let mut poll_ticker = interval(Duration::from_millis(500));
@@ -291,6 +323,11 @@ async fn read_loop(
                         let _ = event_tx.send(PlayerEvent::TrackEnded);
                     }
                 }
+                "client-message" => {
+                    if let Some(key) = data["args"][0].as_str().and_then(media_key_for_message) {
+                        let _ = event_tx.send(PlayerEvent::MediaKey(key));
+                    }
+                }
                 _ => {}
             }
             continue;
@@ -333,5 +370,18 @@ async fn read_loop(
                 _ => {}
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_bound_message_maps_back_to_its_key() {
+        for (_, message, key) in MEDIA_KEY_BINDINGS {
+            assert_eq!(media_key_for_message(message), Some(key));
+        }
+        assert_eq!(media_key_for_message("something-else"), None);
     }
 }
