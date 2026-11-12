@@ -237,4 +237,4 @@ URL can survive a restart.
 
 Nothing yet. Two standing decisions live in `AGENTS.md` rather than here,
 because they are properties of the API and not candidates that were weighed:
-hi-res playback is unreachable, and stream URLs stay on v1.
+hi-res needs the hi-res login, and stream URLs stay on v1.

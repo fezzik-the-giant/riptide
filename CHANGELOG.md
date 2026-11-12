@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Max releases can now play in hi-res, 24-bit at up to 192 kHz (#94). Run `riptide --hires-login` once and sign in through your browser; Tidal then shows a "Page not found" page, and you paste its address back into the terminal. Until now every track played at 16-bit/44.1 kHz whatever your subscription, because Tidal serves hi-res only to its own apps and Riptide's regular sign-in uses a car-system client. The hi-res sign-in uses the official Android app's client, as python-tidal does, so Tidal could restrict it at any time; `riptide --device-login` switches back to the regular sign-in
+
 ### Fixed
 - Cover art now sits snugly in its border on Home and in the artist, album and playlist views, and all four show it at the same size (#90). The border used to float clear of the picture, with a strip of blank space along one side, because the frame was sized on a guessed font shape and drawn with lines that run through the middle of their cells. Artist art was also stuck at a small fixed size while the others grew with the window. The frame now follows your terminal's real cell size as you resize, the art column no longer leaves an empty band beside it, and the artist's name moves into the bio's border so the bio gets more room.
 

@@ -2,16 +2,32 @@
 // Copyright (C) 2025 Fezzik the Giant
 
 use anyhow::{Context, Result, bail};
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use sha2::{Digest, Sha256};
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
 
-use super::models::{Config, DeviceAuthResponse, SessionInfo, TokenResponse};
+use super::models::{Config, DeviceAuthResponse, LoginMethod, SessionInfo, TokenResponse};
 
 // Built-in client credentials — must match a client that has lossless
 // streaming entitlement. These are the same credentials tiddl uses
 // (https://github.com/oskvr37/tiddl), which are known to work for FLAC.
 const DEFAULT_CLIENT_ID: &str = "4N3n6Q1x95LL5K7p";
 const DEFAULT_CLIENT_SECRET: &str = "oKOXfJW371cX6xaZ0PyhgGNBdNLlBZd4AKKYougMjik=";
+
+// The official Android app's client, as python-tidal ships it
+// (tidalapi/session.py). The device-flow client above is capped at 16/44.1
+// whatever the subscription; this one is served HI_RES_LOSSLESS, but Tidal only
+// lets it sign in through a browser (authorization code + PKCE).
+const HIRES_CLIENT_ID: &str = "6BDSRdpK9hqEBTgU";
+const HIRES_CLIENT_SECRET: &str = "xeuPmY7nbpZ9IIbLAcQ93shka1VNheUAqN6IcszjTG8=";
+// The app's own redirect. Nothing serves it, so the browser lands on Tidal's
+// "Page not found" with the code in the address bar, which the user pastes back.
+const HIRES_REDIRECT_URI: &str = "https://tidal.com/android/login/auth";
+const HIRES_LOGIN_URL: &str = "https://login.tidal.com/authorize";
+const SCOPE: &str = "r_usr w_usr w_sub";
 
 /// Status plus response body for a failed auth request.
 ///
@@ -46,15 +62,23 @@ fn auth_error(context: &str, resp: reqwest::blocking::Response) -> anyhow::Error
     anyhow::anyhow!("{context} returned {status}: {detail}")
 }
 
+/// The `client_id`/`client_secret` overrides are Limited Input Device clients
+/// for the device flow, so a hi-res login ignores them.
 pub(crate) fn client_id(config: &Config) -> &str {
-    config.client_id.as_deref().unwrap_or(DEFAULT_CLIENT_ID)
+    match config.login {
+        LoginMethod::Device => config.client_id.as_deref().unwrap_or(DEFAULT_CLIENT_ID),
+        LoginMethod::HiRes => HIRES_CLIENT_ID,
+    }
 }
 
 pub(crate) fn client_secret(config: &Config) -> &str {
-    config
-        .client_secret
-        .as_deref()
-        .unwrap_or(DEFAULT_CLIENT_SECRET)
+    match config.login {
+        LoginMethod::Device => config
+            .client_secret
+            .as_deref()
+            .unwrap_or(DEFAULT_CLIENT_SECRET),
+        LoginMethod::HiRes => HIRES_CLIENT_SECRET,
+    }
 }
 
 pub(crate) const AUTH_BASE: &str = "https://auth.tidal.com/v1/oauth2";
@@ -152,10 +176,28 @@ pub fn ensure_auth(config: &mut Config) -> Result<()> {
         }
     }
 
-    run_device_auth_flow(config)?;
+    match config.login {
+        LoginMethod::Device => run_device_auth_flow(config)?,
+        LoginMethod::HiRes => run_hires_auth_flow(config)?,
+    }
     config.auth_generation = CURRENT_AUTH_GENERATION;
     save_config(config)?;
     Ok(())
+}
+
+/// Switch to `login`, dropping tokens issued to the other client so the next
+/// `ensure_auth` signs in afresh. The choice is saved first, so an abandoned
+/// sign-in resumes with the same method on the next launch.
+pub fn switch_login(config: &mut Config, login: LoginMethod) -> Result<()> {
+    if config.login == login {
+        return Ok(());
+    }
+    config.login = login;
+    config.access_token = None;
+    config.refresh_token = None;
+    config.expires_at = None;
+    config.session_id = None;
+    save_config(config)
 }
 
 fn make_blocking_client() -> Result<reqwest::blocking::Client> {
@@ -225,10 +267,7 @@ pub fn run_device_auth_flow(config: &mut Config) -> Result<()> {
 
     let resp = client
         .post(format!("{AUTH_BASE}/device_authorization"))
-        .form(&[
-            ("client_id", client_id(config)),
-            ("scope", "r_usr w_usr w_sub"),
-        ])
+        .form(&[("client_id", client_id(config)), ("scope", SCOPE)])
         .send()
         .context("device authorization request failed")?;
 
@@ -267,7 +306,7 @@ pub fn run_device_auth_flow(config: &mut Config) -> Result<()> {
                 ("client_id", client_id(config)),
                 ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
                 ("device_code", auth.device_code.as_str()),
-                ("scope", "r_usr w_usr w_sub"),
+                ("scope", SCOPE),
             ])
             .send()?;
 
@@ -294,6 +333,108 @@ pub fn run_device_auth_flow(config: &mut Config) -> Result<()> {
         }
     }
 }
+
+struct Pkce {
+    verifier: String,
+    challenge: String,
+    client_unique_key: String,
+}
+
+impl Pkce {
+    fn new() -> Self {
+        let verifier = URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>());
+        Self {
+            challenge: pkce_challenge(&verifier),
+            verifier,
+            client_unique_key: format!("{:016x}", rand::random::<u64>()),
+        }
+    }
+
+    fn login_url(&self) -> Result<reqwest::Url> {
+        Ok(reqwest::Url::parse_with_params(
+            HIRES_LOGIN_URL,
+            [
+                ("response_type", "code"),
+                ("redirect_uri", HIRES_REDIRECT_URI),
+                ("client_id", HIRES_CLIENT_ID),
+                ("lang", "EN"),
+                ("appMode", "android"),
+                ("client_unique_key", &self.client_unique_key),
+                ("code_challenge", &self.challenge),
+                ("code_challenge_method", "S256"),
+                ("restrict_signup", "true"),
+            ],
+        )?)
+    }
+}
+
+fn pkce_challenge(verifier: &str) -> String {
+    URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
+}
+
+fn code_from_redirect(address: &str) -> Result<String> {
+    let url = reqwest::Url::parse(address.trim())
+        .context("that is not an address — paste the whole address bar")?;
+    url.query_pairs()
+        .find(|(key, _)| key == "code")
+        .map(|(_, code)| code.into_owned())
+        .context(
+            "that address carries no `code` — paste the address of the page Tidal \
+             opened after you signed in",
+        )
+}
+
+pub fn run_hires_auth_flow(config: &mut Config) -> Result<()> {
+    let client = make_blocking_client()?;
+    let pkce = Pkce::new();
+    let login_url = pkce.login_url()?;
+
+    println!();
+    println!("Tidal hi-res sign-in");
+    println!();
+    println!("1. Open this address and sign in:");
+    println!();
+    println!("{login_url}");
+    println!();
+    println!("2. Tidal then shows \"Page not found\". That is expected: copy the");
+    println!("   whole address from the address bar (it contains ?code=).");
+    println!("3. Paste it below straight away — the code expires within minutes.");
+    println!();
+
+    let _ = open::that(login_url.as_str());
+
+    print!("Address: ");
+    std::io::stdout().flush()?;
+    let mut address = String::new();
+    std::io::stdin().read_line(&mut address)?;
+    let code = code_from_redirect(&address)?;
+
+    let resp = client
+        .post(format!("{AUTH_BASE}/token"))
+        .form(&[
+            ("code", code.as_str()),
+            ("client_id", HIRES_CLIENT_ID),
+            ("grant_type", "authorization_code"),
+            ("redirect_uri", HIRES_REDIRECT_URI),
+            ("scope", SCOPE),
+            ("code_verifier", pkce.verifier.as_str()),
+            ("client_unique_key", pkce.client_unique_key.as_str()),
+        ])
+        .send()
+        .context("token exchange request failed")?;
+
+    if !resp.status().is_success() {
+        return Err(auth_error("token exchange", resp));
+    }
+
+    let token: TokenResponse = resp.json()?;
+    let access_token = token.access_token.clone();
+    apply_token(config, token);
+    fetch_session_info(&client, &access_token, config)?;
+    save_config(config)?;
+    println!("Authorized successfully.");
+    Ok(())
+}
 fn apply_token(config: &mut Config, token: TokenResponse) {
     let expires_at = chrono::Utc::now() + chrono::Duration::seconds(token.expires_in as i64);
     config.access_token = Some(token.access_token);
@@ -309,5 +450,35 @@ fn apply_token(config: &mut Config, token: TokenResponse) {
     }
     if config.country_code.is_empty() {
         config.country_code = "US".to_string();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Config, LoginMethod, code_from_redirect, pkce_challenge};
+
+    #[test]
+    fn pkce_challenge_matches_rfc7636_appendix_b() {
+        assert_eq!(
+            pkce_challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"),
+            "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+        );
+    }
+
+    #[test]
+    fn code_is_read_from_the_pasted_redirect() {
+        let pasted = "  https://tidal.com/android/login/auth?code=abc%2Bdef&lang=EN\n";
+        assert_eq!(code_from_redirect(pasted).unwrap(), "abc+def");
+        assert!(code_from_redirect("https://tidal.com/android/login/auth").is_err());
+        assert!(code_from_redirect("abc").is_err());
+    }
+
+    #[test]
+    fn configs_saved_before_login_existed_keep_the_device_flow() {
+        let config: Config = serde_json::from_str(r#"{"country_code": "US"}"#).unwrap();
+        assert_eq!(config.login, LoginMethod::Device);
+        let hires: Config =
+            serde_json::from_str(r#"{"country_code": "US", "login": "hires"}"#).unwrap();
+        assert_eq!(hires.login, LoginMethod::HiRes);
     }
 }

@@ -109,6 +109,11 @@ fn main() -> Result<()> {
 
     tracing::info!("riptide {} starting", env!("CARGO_PKG_VERSION"));
     let mut config = api::auth::load_config()?;
+    if args.iter().any(|a| a == "--hires-login") {
+        api::auth::switch_login(&mut config, api::models::LoginMethod::HiRes)?;
+    } else if args.iter().any(|a| a == "--device-login") {
+        api::auth::switch_login(&mut config, api::models::LoginMethod::Device)?;
+    }
     api::auth::ensure_auth(&mut config)?;
     tracing::info!(
         "authenticated as user {}",

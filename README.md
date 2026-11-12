@@ -242,6 +242,25 @@ Waiting for authorization…
 Open the URL in a browser, log in with your Tidal account, and enter the code. Riptide will save your tokens to the
 config file and launch immediately. You will not need to authenticate again unless your refresh token expires.
 
+### Hi-res (Max) sign-in
+
+The sign-in above is capped at lossless (16-bit/44.1 kHz) whatever your subscription. To stream Max releases in hi-res
+(24-bit, up to 192 kHz), sign in once with:
+
+```
+riptide --hires-login
+```
+
+Riptide prints an address and opens it in your browser. After you sign in, Tidal shows a "Page not found" page. That is
+expected: copy the whole address from the address bar (it contains `?code=`) and paste it into the terminal straight
+away, because the code expires within a minute or two. Riptide remembers the choice, so later launches need no flag.
+`riptide --device-login` switches back to the regular sign-in.
+
+> [!NOTE]
+> This sign-in uses the client id of Tidal's official Android app, the same one
+> [python-tidal](https://github.com/EbbLabs/python-tidal) uses, because Tidal only serves hi-res to clients like it.
+> Tidal could restrict that client at any time; `--device-login` keeps lossless working if it does.
+
 ## Configuration
 
 The config file lives at:
@@ -294,9 +313,10 @@ built-in client. You only need to set them to use a different one.
 > by the endpoint Riptide streams through, so a browser login would not help
 > either.
 
-Note that the built-in client is limited to lossless (16-bit/44.1 kHz). A `MAX`
-badge means the release exists in hi-res in Tidal's catalogue, not that it can be
-streamed here; the now-playing bar shows what was actually delivered.
+These overrides apply to the regular sign-in only, which is limited to lossless
+(16-bit/44.1 kHz). A `MAX` badge means the release exists in hi-res in Tidal's
+catalogue; to stream it in hi-res, use the [hi-res sign-in](#hi-res-max-sign-in).
+The now-playing bar shows what was actually delivered.
 
 ### Preferences
 

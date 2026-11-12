@@ -461,6 +461,21 @@ pub struct Config {
     /// Bumped to force re-auth when credentials or auth method change.
     #[serde(default)]
     pub auth_generation: u32,
+    /// Which built-in client the stored tokens belong to. Refresh must use the
+    /// same client, and only `HiRes` is entitled to `HI_RES_LOSSLESS`.
+    #[serde(default)]
+    pub login: LoginMethod,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, Default, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum LoginMethod {
+    /// OAuth device flow with the built-in Limited Input Device client.
+    #[default]
+    Device,
+    /// Authorization code + PKCE in a browser with the official Android
+    /// app's client, the only kind Tidal serves hi-res to.
+    HiRes,
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
