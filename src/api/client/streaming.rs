@@ -268,18 +268,25 @@ impl ApiClient {
         //
         // LOSSLESS → BTS manifest with `codecs: "flac"` → guaranteed raw FLAC.
         // HI_RES_LOSSLESS → DASH manifest where codecs MAY be "flac" or "mp4a.40.2".
-        // Strategy: try LOSSLESS first (guaranteed FLAC), then HI_RES_LOSSLESS
-        // (only if its DASH codec is actually FLAC), then HIGH as last resort.
+        // A DASH answer without FLAC falls through, so HIGH stays the last resort.
+        //
+        // Only a hi-res login is ever served HI_RES_LOSSLESS, so it asks for that
+        // first; a release with no hi-res master answers it with 16/44.1 FLAC
+        // (`audioQuality=LOSSLESS`, still DASH), in one request. The device client is capped
+        // at LOSSLESS, so it keeps that first and never pays for a hi-res request.
         //
         // An Atmos release with `atmos` on answers every tier with the same BTS
         // `eac3` manifest, so the chain is decided on the first request.
-        const QUALITIES: &[&str] = &["LOSSLESS", "HI_RES_LOSSLESS", "HIGH"];
+        let qualities: &[&str] = match self.config.login {
+            LoginMethod::HiRes => &["HI_RES_LOSSLESS", "LOSSLESS", "HIGH"],
+            LoginMethod::Device => &["LOSSLESS", "HI_RES_LOSSLESS", "HIGH"],
+        };
         let path = format!("/tracks/{track_id}/playbackinfopostpaywall");
         let debug = std::env::var("RIPTIDE_QUALITY_DEBUG").is_ok();
         let token = self.access_token().await?;
         let base_url = format!("{BASE}{path}");
 
-        for &quality in QUALITIES {
+        for &quality in qualities {
             let mut all_params: Vec<(&str, String)> = vec![
                 ("countryCode", self.config.country_code.clone()),
                 ("audioquality", quality.to_string()),

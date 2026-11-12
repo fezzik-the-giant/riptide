@@ -112,7 +112,7 @@ the boundary together — the write lock is what stops them all refreshing at on
 Do not reintroduce a bare `self.token.read()`; it would silently opt that
 endpoint out of renewal.
 
-**401 is not a quality tier falling through.** `get_stream_url`'s `QUALITIES`
+**401 is not a quality tier falling through.** `get_stream_url`'s quality
 chain treats `403` as "not entitled to this tier" and moves on, but a `401` is
 the session, and every remaining tier fails identically. It bails immediately.
 Falling through on it spent three requests to reach "no stream URL available for
@@ -120,7 +120,7 @@ track", which named the track and hid the only fact that mattered.
 
 ### Dolby Atmos Is Reachable — via `immersiveaudio`
 
-Unlike hi-res, Atmos is not walled off. `playbackinfopostpaywall` takes an
+Unlike hi-res, Atmos needs no particular login. `playbackinfopostpaywall` takes an
 `immersiveaudio` parameter, verified live against track 189681882
 (`DOLBY_ATMOS`) and 431291038 (stereo):
 
@@ -144,35 +144,57 @@ Three consequences the code depends on:
    `prefs.atmos` exists and defaults to off.
 
 `BtsManifest::is_eac3()` accepts it on the tier it arrives on. Without that
-branch it fails `is_flac()` and falls through the whole `QUALITIES` chain until
+branch it fails `is_flac()` and falls through the whole quality chain until
 `HIGH` accepts the identical stream — three requests for one track.
 
-### Hi-Res Playback Is Unreachable — Do Not Re-Attempt
+### Hi-Res Needs the Hi-Res Login
 
-A `MAX` badge means the release exists in hi-res in Tidal's catalogue. It does not
-mean riptide can be served it. Three walls, each verified against the live API:
+Tidal decides the ceiling by the client a token was issued to, not by the
+subscription alone. Each fact below was verified against the live API:
 
-1. **The account is not the limit.** `/users/{id}/subscription` reports
-   `highestSoundQuality: HI_RES` on a subscriber account, yet requesting
-   `audioquality=HI_RES_LOSSLESS` for a `HIRES_LOSSLESS` track returns
-   `audioQuality=LOSSLESS, bitDepth=16, sampleRate=44100`. The built-in client is
-   capped at lossless.
+1. **The device client is capped at lossless.** `/users/{id}/subscription`
+   reports `highestSoundQuality: HI_RES` on a subscriber account, yet with the
+   built-in Android Automotive client, requesting `audioquality=HI_RES_LOSSLESS`
+   for a `HIRES_LOSSLESS` track returns `audioQuality=LOSSLESS, bitDepth=16,
+   sampleRate=44100`.
 2. **Developer-portal credentials cannot log in.** `device_authorization` answers
    `400 {"error_description":"Client is not a Limited Input Device client"}`. That
    grant is restricted to TV/console/automotive clients, which is why the default
    client id is an extracted Android Automotive one.
 3. **Portal tokens cannot stream even so.** A user token obtained through the
    portal's authorization-code flow (as the Swagger console does) gets `401` from
-   `/tracks/{id}/playbackinfopostpaywall`. Implementing that flow would buy a login
-   and no audio.
+   `/tracks/{id}/playbackinfopostpaywall`.
+4. **The official Android app's client is served hi-res.** Signed in through
+   authorization code + PKCE (the flow python-tidal's `login_pkce` uses), the same
+   request for the same track returns `audioQuality=HI_RES_LOSSLESS,
+   bitDepth=24`, as an `application/dash+xml` manifest with a single `flac`
+   AdaptationSet and no `ContentProtection`. ffprobe on the init and first media
+   segment reads `flac, s32, bits_per_raw_sample=24`, and a 24/192 release comes
+   through at 192 kHz. Tidal only lets that client sign in through a browser,
+   never the device flow.
 
-`config.client_id` / `client_secret` remain useful: swapping in a *different
-extracted Limited Input Device* client works, and is the only route if a hi-res
-entitled one is ever found. They are not for portal credentials — `auth_error` in
-`src/api/auth.rs` detects that case and says so.
+`riptide --hires-login` switches to it (`LoginMethod::HiRes`, persisted as
+`"login": "hires"`), `--device-login` switches back. `switch_login` drops the
+tokens of the other client because refresh must use the client the refresh token
+was issued to; `client_id()`/`client_secret()` pick the client from `config.login`,
+which is why both refresh paths need no branch of their own. Refresh with Basic
+auth works for the hi-res client too (verified: `expires_in: 14400`, no rotated
+refresh token, still `HI_RES_LOSSLESS` afterwards).
 
-The `QUALITIES` order in `streaming.rs` (`LOSSLESS` first, so `HI_RES_LOSSLESS` is
-never reached) is therefore moot, not a bug: reaching it returns the same 16/44.1.
+The redirect URI is the Android app's own, which nothing serves: the browser lands
+on Tidal's "Page not found" with `?code=` in the address bar, and the user pastes
+that address back. The code expires within a minute or two, so the prompt says to
+paste it straight away.
+
+`config.client_id` / `client_secret` override the device client only. They are not
+for portal credentials (`auth_error` in `src/api/auth.rs` detects that case and
+says so), and a hi-res login ignores them.
+
+The quality chain in `get_stream_url` depends on the login. A hi-res login asks for
+`HI_RES_LOSSLESS` first: a release without a hi-res master answers it with
+`audioQuality=LOSSLESS` in the same DASH/FLAC shape, so every track still costs one
+request. The device client keeps `LOSSLESS` first, since asking it for hi-res can
+only return the same 16/44.1.
 
 `now_playing.delivered` carries the `bitDepth`/`sampleRate` the server actually
 returned, and the now-playing bar shows them. That is the honest counterpart to
