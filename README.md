@@ -35,6 +35,7 @@ A terminal UI music player for Tidal, built with Rust.
   when you want the full width for browsing
 - Gapless playback via mpv
 - Audio quality indicator (Hi-Res, FLAC, MQA, AAC)
+- Optional hi-res FLAC playback up to 24-bit/192 kHz, with lossless fallback
 - Progress bar with an optional music-reactive spectrum above it, drawn from [CAVA](https://github.com/karlstav/cava)
 - Sort any library list by name, artist, or date added — your choice is remembered between sessions and shown in the
   list header
@@ -242,6 +243,34 @@ Waiting for authorization…
 Open the URL in a browser, log in with your Tidal account, and enter the code. Riptide will save your tokens to the
 config file and launch immediately. You will not need to authenticate again unless your refresh token expires.
 
+### Hi-res playback
+
+After signing in normally, quit Riptide and run:
+
+```sh
+riptide --hires-auth
+```
+
+Authorize the displayed code with the **same Tidal account**, then start Riptide
+normally. This adds a second device login for hi-res requests. It uses the
+public application client also used by
+[python-tidal](https://github.com/EbbLabs/python-tidal/blob/main/tidalapi/session.py).
+Tidal can change that client's streaming entitlement, so this login is optional.
+
+The second login is saved as `hires.json` beside `config.json` and refreshed
+automatically. Keep both files private: they contain access and refresh tokens.
+The original login continues to handle your library, Atmos and ordinary
+lossless fallback. Keeping it matters: some tracks return AAC through the
+hi-res client but FLAC through the original client. Riptide tries hi-res FLAC,
+then ordinary lossless, then AAC, skipping encrypted or unsupported streams.
+If the second login expires or is revoked, run `riptide --hires-auth` again;
+removing `hires.json` disables it.
+
+Check the now-playing bar for the delivered bit depth and sample rate. Some
+24-bit masters are 44.1 or 48 kHz; a `MAX` badge does not promise 192 kHz.
+Your operating system's mixer can also resample the output, especially while
+another application is playing, so the DAC's rate may differ from the stream's.
+
 ## Configuration
 
 The config file lives at:
@@ -294,9 +323,9 @@ built-in client. You only need to set them to use a different one.
 > by the endpoint Riptide streams through, so a browser login would not help
 > either.
 
-Note that the built-in client is limited to lossless (16-bit/44.1 kHz). A `MAX`
-badge means the release exists in hi-res in Tidal's catalogue, not that it can be
-streamed here; the now-playing bar shows what was actually delivered.
+The default client is limited to lossless (16-bit/44.1 kHz). Use the separate
+[hi-res login](#hi-res-playback) for higher-quality masters. A `MAX` badge
+describes Tidal's catalogue; the now-playing bar shows what was actually delivered.
 
 ### Preferences
 
@@ -656,6 +685,15 @@ a full directive: `RIPTIDE_LOG_LEVEL=riptide=debug,hyper=debug riptide`.
 
 If you are attaching a log to a bug report, `info` is usually enough to show what
 happened, and `debug` adds the API detail.
+
+To inspect streaming quality specifically:
+
+```sh
+env RIPTIDE_QUALITY_DEBUG=1 riptide
+```
+
+This records requested and delivered quality, bit depth, sample rate and
+fallback decisions in the same log file. It does not write over the TUI.
 
 ## License
 

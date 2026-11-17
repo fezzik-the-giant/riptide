@@ -18,6 +18,7 @@ mod parse;
 
 mod albums;
 mod artists;
+mod hires;
 mod mixes;
 mod playlists;
 mod radio;

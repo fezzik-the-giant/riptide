@@ -69,6 +69,10 @@ fn main() -> Result<()> {
         return lastfm_auth();
     }
 
+    if args.iter().any(|a| a == "--hires-auth") {
+        return api::auth::authorize_hires();
+    }
+
     if args.get(1).is_some_and(|a| a == "update") {
         return update::run_update_cli();
     }
@@ -93,7 +97,16 @@ fn main() -> Result<()> {
         } else {
             format!("riptide={log_level}")
         };
-        let env_filter = tracing_subscriber::EnvFilter::new(&directive);
+        let mut env_filter = tracing_subscriber::EnvFilter::new(&directive);
+        // Quality diagnostics must use the file logger: stderr shares the
+        // terminal with the TUI and corrupts its display during playback.
+        if std::env::var("RIPTIDE_QUALITY_DEBUG").is_ok() {
+            env_filter = env_filter.add_directive(
+                "riptide::quality=debug"
+                    .parse()
+                    .expect("valid quality logging directive"),
+            );
+        }
 
         tracing_subscriber::fmt()
             .with_writer(file_appender)

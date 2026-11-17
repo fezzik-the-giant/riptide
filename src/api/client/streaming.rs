@@ -258,6 +258,18 @@ impl ApiClient {
         track_id: u64,
         atmos: bool,
     ) -> Result<(String, DeliveredQuality)> {
+        let hires_path = crate::api::auth::hires_config_path();
+        self.get_stream_url_at(BASE, track_id, atmos, Some(&hires_path))
+            .await
+    }
+
+    async fn get_stream_url_at(
+        &self,
+        base: &str,
+        track_id: u64,
+        atmos: bool,
+        hires_path: Option<&std::path::Path>,
+    ) -> Result<(String, DeliveredQuality)> {
         // Quality fallback chain for streaming.
         //
         // | Quality          | Manifest MIME type         | Container   | Actual codec  |
@@ -266,28 +278,51 @@ impl ApiClient {
         // | HI_RES_LOSSLESS  | application/dash+xml       | audio/mp4   | FLAC or AAC   |
         // | HIGH             | application/vnd.tidal.bts  | audio/mp4   | AAC           |
         //
-        // LOSSLESS → BTS manifest with `codecs: "flac"` → guaranteed raw FLAC.
+        // LOSSLESS normally returns BTS FLAC through the primary client.
         // HI_RES_LOSSLESS → DASH manifest where codecs MAY be "flac" or "mp4a.40.2".
-        // Strategy: try LOSSLESS first (guaranteed FLAC), then HI_RES_LOSSLESS
-        // (only if its DASH codec is actually FLAC), then HIGH as last resort.
+        // Prefer hi-res FLAC, then ordinary lossless, then AAC. Tidal may
+        // downgrade a request or return encrypted/unsupported media; keep
+        // looking for playable FLAC before accepting a lossy fallback.
         //
         // An Atmos release with `atmos` on answers every tier with the same BTS
         // `eac3` manifest, so the chain is decided on the first request.
-        const QUALITIES: &[&str] = &["LOSSLESS", "HI_RES_LOSSLESS", "HIGH"];
+        const QUALITIES: &[&str] = &["HI_RES_LOSSLESS", "LOSSLESS", "HIGH"];
         let path = format!("/tracks/{track_id}/playbackinfopostpaywall");
         let debug = std::env::var("RIPTIDE_QUALITY_DEBUG").is_ok();
-        let token = self.access_token().await?;
-        let base_url = format!("{BASE}{path}");
+        let base_url = format!("{base}{path}");
+        let mut last_tier_error = None;
+        let hires = if let Some(path) = hires_path.filter(|_| !atmos) {
+            match super::hires::load(&self.http, path, self.config.user_id).await {
+                Ok(config) => config,
+                Err(error) => {
+                    tracing::warn!("Hi-res login unavailable; using primary login: {error:#}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
         for &quality in QUALITIES {
+            let use_hires = quality == "HI_RES_LOSSLESS" && hires.is_some();
+            let config = if use_hires {
+                hires.as_ref().unwrap()
+            } else {
+                &self.config
+            };
+            let token = if use_hires {
+                config.access_token.clone().unwrap_or_default()
+            } else {
+                self.access_token().await?
+            };
             let mut all_params: Vec<(&str, String)> = vec![
-                ("countryCode", self.config.country_code.clone()),
+                ("countryCode", config.country_code.clone()),
                 ("audioquality", quality.to_string()),
                 ("playbackmode", "STREAM".to_string()),
                 ("assetpresentation", "FULL".to_string()),
                 ("immersiveaudio", atmos.to_string()),
             ];
-            if let Some(sid) = &self.config.session_id {
+            if let Some(sid) = &config.session_id {
                 all_params.push(("sessionId", sid.clone()));
             }
 
@@ -313,24 +348,31 @@ impl ApiClient {
                 };
 
                 if debug {
-                    eprintln!("[quality] track {track_id}: {quality} request failed — {error_msg}");
+                    tracing::debug!(target: "riptide::quality", "[quality] track {track_id}: {quality} request failed — {error_msg}");
                 }
 
-                // 403 is tier-specific — the account is not entitled to this
-                // quality — so the chain moves on. 401 never is: the token is
-                // either expired or revoked, and every remaining tier will fail
-                // the same way. Falling through on it spent three requests to
-                // reach "no stream URL available", which named the track and
-                // hid the only fact that mattered.
+                // Tidal also uses HTTP 401 for an unavailable asset (4005),
+                // even while the same session can play a lower quality.
+                // Other primary-login 401s stop immediately; a rejected
+                // hi-res login can still fall back to the primary session.
+                let asset_unavailable = status == reqwest::StatusCode::UNAUTHORIZED
+                    && serde_json::from_str::<serde_json::Value>(&body)
+                        .ok()
+                        .and_then(|error| error.get("subStatus").and_then(|v| v.as_u64()))
+                        == Some(4005);
+                if status == reqwest::StatusCode::FORBIDDEN
+                    || asset_unavailable
+                    || (use_hires && status == reqwest::StatusCode::UNAUTHORIZED)
+                {
+                    tracing::debug!("Track {track_id} ({quality}): {error_msg}");
+                    last_tier_error = Some(format!("{quality}: {error_msg}"));
+                    continue;
+                }
                 if status == reqwest::StatusCode::UNAUTHORIZED {
                     anyhow::bail!(
                         "Tidal rejected the session (401). The access token could not be \
                          renewed — restart riptide to sign in again. ({error_msg})"
                     );
-                }
-                if status == reqwest::StatusCode::FORBIDDEN {
-                    tracing::debug!("Track {track_id} ({quality}): {error_msg}");
-                    continue;
                 }
                 return Err(anyhow::anyhow!("Track {track_id} ({quality}): {error_msg}"));
             }
@@ -346,10 +388,12 @@ impl ApiClient {
             let mime = info.manifest_mime_type.clone();
             if debug {
                 let aq = info.audio_quality.as_deref().unwrap_or("?");
-                eprintln!(
+                tracing::debug!(target: "riptide::quality",
                     "[quality] track {track_id}: requested {quality}, \
                      server returned manifestMimeType={mime}, \
-                     audioQuality={aq} (200 OK)",
+                     audioQuality={aq}, bitDepth={:?}, sampleRate={:?} (200 OK)",
+                    info.bit_depth,
+                    info.sample_rate,
                 );
             }
 
@@ -362,9 +406,20 @@ impl ApiClient {
                     let manifest: BtsManifest =
                         serde_json::from_slice(&bytes).context("parse BTS manifest")?;
 
+                    if manifest
+                        .encryption_type
+                        .as_deref()
+                        .is_some_and(|kind| kind != "NONE")
+                    {
+                        if debug {
+                            tracing::debug!(target: "riptide::quality", "[quality] track {track_id}: encrypted BTS — skip");
+                        }
+                        continue;
+                    }
+
                     if manifest.urls.is_empty() {
                         if debug {
-                            eprintln!(
+                            tracing::debug!(target: "riptide::quality",
                                 "[quality] track {track_id}: BTS manifest has empty urls — skip"
                             );
                         }
@@ -373,7 +428,7 @@ impl ApiClient {
 
                     let codec = manifest.codecs.as_deref().unwrap_or("(missing)");
                     if debug {
-                        eprintln!(
+                        tracing::debug!(target: "riptide::quality",
                             "[quality] track {track_id}: BTS codecs={codec}, \
                              urls={} segment(s)",
                             manifest.urls.len(),
@@ -383,8 +438,8 @@ impl ApiClient {
                     // BTS with FLAC codec → real lossless.
                     if manifest.is_flac() {
                         if debug {
-                            eprintln!(
-                                "[quality] track {track_id}: ✓ FLAC stream accepted ({quality})"
+                            tracing::debug!(target: "riptide::quality",
+                                "[quality] track {track_id}: ✓ FLAC stream accepted (requested {quality})"
                             );
                         }
                         if manifest.urls.len() == 1 {
@@ -397,11 +452,11 @@ impl ApiClient {
                     // Atmos, which can only be here because we asked for it.
                     // It fails the FLAC test above, so without this branch every
                     // Atmos track was requested three times over before the HIGH
-                    // tier accepted the very stream LOSSLESS had already returned.
+                    // tier accepted the very stream the first tier had returned.
                     if manifest.is_eac3() {
                         if debug {
-                            eprintln!(
-                                "[quality] track {track_id}: ✓ Dolby Atmos stream accepted ({quality})"
+                            tracing::debug!(target: "riptide::quality",
+                                "[quality] track {track_id}: ✓ Dolby Atmos stream accepted (requested {quality})"
                             );
                         }
                         return Ok((manifest.urls.into_iter().next().unwrap(), delivered));
@@ -412,14 +467,14 @@ impl ApiClient {
                     // For HIGH requests: this is expected AAC → accept.
                     if quality == "HIGH" {
                         if debug {
-                            eprintln!("[quality] track {track_id}: accepting AAC stream (HIGH)");
+                            tracing::debug!(target: "riptide::quality", "[quality] track {track_id}: accepting AAC stream (HIGH)");
                         }
                         if let Some(url) = manifest.urls.into_iter().next() {
                             return Ok((url, delivered));
                         }
                     } else {
                         if debug {
-                            eprintln!(
+                            tracing::debug!(target: "riptide::quality",
                                 "[quality] track {track_id}: BTS codec is '{codec}' \
                                  (not flac) for {quality} request — falling through",
                             );
@@ -430,12 +485,21 @@ impl ApiClient {
                 "application/dash+xml" => {
                     let xml = String::from_utf8_lossy(&bytes);
 
+                    // mpv has no CDM. Check both default and prefixed XML
+                    // namespaces before handing an encrypted stream to it.
+                    if xml.contains("<ContentProtection") || xml.contains(":ContentProtection") {
+                        if debug {
+                            tracing::debug!(target: "riptide::quality", "[quality] track {track_id}: encrypted DASH — skip");
+                        }
+                        continue;
+                    }
+
                     let sets = find_adaptation_sets(&xml);
                     let has_flac = sets.iter().any(|s| s.codecs == "flac");
 
                     if debug {
                         let codecs: Vec<&str> = sets.iter().map(|s| s.codecs.as_str()).collect();
-                        eprintln!(
+                        tracing::debug!(target: "riptide::quality",
                             "[quality] track {track_id}: DASH with {} AdaptationSet(s), \
                              codecs={:?}, has_flac={has_flac}",
                             sets.len(),
@@ -445,7 +509,7 @@ impl ApiClient {
 
                     if (quality == "LOSSLESS" || quality == "HI_RES_LOSSLESS") && !has_flac {
                         if debug {
-                            eprintln!(
+                            tracing::debug!(target: "riptide::quality",
                                 "[quality] track {track_id}: DASH has no FLAC codec \
                                  — falling through to next tier",
                             );
@@ -453,16 +517,25 @@ impl ApiClient {
                         continue;
                     }
 
+                    let hls = match dash_to_hls(track_id, &xml) {
+                        Ok(hls) => hls,
+                        Err(_) => {
+                            if debug {
+                                tracing::debug!(target: "riptide::quality",
+                                    "[quality] track {track_id}: unsupported DASH manifest — skip"
+                                );
+                            }
+                            continue;
+                        }
+                    };
                     if debug {
-                        eprintln!("[quality] track {track_id}: ✓ DASH/FLAC accepted ({quality})");
+                        tracing::debug!(target: "riptide::quality", "[quality] track {track_id}: ✓ DASH/FLAC accepted (requested {quality})");
                     }
-                    let hls =
-                        dash_to_hls(track_id, &xml).context("convert DASH manifest to HLS")?;
                     return Ok((hls, delivered));
                 }
                 _ => {
                     if debug {
-                        eprintln!(
+                        tracing::debug!(target: "riptide::quality",
                             "[quality] track {track_id}: unknown manifest MIME type '{mime}' — skip",
                         );
                     }
@@ -471,8 +544,299 @@ impl ApiClient {
             }
         }
 
+        if let Some(error) = last_tier_error {
+            anyhow::bail!("No playable quality available for track {track_id} ({error})");
+        }
         Err(anyhow::anyhow!(
             "no stream URL available for track {track_id}"
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{Value, json};
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::net::TcpListener;
+    use tokio::time::{Duration, timeout};
+
+    const DASH: &str = r#"<MPD><Period><AdaptationSet codecs="flac">
+            <Representation audioSamplingRate="96000">
+                <SegmentTemplate timescale="96000" startNumber="1"
+                    initialization="https://example.test/init.mp4"
+                    media="https://example.test/$Number$.m4s">
+                    <SegmentTimeline><S d="192000" r="1"/></SegmentTimeline>
+                </SegmentTemplate>
+            </Representation>
+        </AdaptationSet></Period></MPD>"#;
+
+    fn playback(mime: &str, manifest: &str, bits: i32, rate: i32) -> Value {
+        json!({
+            "manifestMimeType": mime,
+            "manifest": base64::engine::general_purpose::STANDARD.encode(manifest),
+            "bitDepth": bits,
+            "sampleRate": rate,
+        })
+    }
+
+    fn bts(codec: &str, encryption: &str) -> Value {
+        playback(
+            "application/vnd.tidal.bts",
+            &json!({
+                "codecs": codec,
+                "encryptionType": encryption,
+                "urls": ["https://example.test/audio"],
+            })
+            .to_string(),
+            16,
+            44100,
+        )
+    }
+
+    // Exercise the real resolver and assert the requests it actually makes,
+    // including the fallback order. No Tidal account or external network needed.
+    async fn resolve(
+        responses: Vec<(&'static str, u16, Value)>,
+    ) -> Result<(String, DeliveredQuality)> {
+        resolve_with_hires(responses, false, false).await
+    }
+
+    async fn resolve_with_hires(
+        responses: Vec<(&'static str, u16, Value)>,
+        second_login: bool,
+        atmos: bool,
+    ) -> Result<(String, DeliveredQuality)> {
+        let path =
+            std::env::temp_dir().join(format!("riptide-hires-{}.json", rand::random::<u64>()));
+        if second_login {
+            crate::api::auth::save_config_at(
+                &Config {
+                    access_token: Some("hires-test-token".into()),
+                    expires_at: Some(
+                        (chrono::Utc::now() + chrono::Duration::hours(1)).to_rfc3339(),
+                    ),
+                    user_id: Some(42),
+                    country_code: "NL".into(),
+                    session_id: Some("hires-session".into()),
+                    ..Config::default()
+                },
+                &path,
+            )
+            .unwrap();
+        }
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            timeout(Duration::from_secs(5), async move {
+                for (quality, status, body) in responses {
+                    let (stream, _) = listener.accept().await.unwrap();
+                    let mut stream = BufReader::new(stream);
+                    let mut line = String::new();
+                    stream.read_line(&mut line).await.unwrap();
+                    assert!(line.starts_with("GET /tracks/42/playbackinfopostpaywall?"));
+                    assert!(line.contains(&format!("audioquality={quality}&")), "{line}");
+                    assert!(line.contains(&format!("immersiveaudio={atmos}")));
+                    let use_hires = second_login && !atmos && quality == "HI_RES_LOSSLESS";
+                    if use_hires {
+                        assert!(line.contains("sessionId=hires-session"));
+                    }
+                    let mut authorization = String::new();
+                    loop {
+                        line.clear();
+                        stream.read_line(&mut line).await.unwrap();
+                        if line == "\r\n" || line.is_empty() {
+                            break;
+                        }
+                        if line.to_ascii_lowercase().starts_with("authorization:") {
+                            authorization = line.split_once(':').unwrap().1.trim().to_owned();
+                        }
+                    }
+                    assert_eq!(authorization, if use_hires { "Bearer hires-test-token" } else { "Bearer test-token" });
+                    let body = body.to_string();
+                    let response = format!(
+                        "HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    stream.get_mut().write_all(response.as_bytes()).await.unwrap();
+                    stream.get_mut().shutdown().await.unwrap();
+                }
+            })
+            .await
+            .expect("resolver did not request the expected fallback");
+        });
+        let client = ApiClient::new(Config {
+            access_token: Some("test-token".into()),
+            user_id: Some(42),
+            country_code: "NL".into(),
+            ..Config::default()
+        });
+        let result = timeout(
+            Duration::from_secs(5),
+            client.get_stream_url_at(&base, 42, atmos, second_login.then_some(path.as_path())),
+        )
+        .await
+        .expect("resolver timed out");
+        server.await.unwrap();
+        if second_login {
+            std::fs::remove_file(path).unwrap();
+        }
+        result
+    }
+
+    #[tokio::test]
+    async fn hires_login_is_used_for_hires_and_primary_login_for_lossless() {
+        let (_, quality) = resolve_with_hires(
+            vec![
+                ("HI_RES_LOSSLESS", 200, bts("mp4a.40.2", "NONE")),
+                ("LOSSLESS", 200, bts("flac", "NONE")),
+            ],
+            true,
+            false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(quality.bit_depth, Some(16));
+    }
+
+    #[tokio::test]
+    async fn valid_hires_stream_from_second_login_needs_no_primary_request() {
+        let mut response = bts("flac", "NONE");
+        response["bitDepth"] = json!(24);
+        response["sampleRate"] = json!(192000);
+        let (_, quality) =
+            resolve_with_hires(vec![("HI_RES_LOSSLESS", 200, response)], true, false)
+                .await
+                .unwrap();
+        assert_eq!(quality.sample_rate, Some(192000));
+        assert_eq!(quality.bit_depth, Some(24));
+    }
+
+    #[tokio::test]
+    async fn rejected_hires_login_still_uses_primary_lossless() {
+        resolve_with_hires(
+            vec![
+                ("HI_RES_LOSSLESS", 401, json!({})),
+                ("LOSSLESS", 200, bts("flac", "NONE")),
+            ],
+            true,
+            false,
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn atmos_keeps_using_primary_login() {
+        resolve_with_hires(
+            vec![("HI_RES_LOSSLESS", 200, bts("eac3", "NONE"))],
+            true,
+            true,
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn plays_hires_dash_without_requesting_lower_quality() {
+        let (url, quality) = resolve(vec![(
+            "HI_RES_LOSSLESS",
+            200,
+            playback("application/dash+xml", DASH, 24, 96000),
+        )])
+        .await
+        .unwrap();
+        assert!(url.ends_with("/42.m3u8"));
+        assert_eq!(quality.bit_depth, Some(24));
+        assert_eq!(quality.sample_rate, Some(96000));
+        let playlist = std::fs::read_to_string("/tmp/riptide_hls_42.m3u8").unwrap();
+        std::fs::remove_file("/tmp/riptide_hls_42.m3u8").unwrap();
+        assert!(playlist.contains("#EXT-X-MAP:URI=\"https://example.test/init.mp4\""));
+        assert!(playlist.contains("https://example.test/2.m4s"));
+    }
+
+    #[tokio::test]
+    async fn falls_back_to_lossless_for_unplayable_or_lossy_hires() {
+        let manifests = [
+            bts("mp4a.40.2", "NONE"),
+            bts("flac", "OLD_AES"),
+            playback("application/dash+xml", &DASH.replace("<Representation", r#"<ContentProtection value="cenc"/><Representation"#), 24, 96000),
+            playback("application/dash+xml", &DASH.replace("<Representation", r#"<mpd:ContentProtection xmlns:mpd="urn:mpeg:dash:schema:mpd:2011" value="cenc"/><Representation"#), 24, 96000),
+            playback("application/dash+xml", r#"<MPD><AdaptationSet codecs="flac"/></MPD>"#, 24, 96000),
+            playback("application/dash+xml", r#"<MPD><AdaptationSet codecs="mp4a.40.2"/></MPD>"#, 16, 44100),
+        ];
+        for manifest in manifests {
+            let (url, quality) = resolve(vec![
+                ("HI_RES_LOSSLESS", 200, manifest),
+                ("LOSSLESS", 200, bts("flac", "NONE")),
+            ])
+            .await
+            .unwrap();
+            assert_eq!(url, "https://example.test/audio");
+            assert_eq!(quality.bit_depth, Some(16));
+            assert_eq!(quality.sample_rate, Some(44100));
+        }
+    }
+
+    #[tokio::test]
+    async fn uses_aac_only_after_both_lossless_tiers_are_unavailable() {
+        let (url, _) = resolve(vec![
+            ("HI_RES_LOSSLESS", 403, json!({})),
+            ("LOSSLESS", 403, json!({})),
+            ("HIGH", 200, bts("mp4a.40.2", "NONE")),
+        ])
+        .await
+        .unwrap();
+        assert_eq!(url, "https://example.test/audio");
+    }
+
+    #[tokio::test]
+    async fn unavailable_hires_asset_401_falls_back_without_reauthentication() {
+        let (url, quality) = resolve(vec![
+            (
+                "HI_RES_LOSSLESS",
+                401,
+                json!({"status": 401, "subStatus": 4005, "userMessage": "Asset is not ready for playback"}),
+            ),
+            ("LOSSLESS", 200, bts("flac", "NONE")),
+        ])
+        .await
+        .unwrap();
+        assert_eq!(url, "https://example.test/audio");
+        assert_eq!(quality.sample_rate, Some(44100));
+    }
+
+    #[tokio::test]
+    async fn unavailable_asset_at_every_tier_reports_availability_not_login() {
+        let error = resolve(
+            ["HI_RES_LOSSLESS", "LOSSLESS", "HIGH"]
+                .into_iter()
+                .map(|quality| {
+                    (
+                        quality,
+                        401,
+                        json!({"status": 401, "subStatus": 4005, "userMessage": "Asset is not ready for playback"}),
+                    )
+                })
+                .collect(),
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("No playable quality available"));
+        assert!(error.contains("Asset is not ready for playback"));
+        assert!(!error.contains("restart riptide"));
+    }
+
+    #[tokio::test]
+    async fn expired_session_stops_without_trying_lower_quality() {
+        let error = resolve(vec![("HI_RES_LOSSLESS", 401, json!({}))])
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("Tidal rejected the session (401)")
+        );
     }
 }

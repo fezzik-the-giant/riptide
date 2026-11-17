@@ -235,6 +235,7 @@ URL can survive a restart.
 
 ## Considered and Rejected
 
-Nothing yet. Two standing decisions live in `AGENTS.md` rather than here,
-because they are properties of the API and not candidates that were weighed:
-hi-res playback is unreachable, and stream URLs stay on v1.
+Nothing yet. The standing API constraints live in `AGENTS.md`: stream URLs
+stay on v1, and hi-res requires a separate entitled client. The default client
+remains limited to ordinary lossless; `riptide --hires-auth` adds the optional
+hi-res device login while retaining the original login for fallback (#94).
