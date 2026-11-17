@@ -95,7 +95,7 @@ both return `expires_in: 14400`. A session left open longer than that outlives
 its credentials, which is what issue "No stream available for …" turned out to
 be — the token was read once at startup and never renewed.
 
-Two facts the renewal path depends on:
+Two facts the primary client's renewal path depends on:
 
 1. **The refresh grant does not rotate the refresh token.** The response carries
    `access_token`, `expires_in`, `scope`, `token_type` and `user` — no
@@ -112,15 +112,20 @@ the boundary together — the write lock is what stops them all refreshing at on
 Do not reintroduce a bare `self.token.read()`; it would silently opt that
 endpoint out of renewal.
 
-**401 is not a quality tier falling through.** `get_stream_url`'s `QUALITIES`
-chain treats `403` as "not entitled to this tier" and moves on, but a `401` is
-the session, and every remaining tier fails identically. It bails immediately.
-Falling through on it spent three requests to reach "no stream URL available for
-track", which named the track and hid the only fact that mattered.
+The optional hi-res login has its own refresh path in `src/api/client/hires.rs`.
+It uses form credentials and persists rotated refresh tokens under a mutex
+before looking up the new session. Do not apply the primary client's
+no-rotation assumption to it.
+
+**Most 401 responses mean the session failed.** The exception is Tidal's
+`subStatus: 4005` ("Asset is not ready for playback"): a lower quality may still
+work, so treat it like a tier-specific `403`. Other primary-login 401s stop
+immediately. A 401 from the optional hi-res login can fall back to the separate
+primary login, whose token may still be valid.
 
 ### Dolby Atmos Is Reachable — via `immersiveaudio`
 
-Unlike hi-res, Atmos is not walled off. `playbackinfopostpaywall` takes an
+Atmos is available through the primary login. `playbackinfopostpaywall` takes an
 `immersiveaudio` parameter, verified live against track 189681882
 (`DOLBY_ATMOS`) and 431291038 (stereo):
 
@@ -147,10 +152,11 @@ Three consequences the code depends on:
 branch it fails `is_flac()` and falls through the whole `QUALITIES` chain until
 `HIGH` accepts the identical stream — three requests for one track.
 
-### Hi-Res Playback Is Unreachable — Do Not Re-Attempt
+### Hi-Res Playback Uses a Separate Device Login
 
-A `MAX` badge means the release exists in hi-res in Tidal's catalogue. It does not
-mean riptide can be served it. Three walls, each verified against the live API:
+A `MAX` badge means the release exists in hi-res in Tidal's catalogue. The
+delivered quality depends on the authenticated client, not just the account.
+The original limitations remain relevant:
 
 1. **The account is not the limit.** `/users/{id}/subscription` reports
    `highestSoundQuality: HI_RES` on a subscriber account, yet requesting
@@ -166,13 +172,24 @@ mean riptide can be served it. Three walls, each verified against the live API:
    `/tracks/{id}/playbackinfopostpaywall`. Implementing that flow would buy a login
    and no audio.
 
-`config.client_id` / `client_secret` remain useful: swapping in a *different
-extracted Limited Input Device* client works, and is the only route if a hi-res
-entitled one is ever found. They are not for portal credentials — `auth_error` in
-`src/api/auth.rs` detects that case and says so.
+The device client used by python-tidal can serve hi-res. Verified against track
+112706881 (Norah Jones, "Come Away With Me"): `HI_RES_LOSSLESS`, 24-bit/192 kHz,
+unencrypted DASH/FLAC. Probing the initialization and first media segment with
+ffprobe confirmed `sample_rate=192000` and `bits_per_raw_sample=24`; the same
+quality remained available after a token refresh.
 
-The `QUALITIES` order in `streaming.rs` (`LOSSLESS` first, so `HI_RES_LOSSLESS` is
-never reached) is therefore moot, not a bug: reaching it returns the same 16/44.1.
+`riptide --hires-auth` authorizes that client into a separate `hires.json` next
+to `config.json`. Both logins must belong to the same account. The second
+login is used only for stereo `HI_RES_LOSSLESS`; ordinary `LOSSLESS`, `HIGH`,
+Atmos and library requests keep using the primary login. This distinction is
+necessary: track 573867514 returned AAC through the hi-res client but FLAC
+16/44.1 through the primary client.
+
+`QUALITIES` tries `HI_RES_LOSSLESS`, then `LOSSLESS`, then `HIGH`, accepting
+playable FLAC before any lossy fallback. Missing or rejected hi-res credentials
+must not prevent primary-login playback. Neither client can decrypt protected
+streams; skip encrypted BTS and DASH manifests. Application credentials may
+lose their entitlement at any time, so keep the second login optional.
 
 `now_playing.delivered` carries the `bitDepth`/`sampleRate` the server actually
 returned, and the now-playing bar shows them. That is the honest counterpart to

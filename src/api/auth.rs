@@ -3,6 +3,8 @@
 
 use anyhow::{Context, Result, bail};
 use std::fs;
+use std::io::Write;
+use std::path::Path;
 use std::path::PathBuf;
 
 use super::models::{Config, DeviceAuthResponse, SessionInfo, TokenResponse};
@@ -88,16 +90,32 @@ pub fn load_config() -> Result<Config> {
 /// the new copy goes to a temporary file and is renamed over the old one,
 /// which is atomic within a directory.
 pub fn save_config(config: &Config) -> Result<()> {
-    let path = config_path();
+    save_config_at(config, &config_path())
+}
+
+pub(crate) fn hires_config_path() -> PathBuf {
+    config_path().with_file_name("hires.json")
+}
+
+pub(crate) fn save_config_at(config: &Config, path: &Path) -> Result<()> {
     let dir = path.parent().unwrap();
     fs::create_dir_all(dir)?;
     let tmp = path.with_extension("json.tmp");
-    fs::write(&tmp, serde_json::to_string_pretty(config)?)?;
-    fs::rename(&tmp, &path)?;
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(&tmp)?;
+    file.write_all(serde_json::to_string_pretty(config)?.as_bytes())?;
+    file.sync_all()?;
+    fs::rename(&tmp, path)?;
     Ok(())
 }
 
-fn is_token_valid(config: &Config) -> bool {
+pub(crate) fn is_token_valid(config: &Config) -> bool {
     let Some(ref token) = config.access_token else {
         return false;
     };
@@ -221,6 +239,34 @@ fn try_refresh_blocking(config: &mut Config) -> Result<()> {
 }
 
 pub fn run_device_auth_flow(config: &mut Config) -> Result<()> {
+    run_device_auth_flow_with(config, false)
+}
+
+/// Keep the TV session for CD-quality FLAC; the tidalapi device client unlocks
+/// hi-res but can return AAC on tracks the TV client serves losslessly.
+pub fn authorize_hires() -> Result<()> {
+    let primary = load_config()?;
+    let expected_user = primary
+        .user_id
+        .context("Sign in to riptide normally first")?;
+    let mut config = Config {
+        // Public application credentials used by python-tidal and Tidekeeper.
+        client_id: Some("fX2JxdmntZWK0ixT".into()),
+        client_secret: Some("1Nn9AfDAjxrgJFJbKNWLeAyKGVGmINuXPPLHVXAvxAg=".into()),
+        auth_generation: CURRENT_AUTH_GENERATION,
+        ..Config::default()
+    };
+    run_device_auth_flow_with(&mut config, true)?;
+    anyhow::ensure!(
+        config.user_id == Some(expected_user),
+        "Hi-res login must use the same Tidal account as the main login"
+    );
+    save_config_at(&config, &hires_config_path())?;
+    println!("Hi-res login saved; the original login remains available for lossless fallback.");
+    Ok(())
+}
+
+fn run_device_auth_flow_with(config: &mut Config, form_auth: bool) -> Result<()> {
     let client = make_blocking_client()?;
 
     let resp = client
@@ -257,19 +303,22 @@ pub fn run_device_auth_flow(config: &mut Config) -> Result<()> {
     loop {
         std::thread::sleep(interval);
 
-        // Use HTTP Basic Auth for the token exchange — this grants
-        // a token with full lossless streaming privileges (like tiddl).
-        // Sending client_secret as a form field grants restricted AAC-only tokens.
-        let result = client
-            .post(format!("{AUTH_BASE}/token"))
-            .basic_auth(client_id(config), Some(client_secret(config)))
-            .form(&[
-                ("client_id", client_id(config)),
-                ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
-                ("device_code", auth.device_code.as_str()),
-                ("scope", "r_usr w_usr w_sub"),
-            ])
-            .send()?;
+        let request = client.post(format!("{AUTH_BASE}/token"));
+        let mut fields = vec![
+            ("client_id", client_id(config)),
+            ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
+            ("device_code", auth.device_code.as_str()),
+            ("scope", "r_usr w_usr w_sub"),
+        ];
+        // Match each client's supported exchange: TV uses Basic auth, while
+        // the hi-res client uses form credentials, as in python-tidal.
+        let request = if form_auth {
+            fields.push(("client_secret", client_secret(config)));
+            request
+        } else {
+            request.basic_auth(client_id(config), Some(client_secret(config)))
+        };
+        let result = request.form(&fields).send()?;
 
         match result.status().as_u16() {
             200 => {
@@ -277,7 +326,6 @@ pub fn run_device_auth_flow(config: &mut Config) -> Result<()> {
                 let access_token = token.access_token.clone();
                 apply_token(config, token);
                 fetch_session_info(&client, &access_token, config)?;
-                save_config(config)?;
                 println!("Authorized successfully.");
                 return Ok(());
             }
@@ -294,7 +342,7 @@ pub fn run_device_auth_flow(config: &mut Config) -> Result<()> {
         }
     }
 }
-fn apply_token(config: &mut Config, token: TokenResponse) {
+pub(crate) fn apply_token(config: &mut Config, token: TokenResponse) {
     let expires_at = chrono::Utc::now() + chrono::Duration::seconds(token.expires_in as i64);
     config.access_token = Some(token.access_token);
     if let Some(rt) = token.refresh_token {

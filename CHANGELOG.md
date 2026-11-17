@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Optional hi-res FLAC playback, verified up to 24-bit/192 kHz. Run `riptide --hires-auth` after the normal login to authorize a second device client with the same Tidal account. The original login stays available for tracks it can serve losslessly when the hi-res client cannot (#94).
+
 ### Fixed
+- Quality selection tries hi-res FLAC before ordinary lossless and AAC, skipping encrypted or unsupported manifests. Tidal's "Asset is not ready for playback" response now tries a lower quality instead of incorrectly asking you to sign in again.
+- `RIPTIDE_QUALITY_DEBUG` writes quality diagnostics to the log file, including the delivered bit depth and sample rate, instead of corrupting the terminal display during playback.
 - Cover art now sits snugly in its border on Home and in the artist, album and playlist views, and all four show it at the same size (#90). The border used to float clear of the picture, with a strip of blank space along one side, because the frame was sized on a guessed font shape and drawn with lines that run through the middle of their cells. Artist art was also stuck at a small fixed size while the others grew with the window. The frame now follows your terminal's real cell size as you resize, the art column no longer leaves an empty band beside it, and the artist's name moves into the bio's border so the bio gets more room.
 
 ## [2.1.0] - 2026-11-05
